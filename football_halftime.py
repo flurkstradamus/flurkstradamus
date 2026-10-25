@@ -13,9 +13,8 @@ st.set_page_config(page_title="Flurkstradamus: Live Edge Engine", layout="wide",
 # ==========================================
 GROUP_PASSCODE = "FLURK2026"
 
-# Optional Cloud Database Setup (JSONBin.io)
-JSONBIN_BIN_ID = "6ade77dbac6210605a51a450"    # Paste your Bin ID here if you have it
-JSONBIN_API_KEY = "$2a$10$K8VFT4hzyxMbtkBLLtlaNu/ZB8WthYSFYlKEutPEE4Qg8hi8lA6Ya"   # Paste your Master Key here if you have it
+JSONBIN_BIN_ID = ""    # Paste your Bin ID here if using JSONBin
+JSONBIN_API_KEY = ""   # Paste your Master Key here if using JSONBin
 
 DB_FILE = "bets_history.json"
 
@@ -66,10 +65,13 @@ def save_bets(bets):
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
+if "selected_bet_id" not in st.session_state:
+    st.session_state.selected_bet_id = None
+
 # PIN Screen
 if not st.session_state.authenticated:
     st.title("🔮 Flurkstradamus: Private Beta")
-    st.write("Welcome to the squad's live football edge terminal. Enter the group passcode to enter.")
+    st.write("Enter the group passcode to access the live betting edge terminal.")
     
     with st.form("pin_login"):
         pin_entry = st.text_input("Group Passcode", type="password")
@@ -82,7 +84,6 @@ if not st.session_state.authenticated:
                 st.error("Incorrect passcode. Ask the commissioner for access.")
     st.stop()
 
-# Load bet database
 if "saved_bets" not in st.session_state:
     st.session_state.saved_bets = load_bets()
 
@@ -153,6 +154,124 @@ def find_game_for_bet(bet, games):
             return g_item
     return None
 
+# ==========================================
+# DETAIL PAGE: IN-GAME BET WAR ROOM
+# ==========================================
+if st.session_state.selected_bet_id is not None:
+    selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
+    
+    if st.button("⬅️ Back to Locked Bets & Dashboard"):
+        st.session_state.selected_bet_id = None
+        st.rerun()
+
+    if selected_bet is None:
+        st.error("Selected bet not found.")
+        st.stop()
+
+    st.title(f"🏟️ Live War Room: {selected_bet['matchup']}")
+    st.caption(f"Bettor: **{selected_bet.get('user', 'Flurk')}** | Ticket: `{selected_bet['bet']}` | Logged: {selected_bet['date']}")
+
+    target_line = selected_bet.get("target_line")
+    bet_dir = selected_bet.get("bet_direction", "Under")
+    if target_line is None:
+        match_num = re.search(r"(\d+(\.\d+)?)", selected_bet.get("bet", ""))
+        if match_num:
+            target_line = float(match_num.group(1))
+        if "over" in selected_bet.get("bet", "").lower():
+            bet_dir = "Over"
+
+    is_under_bet = (bet_dir == "Under")
+    live_game_info = find_game_for_bet(selected_bet, games_data)
+
+    if not live_game_info:
+        st.warning("ESPN scoreboard data for this game is currently unavailable or the match is not active.")
+        st.info(f"Target Line: **{target_line}** | Direction: **{bet_dir}**")
+        st.stop()
+
+    curr_away = live_game_info["away_score"]
+    curr_home = live_game_info["home_score"]
+    total_pts = curr_away + curr_home
+    is_final = live_game_info.get("completed", False) or "final" in live_game_info["status"].lower()
+    period = live_game_info.get("period", 2)
+
+    # Big Scoreboard Row
+    col_sc1, col_sc2, col_sc3 = st.columns([2, 1, 2])
+    with col_sc1:
+        st.markdown(f"### {live_game_info['away_team']}")
+        st.markdown(f"# **{curr_away}**")
+    with col_sc2:
+        st.markdown(f"### Status")
+        st.markdown(f"**{live_game_info['status']}**")
+        st.caption(f"Clock: {live_game_info.get('displayClock', 'Live')}")
+    with col_sc3:
+        st.markdown(f"### {live_game_info['home_team']}")
+        st.markdown(f"# **{curr_home}**")
+
+    st.markdown("---")
+
+    # In-Game Calculations
+    cushion = target_line - total_pts if is_under_bet else total_pts - target_line
+
+    if is_final:
+        won = (total_pts < target_line) if is_under_bet else (total_pts > target_line)
+        live_prob = 1.0 if won else 0.0
+        in_game_proj = total_pts
+    else:
+        decay_sigma = 7.0 if period <= 2 else (4.8 if period == 3 else 2.4)
+        frac_rem = 0.5 if period <= 2 else (0.25 if period == 3 else 0.08)
+        
+        halftime_pts = selected_bet.get("halftime_proj", total_pts + 10.0)
+        if isinstance(halftime_pts, str):
+            try:
+                halftime_pts = float(halftime_pts.replace(" pts", "").replace("% Prob", ""))
+            except:
+                halftime_pts = total_pts + 10.0
+
+        in_game_proj = total_pts + ((halftime_pts - total_pts) * frac_rem) if halftime_pts > total_pts else total_pts + 3.0
+        live_prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under_bet)
+
+    # Metrics Display
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Live Total Points", f"{total_pts} pts", delta=f"{live_game_info['status']}")
+    m2.metric("Target Strike Line", f"{bet_dir} {target_line}")
+    
+    if is_under_bet:
+        m3.metric("Safety Cushion Left", f"{cushion:+.1f} pts", delta="Under Margin")
+    else:
+        m3.metric("Points to Clear", f"{cushion:+.1f} pts", delta="Over Margin")
+
+    prob_pct = live_prob * 100
+    m4.metric("Current Win Probability", f"{prob_pct:.1f}%", delta=f"{'Winning' if prob_pct >= 50 else 'Trailing'}")
+
+    st.markdown("---")
+
+    # Strategy / Tactical Box
+    st.subheader("💡 Flurkstradamus In-Game Strategy Insight")
+    if is_final:
+        if (total_pts < target_line if is_under_bet else total_pts > target_line):
+            st.success("🎉 **MATCH FINAL: BET COVERED & WON!**")
+        else:
+            st.error("❌ **MATCH FINAL: BET BUSTED.**")
+    else:
+        col_strat1, col_strat2 = st.columns(2)
+        with col_strat1:
+            st.write(f"• **Projected Final Game Total:** ~{in_game_proj:.1f} total points.")
+            st.write(f"• **Variance Decay ($\sigma$):** Reduced to `{decay_sigma:.1f}` based on remaining game clock.")
+            st.write(f"• **Pre-Game vs Live Shift:** Model shifted by `{selected_bet.get('proj_shift', 'N/A')}` pts from open.")
+        with col_strat2:
+            cost = selected_bet.get("cost_cents", 50)
+            if prob_pct >= 80:
+                st.success("🔥 **High Win Equity:** Current scoring pace favors this ticket. Let it ride or lock in gains if book offers a high buy-back.")
+            elif prob_pct >= 50:
+                st.info("⚖️ **Contested Game:** Pace is on track with projections. Cushion is holding.")
+            else:
+                st.warning("⚠️ **Pace Alert:** Scoring is outperforming projections. If this is Robinhood contracts, consider minimizing downside.")
+
+    st.stop()
+
+# ==========================================
+# MAIN DASHBOARD TABS
+# ==========================================
 st.title("🔮 Flurkstradamus: Live Football Edge Engine")
 
 tab_single, tab_combo, tab_history, tab_board = st.tabs([
@@ -162,9 +281,7 @@ tab_single, tab_combo, tab_history, tab_board = st.tabs([
     "🏆 Friends Leaderboard"
 ])
 
-# ==========================================
 # TAB 1: SINGLE GAME ENGINE
-# ==========================================
 with tab_single:
     if games_data:
         game_options = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
@@ -252,7 +369,7 @@ with tab_single:
         with f3:
             contract_price = st.number_input("Contract Cost (¢)", min_value=1, max_value=99, value=52, step=1)
         
-        user_notes = st.text_input("Notes (e.g. Robinhood event contract)")
+        user_notes = st.text_input("Notes (e.g. Robinhood contract)")
         lock_btn = st.form_submit_button("Lock In Bet")
 
         if lock_btn:
@@ -281,9 +398,7 @@ with tab_single:
             save_bets(st.session_state.saved_bets)
             st.success(f"Bet saved to {current_user}'s ticket history!")
 
-# ==========================================
 # TAB 2: COMBO TICKET BUILDER
-# ==========================================
 with tab_combo:
     st.subheader("🔗 Multi-Leg Combo Builder (3 to 5 Legs)")
     legs_count = st.radio("Number of Legs", [3, 4, 5], horizontal=True)
@@ -380,9 +495,7 @@ with tab_combo:
             save_bets(st.session_state.saved_bets)
             st.success("Ticket saved!")
 
-# ==========================================
 # TAB 3: BET HISTORY & LIVE GAME MONITOR
-# ==========================================
 with tab_history:
     st.subheader("📜 Live Bet Tracker & History")
 
@@ -417,12 +530,13 @@ with tab_history:
         for idx, bet in enumerate(filtered_bets):
             real_idx = st.session_state.saved_bets.index(bet)
             with st.container():
-                h_col1, h_col2, h_col3, h_col4, h_col5, h_col6 = st.columns([1.8, 2.5, 2.5, 2.5, 1.5, 0.7])
+                # Columns with added "Live Room" Action button
+                h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7 = st.columns([1.6, 2.3, 2.2, 2.2, 1.3, 1.1, 0.6])
                 
                 with h_col1:
                     st.write(f"**{bet.get('user', 'Flurk')}**")
                     st.caption(f"{bet['date']} | {bet['type']}")
-                
+
                 with h_col2:
                     st.write(f"**{bet['matchup']}**")
                     st.write(f"Pick: `{bet['bet']}`")
@@ -450,13 +564,6 @@ with tab_history:
                         
                         st.write(f"**{live_game_info['away_short']} {curr_away} - {curr_home} {live_game_info['home_short']}**")
                         st.write(f"Total: **{total_pts} pts** ({status_str})")
-                        
-                        if target_line is not None:
-                            cushion = target_line - total_pts if is_under_bet else total_pts - target_line
-                            if is_under_bet:
-                                st.caption(f"🛡️ Cushion: **{cushion:.1f} pts**" if cushion > 0 else f"💥 Busted by **{abs(cushion):.1f} pts**")
-                            else:
-                                st.caption(f"🎉 Cleared by **{cushion:.1f} pts**" if cushion >= 0 else f"🎯 Needs **{abs(cushion):.1f} pts**")
                     else:
                         st.write("Score: *Final / Inactive*")
 
@@ -467,7 +574,7 @@ with tab_history:
                         
                         if is_final:
                             won = (curr_total < target_line) if is_under_bet else (curr_total > target_line)
-                            st.success("🏆 **WON - Covered**") if won else st.error("❌ **LOST - Busted**")
+                            st.success("🏆 **WON**") if won else st.error("❌ **LOST**")
                         else:
                             period = live_game_info.get("period", 2)
                             decay_sigma = 7.0 if period <= 2 else (4.8 if period == 3 else 2.4)
@@ -476,7 +583,7 @@ with tab_history:
                             halftime_pts = bet.get("halftime_proj", curr_total + 10.0)
                             if isinstance(halftime_pts, str):
                                 try:
-                                    halftime_pts = float(halftime_pts.replace(" pts", ""))
+                                    halftime_pts = float(halftime_pts.replace(" pts", "").replace("% Prob", ""))
                                 except:
                                     halftime_pts = curr_total + 10.0
 
@@ -484,12 +591,9 @@ with tab_history:
                             current_prob = calculate_win_prob(target_line, in_game_projected, std_dev=decay_sigma, is_under=is_under_bet)
                             prob_pct = current_prob * 100
                             
-                            st.write(f"In-Game Prob: **{prob_pct:.1f}%**")
-                            cost = bet.get("cost_cents", 50)
-                            if prob_pct > 80 and cost < 70:
-                                st.caption("💡 *High Win Equity: Hold or cash out profit*")
-                            elif prob_pct < 25:
-                                st.caption("⚠️ *High Danger: Consider cutting early*")
+                            st.write(f"Live Prob: **{prob_pct:.1f}%**")
+                            cushion = target_line - curr_total if is_under_bet else curr_total - target_line
+                            st.caption(f"Cushion: {cushion:+.1f} pts")
                     else:
                         st.write(f"Baseline: **{bet['pregame_proj']}**")
                         st.write(f"Halftime: **{bet['halftime_proj']}**")
@@ -504,6 +608,11 @@ with tab_history:
                         st.rerun()
 
                 with h_col6:
+                    if st.button("🔍 Live Room", key=f"view_{bet['id']}"):
+                        st.session_state.selected_bet_id = bet["id"]
+                        st.rerun()
+
+                with h_col7:
                     if st.button("🗑️", key=f"del_{bet['id']}"):
                         st.session_state.saved_bets.pop(real_idx)
                         save_bets(st.session_state.saved_bets)
@@ -511,9 +620,7 @@ with tab_history:
 
                 st.markdown("---")
 
-# ==========================================
 # TAB 4: COMMUNITY LEADERBOARD
-# ==========================================
 with tab_board:
     st.subheader("🏆 Flurkstradamus Squad Leaderboard")
     
