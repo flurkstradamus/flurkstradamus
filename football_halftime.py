@@ -80,6 +80,8 @@ if "selected_bet_id" not in st.session_state:
     st.session_state.selected_bet_id = None
 if "combo_active_legs" not in st.session_state:
     st.session_state.combo_active_legs = []
+if "ai_recommended_combo" not in st.session_state:
+    st.session_state.ai_recommended_combo = None
 
 # Access Gatekeeper
 if not st.session_state.authenticated:
@@ -180,7 +182,6 @@ def get_extended_games(league_code="nfl"):
         except Exception:
             pass
 
-    # Built-in fallback slate if ESPN returns fewer than 3 games
     if len([g for g in all_games if not g["completed"]]) < 3:
         backup_slate = [
             {"id": "up_1", "league": "NFL", "name": "Bills @ Dolphins", "kickoff": "Thu 10/29 - 8:15 PM ET", "home_team": "Miami Dolphins", "home_short": "MIA", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/mia.png", "home_record": "7-2", "away_team": "Buffalo Bills", "away_short": "BUF", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/buf.png", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Thu 8:15 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 48.5, "market_spread": 2.5},
@@ -690,17 +691,35 @@ elif menu_choice == "2-12 Leg Combo Builder":
                     if len(selected_ai_legs) == suggest_legs_count:
                         break
 
-            st.session_state.combo_active_legs = [
-                {
-                    "matchup_idx": l_item["matchup_idx"],
-                    "type": l_item["type"],
-                    "side": l_item.get("side", "Under"),
-                    "line": float(l_item.get("line", 47.5)),
-                    "picked_team": l_item.get("picked_team", games_data[l_item["matchup_idx"]]["home_team"])
-                }
-                for l_item in selected_ai_legs
-            ]
-            st.rerun()
+            st.session_state.ai_recommended_combo = selected_ai_legs
+
+        # Display the clear green recommendation preview box
+        if st.session_state.ai_recommended_combo:
+            num_legs_rec = len(st.session_state.ai_recommended_combo)
+            comp_p = 1.0
+            
+            recs_text = f"**Algorithm Recommended {num_legs_rec}-Leg Ticket:**\n\n"
+            for idx_ai, l_ai in enumerate(st.session_state.ai_recommended_combo):
+                recs_text += f"• **Leg {idx_ai+1}:** `{l_ai['desc']}` — Model Probability: **{l_ai['prob']*100:.1f}%**\n"
+                comp_p *= l_ai["prob"]
+            
+            st.success(recs_text)
+            
+            m_rec1, m_rec2 = st.columns([2, 1])
+            m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta="Highest Probability Mix")
+            
+            if m_rec2.button("📥 Apply Recommended Picks into Combo Builder", use_container_width=True):
+                st.session_state.combo_active_legs = [
+                    {
+                        "matchup_idx": l_item["matchup_idx"],
+                        "type": l_item["type"],
+                        "side": l_item.get("side", "Under"),
+                        "line": float(l_item.get("line", 47.5)),
+                        "picked_team": l_item.get("picked_team", games_data[l_item["matchup_idx"]]["home_team"])
+                    }
+                    for l_item in st.session_state.ai_recommended_combo
+                ]
+                st.rerun()
 
     ctrl_c1, ctrl_c2 = st.columns([3, 1])
     with ctrl_c1:
@@ -838,14 +857,11 @@ elif menu_choice == "2-12 Leg Combo Builder":
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
             st.success(f"{active_leg_count}-Leg combo ticket locked in!")
 
-# ==========================================
-# PAGE 3: LOCKED BETS & HISTORY (IMPROVED PERSONAL SLIPS)
-# ==========================================
+# PAGE 3: LOCKED BETS & HISTORY
 elif menu_choice == "Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
     st.caption("Your personalized active slips, scores, and settled tickets.")
 
-    # Filter strictly to the current active user
     curr_user_clean = current_user.strip().lower() if current_user.strip() else "flurk"
     my_tickets = [b for b in st.session_state.saved_bets if b.get("user", "Flurk").strip().lower() == curr_user_clean]
 
@@ -865,7 +881,6 @@ elif menu_choice == "Locked Bets History":
             real_idx = st.session_state.saved_bets.index(b)
             status_val = b.get("status", "Pending")
 
-            # Border highlight style based on status
             if status_val == "Won":
                 card_style = "border: 1.5px solid #22c55e; background-color: rgba(34, 197, 94, 0.05);"
                 badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
@@ -876,7 +891,6 @@ elif menu_choice == "Locked Bets History":
                 card_style = "border: 1.5px solid #eab308; background-color: rgba(234, 179, 8, 0.05);"
                 badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ IN PLAY</span>"
 
-            # Parse Matchup Details & Live Score
             live_m = find_game_for_bet(b, games_data)
             away_logo = live_m.get("away_logo", DEFAULT_LOGO) if live_m else DEFAULT_LOGO
             home_logo = live_m.get("home_logo", DEFAULT_LOGO) if live_m else DEFAULT_LOGO
@@ -924,9 +938,9 @@ elif menu_choice == "Locked Bets History":
                             if m_g and m_g["completed"]:
                                 t_p = m_g["away_score"] + m_g["home_score"]
                                 won = (t_p < leg["line"]) if leg["type"] == "Total" and leg["side"] == "Under" else (t_p > leg["line"] if leg["type"] == "Total" else leg["picked_team"] == (m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]))
-                                leg_statuses.append(f"✅ {m_g['away_short']}" if won else f"❌ {m_g['away_short']}")
+                                leg_statuses.append(f"✅ {m_g['away_short']}@{m_g['home_short']}" if won else f"❌ {m_g['away_short']}@{m_g['home_short']}")
                             elif m_g:
-                                leg_statuses.append(f"⏳ {m_g['away_short']}")
+                                leg_statuses.append(f"⏳ {m_g['away_short']}@{m_g['home_short']}")
                         st.write(" • ".join(leg_statuses))
                     else:
                         st.caption(f"Type: {b.get('type', 'Single')}")
