@@ -6,19 +6,22 @@ import os
 import re
 from datetime import datetime
 
-st.set_page_config(page_title="Flurkstradamus: Live Edge Engine", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Flurkstradamus Edge Engine",
+    page_icon="🔮",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # ==========================================
-# CONFIGURATION & FRIENDS-ONLY GATEKEEPER
+# CONFIGURATION & PERSISTENCE ENGINE
 # ==========================================
 GROUP_PASSCODE = "FLURK2026"
-
-JSONBIN_BIN_ID = ""    # Paste your Bin ID here if using JSONBin
-JSONBIN_API_KEY = ""   # Paste your Master Key here if using JSONBin
+JSONBIN_BIN_ID = "6ade77dbac6210605a51a450"    # Paste your Bin ID here if you have it
+JSONBIN_API_KEY = "$2a$10$K8VFT4hzyxMbtkBLLtlaNu/ZB8WthYSFYlKEutPEE4Qg8hi8lA6Ya"   # Paste your Master Key here if you have it
 
 DB_FILE = "bets_history.json"
 
-# --- Database Storage Helpers ---
 def fetch_cloud_bets():
     if JSONBIN_BIN_ID and JSONBIN_API_KEY:
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
@@ -39,28 +42,37 @@ def push_cloud_bets(bets):
             "X-Master-Key": JSONBIN_API_KEY
         }
         try:
-            requests.put(url, json={"bets": bets}, headers=headers, timeout=5)
-            return True
+            r = requests.put(url, json={"bets": bets}, headers=headers, timeout=5)
+            return r.status_code == 200
         except Exception:
             pass
     return False
 
 def load_bets():
-    cloud_data = fetch_cloud_bets()
-    if cloud_data is not None:
-        return cloud_data
+    cloud_records = fetch_cloud_bets()
+    local_records = []
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r") as f:
-                return json.load(f)
+                local_records = json.load(f)
         except Exception:
-            return []
-    return []
+            local_records = []
+
+    # Merge records seamlessly without duplicates by ID
+    merged = {b["id"]: b for b in (local_records + (cloud_records or []))}
+    merged_list = list(merged.values())
+    merged_list.sort(key=lambda x: str(x.get("date", "")), reverse=True)
+    return merged_list
 
 def save_bets(bets):
-    if not push_cloud_bets(bets):
+    # Always write to local file for redundancy
+    try:
         with open(DB_FILE, "w") as f:
             json.dump(bets, f, indent=4)
+    except Exception:
+        pass
+    # Push to cloud bin if connected
+    push_cloud_bets(bets)
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -68,33 +80,57 @@ if "authenticated" not in st.session_state:
 if "selected_bet_id" not in st.session_state:
     st.session_state.selected_bet_id = None
 
-# PIN Screen
+# Access Gatekeeper
 if not st.session_state.authenticated:
-    st.title("🔮 Flurkstradamus: Private Beta")
-    st.write("Enter the group passcode to access the live betting edge terminal.")
-    
+    st.title("🔮 Flurkstradamus: Private Syndicate")
+    st.caption("Mobile Edge & Consensus Terminal")
     with st.form("pin_login"):
         pin_entry = st.text_input("Group Passcode", type="password")
-        login_btn = st.form_submit_button("Enter Locker Room")
+        login_btn = st.form_submit_button("Enter Terminal")
         if login_btn:
             if pin_entry == GROUP_PASSCODE:
                 st.session_state.authenticated = True
                 st.rerun()
             else:
-                st.error("Incorrect passcode. Ask the commissioner for access.")
+                st.error("Invalid passcode.")
     st.stop()
 
 if "saved_bets" not in st.session_state:
     st.session_state.saved_bets = load_bets()
 
-# --- Probability Helper ---
+# ==========================================
+# ADVANCED STATISTICAL PROJECTION ENGINES
+# ==========================================
 def calculate_win_prob(target_line, projected_total, std_dev=7.0, is_under=True):
     std_dev = max(std_dev, 0.75)
     z = (target_line - projected_total) / std_dev
     under_prob = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
     return under_prob if is_under else (1.0 - under_prob)
 
-# --- ESPN Live Data ---
+def calculate_moneyline_prob(home_proj, away_proj, home_record_str, away_record_str):
+    # Base expected margin from in-game projection
+    spread_exp = home_proj - away_proj
+
+    # Parse regular season records (e.g., '7-2')
+    def parse_rec(rec):
+        parts = re.findall(r"\d+", rec)
+        if len(parts) >= 2:
+            w, l = float(parts[0]), float(parts[1])
+            return w / max(w + l, 1.0)
+        return 0.5
+
+    h_pct = parse_rec(home_record_str)
+    a_pct = parse_rec(away_record_str)
+    record_delta = (h_pct - a_pct) * 7.0  # Equivalent spread points weighting
+
+    # Pythagorean logistic regression curve for football win margin
+    effective_spread = spread_exp + record_delta
+    prob_home_win = 1.0 / (1.0 + math.exp(-effective_spread / 6.5))
+    return max(min(prob_home_win, 0.99), 0.01)
+
+# ==========================================
+# ESPN LIVE SCOREBOARD DATA FEED
+# ==========================================
 @st.cache_data(ttl=15)
 def get_live_games(league_code="nfl"):
     url = f"https://site.api.espn.com/apis/site/v2/sports/football/{league_code}/scoreboard"
@@ -108,34 +144,26 @@ def get_live_games(league_code="nfl"):
             home = next(c for c in competitors if c["homeAway"] == "home")
             away = next(c for c in competitors if c["homeAway"] == "away")
             status_obj = comp["status"]
+
             games.append({
                 "id": str(event.get("id", "")),
                 "name": event["name"],
                 "home_team": home["team"]["displayName"],
                 "home_short": home["team"].get("shortDisplayName", home["team"]["displayName"]),
+                "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
                 "away_team": away["team"]["displayName"],
                 "away_short": away["team"].get("shortDisplayName", away["team"]["displayName"]),
+                "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
                 "home_score": int(home.get("score", 0)),
                 "away_score": int(away.get("score", 0)),
                 "status": status_obj["type"]["shortDetail"],
                 "completed": status_obj["type"].get("completed", False),
-                "period": status_obj.get("period", 2),
+                "period": status_obj.get("period", 1),
                 "displayClock": status_obj.get("displayClock", "0:00")
             })
         return games
     except Exception:
         return []
-
-# --- Sidebar ---
-st.sidebar.title("🔮 Flurkstradamus")
-current_user = st.sidebar.text_input("Your Bettor Handle", value="Flurk")
-league = st.sidebar.radio("Select League", ["NFL", "College Football (NCAA)"])
-league_param = "nfl" if league == "NFL" else "college-football"
-games_data = get_live_games(league_param)
-
-if st.sidebar.button("🔄 Sync Cloud Bets"):
-    st.session_state.saved_bets = load_bets()
-    st.sidebar.success("Synced!")
 
 def find_game_for_bet(bet, games):
     m_text = bet.get("matchup", "").lower()
@@ -155,37 +183,53 @@ def find_game_for_bet(bet, games):
     return None
 
 # ==========================================
+# MOBILE-FIRST SIDEBAR NAVIGATION
+# ==========================================
+st.sidebar.markdown("## 🔮 Flurkstradamus")
+current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
+league = st.sidebar.radio("Active League", ["NFL", "NCAA Football"])
+league_param = "nfl" if league == "NFL" else "college-football"
+games_data = get_live_games(league_param)
+
+menu_choice = st.sidebar.radio(
+    "Navigation Menu",
+    [
+        "Single Game Engine",
+        "2-5 Leg Combo Builder",
+        "Locked Bets History",
+        "🏆 Squad Leaderboard"
+    ]
+)
+
+if st.sidebar.button("🔄 Sync Database"):
+    st.session_state.saved_bets = load_bets()
+    st.sidebar.success("Database fully synced!")
+
+# ==========================================
 # DETAIL PAGE: IN-GAME BET WAR ROOM
 # ==========================================
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
-    
-    if st.button("⬅️ Back to Locked Bets & Dashboard"):
+
+    if st.button("⬅️ Back to Main Dashboard"):
         st.session_state.selected_bet_id = None
         st.rerun()
 
     if selected_bet is None:
-        st.error("Selected bet not found.")
+        st.error("Selected ticket could not be found.")
         st.stop()
 
-    st.title(f"🏟️ Live War Room: {selected_bet['matchup']}")
-    st.caption(f"Bettor: **{selected_bet.get('user', 'Flurk')}** | Ticket: `{selected_bet['bet']}` | Logged: {selected_bet['date']}")
+    st.title(f"🏟️ War Room: {selected_bet['matchup']}")
+    st.caption(f"Bettor: **{selected_bet.get('user', 'Flurk')}** | Pick: `{selected_bet['bet']}` | Logged: {selected_bet.get('date', 'N/A')}")
 
     target_line = selected_bet.get("target_line")
     bet_dir = selected_bet.get("bet_direction", "Under")
-    if target_line is None:
-        match_num = re.search(r"(\d+(\.\d+)?)", selected_bet.get("bet", ""))
-        if match_num:
-            target_line = float(match_num.group(1))
-        if "over" in selected_bet.get("bet", "").lower():
-            bet_dir = "Over"
-
-    is_under_bet = (bet_dir == "Under")
+    bet_category = selected_bet.get("bet_category", "Total")
     live_game_info = find_game_for_bet(selected_bet, games_data)
 
     if not live_game_info:
-        st.warning("ESPN scoreboard data for this game is currently unavailable or the match is not active.")
-        st.info(f"Target Line: **{target_line}** | Direction: **{bet_dir}**")
+        st.warning("Live feed for this game is currently inactive.")
+        st.write(f"Target: **{bet_dir} {target_line}**" if target_line else f"Pick: **{selected_bet['bet']}**")
         st.stop()
 
     curr_away = live_game_info["away_score"]
@@ -194,485 +238,380 @@ if st.session_state.selected_bet_id is not None:
     is_final = live_game_info.get("completed", False) or "final" in live_game_info["status"].lower()
     period = live_game_info.get("period", 2)
 
-    # Big Scoreboard Row
-    col_sc1, col_sc2, col_sc3 = st.columns([2, 1, 2])
-    with col_sc1:
-        st.markdown(f"### {live_game_info['away_team']}")
-        st.markdown(f"# **{curr_away}**")
-    with col_sc2:
-        st.markdown(f"### Status")
-        st.markdown(f"**{live_game_info['status']}**")
-        st.caption(f"Clock: {live_game_info.get('displayClock', 'Live')}")
-    with col_sc3:
-        st.markdown(f"### {live_game_info['home_team']}")
-        st.markdown(f"# **{curr_home}**")
+    col_s1, col_s2, col_s3 = st.columns([2, 1, 2])
+    col_s1.markdown(f"### {live_game_info['away_team']}\n# **{curr_away}**\n`{live_game_info['away_record']}`")
+    col_s2.markdown(f"### Status\n**{live_game_info['status']}**\nClock: `{live_game_info.get('displayClock', 'Live')}`")
+    col_s3.markdown(f"### {live_game_info['home_team']}\n# **{curr_home}**\n`{live_game_info['home_record']}`")
 
     st.markdown("---")
 
-    # In-Game Calculations
-    cushion = target_line - total_pts if is_under_bet else total_pts - target_line
+    # In-Game Math Resolution
+    if bet_category == "Moneyline":
+        h_prob = calculate_moneyline_prob(curr_home, curr_away, live_game_info["home_record"], live_game_info["away_record"])
+        picked_home = selected_bet.get("picked_team") == live_game_info["home_team"]
+        win_prob = h_prob if picked_home else (1.0 - h_prob)
 
-    if is_final:
-        won = (total_pts < target_line) if is_under_bet else (total_pts > target_line)
-        live_prob = 1.0 if won else 0.0
-        in_game_proj = total_pts
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Selected Winner", selected_bet.get("picked_team", "N/A"))
+        m2.metric("Current Margin", f"{curr_home - curr_away:+d} pts")
+        m3.metric("Live Win Probability", f"{win_prob * 100:.1f}%")
+
     else:
-        decay_sigma = 7.0 if period <= 2 else (4.8 if period == 3 else 2.4)
+        is_under = (bet_dir == "Under")
+        decay_sigma = 7.0 if period <= 2 else (4.5 if period == 3 else 2.0)
         frac_rem = 0.5 if period <= 2 else (0.25 if period == 3 else 0.08)
-        
-        halftime_pts = selected_bet.get("halftime_proj", total_pts + 10.0)
-        if isinstance(halftime_pts, str):
-            try:
-                halftime_pts = float(halftime_pts.replace(" pts", "").replace("% Prob", ""))
-            except:
-                halftime_pts = total_pts + 10.0
+        proj_pts = selected_bet.get("model_proj", total_pts + 10.0)
 
-        in_game_proj = total_pts + ((halftime_pts - total_pts) * frac_rem) if halftime_pts > total_pts else total_pts + 3.0
-        live_prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under_bet)
+        in_game_proj = total_pts + ((proj_pts - total_pts) * frac_rem) if proj_pts > total_pts else total_pts + 3.0
+        prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under)
+        cushion = target_line - total_pts if is_under else total_pts - target_line
 
-    # Metrics Display
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Live Total Points", f"{total_pts} pts", delta=f"{live_game_info['status']}")
-    m2.metric("Target Strike Line", f"{bet_dir} {target_line}")
-    
-    if is_under_bet:
-        m3.metric("Safety Cushion Left", f"{cushion:+.1f} pts", delta="Under Margin")
-    else:
-        m3.metric("Points to Clear", f"{cushion:+.1f} pts", delta="Over Margin")
-
-    prob_pct = live_prob * 100
-    m4.metric("Current Win Probability", f"{prob_pct:.1f}%", delta=f"{'Winning' if prob_pct >= 50 else 'Trailing'}")
-
-    st.markdown("---")
-
-    # Strategy / Tactical Box
-    st.subheader("💡 Flurkstradamus In-Game Strategy Insight")
-    if is_final:
-        if (total_pts < target_line if is_under_bet else total_pts > target_line):
-            st.success("🎉 **MATCH FINAL: BET COVERED & WON!**")
-        else:
-            st.error("❌ **MATCH FINAL: BET BUSTED.**")
-    else:
-        col_strat1, col_strat2 = st.columns(2)
-        with col_strat1:
-            st.write(f"• **Projected Final Game Total:** ~{in_game_proj:.1f} total points.")
-            st.write(f"• **Variance Decay ($\sigma$):** Reduced to `{decay_sigma:.1f}` based on remaining game clock.")
-            st.write(f"• **Pre-Game vs Live Shift:** Model shifted by `{selected_bet.get('proj_shift', 'N/A')}` pts from open.")
-        with col_strat2:
-            cost = selected_bet.get("cost_cents", 50)
-            if prob_pct >= 80:
-                st.success("🔥 **High Win Equity:** Current scoring pace favors this ticket. Let it ride or lock in gains if book offers a high buy-back.")
-            elif prob_pct >= 50:
-                st.info("⚖️ **Contested Game:** Pace is on track with projections. Cushion is holding.")
-            else:
-                st.warning("⚠️ **Pace Alert:** Scoring is outperforming projections. If this is Robinhood contracts, consider minimizing downside.")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Current Total", f"{total_pts} pts")
+        m2.metric("Target Line", f"{bet_dir} {target_line}")
+        m3.metric("Safety Cushion", f"{cushion:+.1f} pts")
+        m4.metric("Live Win Prob", f"{prob * 100:.1f}%")
 
     st.stop()
 
 # ==========================================
-# MAIN DASHBOARD TABS
+# PAGE 1: BRACKETED SINGLE GAME ENGINE
 # ==========================================
-st.title("🔮 Flurkstradamus: Live Football Edge Engine")
+if menu_choice == "Single Game Engine":
+    st.subheader("⚡ Bracketed Single Game Edge Engine")
 
-tab_single, tab_combo, tab_history, tab_board = st.tabs([
-    "Single Game Engine", 
-    "Combo Ticket Builder", 
-    "Locked Bets History", 
-    "🏆 Friends Leaderboard"
-])
-
-# TAB 1: SINGLE GAME ENGINE
-with tab_single:
     if games_data:
         game_options = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
         selected_idx = st.selectbox("Select Active Matchup", range(len(game_options)), format_func=lambda x: game_options[x])
         g = games_data[selected_idx]
         g_id = g.get("id", str(selected_idx))
     else:
-        st.warning("Could not fetch ESPN games. Using manual inputs.")
-        g = {"id": "man", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime"}
+        st.warning("Manual Matchup Mode")
+        g = {"id": "man", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3"}
         g_id = "man"
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("1. Initial Baseline (Pre-Game)")
+    bracket_stage = st.select_slider(
+        "Current Game Checkpoint / Bracket",
+        options=["Pre-Game", "After 1st Quarter", "Halftime", "After 3rd Quarter"],
+        value="Halftime"
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
         home_team = st.text_input("Home Team", value=g["home_team"], key=f"h_{g_id}")
         away_team = st.text_input("Away Team", value=g["away_team"], key=f"a_{g_id}")
+        home_rec = st.text_input(f"{home_team} Season Record", value=g.get("home_record", "0-0"), key=f"h_rec_{g_id}")
+        away_rec = st.text_input(f"{away_team} Season Record", value=g.get("away_record", "0-0"), key=f"a_rec_{g_id}")
         pregame_total = st.number_input("Pre-Game Baseline Total", value=47.5, step=0.5, key=f"pre_{g_id}")
 
-    with col2:
-        st.subheader("2. Live Situation")
+    with c2:
         sc1, sc2 = st.columns(2)
-        with sc1:
-            h1_home = st.number_input(f"{home_team} Points", min_value=0, value=g["home_score"], key=f"hpts_{g_id}")
-        with sc2:
-            h1_away = st.number_input(f"{away_team} Points", min_value=0, value=g["away_score"], key=f"apts_{g_id}")
-        
-        live_book_line = st.number_input("Market Total Offered (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"rh_{g_id}")
+        h_pts = sc1.number_input(f"{home_team} Score", min_value=0, value=g["home_score"], key=f"hp_{g_id}")
+        a_pts = sc2.number_input(f"{away_team} Score", min_value=0, value=g["away_score"], key=f"ap_{g_id}")
+        market_line = st.number_input("Market Total Offered (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
 
-    h1_total = h1_home + h1_away
-    margin = abs(h1_home - h1_away)
-    base_2h = pregame_total * 0.475
-    pace_diff = h1_total - (pregame_total * 0.525)
-    pace_modifier = pace_diff * 0.30
-    script_mod = -3.5 if margin >= 17 else (-1.5 if margin >= 10 else (1.5 if margin <= 3 else 0.0))
-    proj_2h = base_2h + pace_modifier + script_mod + 0.5
-    final_proj = h1_total + proj_2h
-    shift = final_proj - pregame_total
+    # Bracket Model Decay Weights
+    pts_scored = h_pts + a_pts
+    margin = abs(h_pts - a_pts)
+
+    if bracket_stage == "Pre-Game":
+        final_proj = pregame_total
+        std_bracket = 8.5
+    elif bracket_stage == "After 1st Quarter":
+        pace_diff = pts_scored - (pregame_total * 0.25)
+        final_proj = pregame_total + (pace_diff * 0.40)
+        std_bracket = 7.5
+    elif bracket_stage == "Halftime":
+        pace_diff = pts_scored - (pregame_total * 0.525)
+        script = -3.5 if margin >= 17 else (-1.5 if margin >= 10 else (1.5 if margin <= 3 else 0.0))
+        final_proj = pts_scored + (pregame_total * 0.475) + (pace_diff * 0.30) + script + 0.5
+        std_bracket = 6.0
+    else:  # After 3rd Quarter
+        pace_diff = pts_scored - (pregame_total * 0.775)
+        final_proj = pts_scored + (pregame_total * 0.225) + (pace_diff * 0.20)
+        std_bracket = 3.5
 
     st.markdown("---")
-    st.subheader("3. Flurkstradamus Projected Totals")
+    st.subheader(f"📊 Projected Consensus ({bracket_stage})")
+
+    # Game Winner Probability Projection
+    home_win_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), home_rec, away_rec)
+    away_win_prob = 1.0 - home_win_prob
+
     m1, m2, m3 = st.columns(3)
-    m1.metric("Pre-Game Baseline", f"{pregame_total:.1f} pts")
-    m2.metric("Projected Final Score", f"{final_proj:.1f} pts", delta=f"{shift:+.1f} shift")
-    m3.metric("Live Market Line", f"{live_book_line:.1f} pts")
+    m1.metric("Projected Total", f"{final_proj:.1f} pts", delta=f"{final_proj - pregame_total:+.1f} shift")
+    m2.metric(f"{home_team} Win Expectancy", f"{home_win_prob * 100:.1f}%")
+    m3.metric(f"{away_team} Win Expectancy", f"{away_win_prob * 100:.1f}%")
 
     st.markdown("---")
-    st.subheader("4. Target Tiers (Good, Better, Best)")
+    st.subheader("🎯 Suggested Edge Tiers")
 
-    line_good = round(final_proj + 9.5) + 0.5
-    line_better = round(final_proj + 5.5) + 0.5
-    line_best = round(final_proj + 2.5) + 0.5
+    line_good = round(final_proj + 6.5) + 0.5
+    line_better = round(final_proj + 3.5) + 0.5
+    prob_good = calculate_win_prob(line_good, final_proj, std_bracket, is_under=True)
+    prob_better = calculate_win_prob(line_better, final_proj, std_bracket, is_under=True)
 
-    prob_good = calculate_win_prob(line_good, final_proj, 7.0, is_under=True)
-    prob_better = calculate_win_prob(line_better, final_proj, 7.0, is_under=True)
-    prob_best = calculate_win_prob(line_best, final_proj, 7.0, is_under=True)
+    c_t1, c_t2, c_t3 = st.columns(3)
+    c_t1.success(f"🟢 **Safe Floor: Under {line_good}**\n\nWin Prob: **{prob_good * 100:.1f}%**")
+    c_t2.info(f"🟡 **Balanced: Under {line_better}**\n\nWin Prob: **{prob_better * 100:.1f}%**")
+    fav_team = home_team if home_win_prob > 0.5 else away_team
+    fav_prob = max(home_win_prob, away_win_prob)
+    c_t3.warning(f"🔥 **Straight-Up Moneyline: {fav_team}**\n\nWin Prob: **{fav_prob * 100:.1f}%**")
 
-    c_good, c_better, c_best = st.columns(3)
-    with c_good:
-        st.success("🟢 **GOOD (Floor Play)**")
-        st.write(f"**Line:** Under {line_good}")
-        st.write(f"**Safety Margin:** +{line_good - final_proj:.1f} pts")
-        st.write(f"**Model Probability:** {prob_good * 100:.1f}%")
-
-    with c_better:
-        st.info("🟡 **BETTER (Balanced Edge)**")
-        st.write(f"**Line:** Under {line_better}")
-        st.write(f"**Safety Margin:** +{line_better - final_proj:.1f} pts")
-        st.write(f"**Model Probability:** {prob_better * 100:.1f}%")
-
-    with c_best:
-        st.warning("🔥 **BEST (Maximum Value)**")
-        st.write(f"**Line:** Under {line_best}")
-        st.write(f"**Safety Margin:** +{line_best - final_proj:.1f} pts")
-        st.write(f"**Model Probability:** {prob_best * 100:.1f}%")
-
+    # Lock In Form (Standard Dollar Pricing)
     st.markdown("---")
-    st.subheader(f"🔒 Lock In Bet as {current_user}")
+    st.subheader(f"🔒 Lock In Ticket as {current_user}")
 
-    with st.form("save_actual_bet_form"):
+    with st.form("single_bet_form"):
         f1, f2, f3 = st.columns(3)
-        with f1:
-            bet_direction = st.selectbox("Direction", ["Under", "Over"])
-        with f2:
-            actual_line = st.number_input("Line Taken (pts)", value=40.0, step=0.5)
-        with f3:
-            contract_price = st.number_input("Contract Cost (¢)", min_value=1, max_value=99, value=52, step=1)
-        
-        user_notes = st.text_input("Notes (e.g. Robinhood contract)")
-        lock_btn = st.form_submit_button("Lock In Bet")
+        bet_type = f1.selectbox("Wager Type", ["Game Total", "Straight Up Winner (Moneyline)"])
 
-        if lock_btn:
-            is_under = (bet_direction == "Under")
-            calc_prob = calculate_win_prob(actual_line, final_proj, 7.0, is_under=is_under)
-            new_bet = {
+        if bet_type == "Game Total":
+            side = f2.selectbox("Side", ["Under", "Over"])
+            strike = f3.number_input("Line (pts)", value=float(line_better), step=0.5)
+            picked_t = None
+        else:
+            side = "Moneyline"
+            picked_t = f2.selectbox("Winner", [home_team, away_team])
+            strike = None
+            f3.write("")
+
+        p1, p2, p3 = st.columns(3)
+        risk_amt = p1.number_input("Risk Amount ($)", min_value=1.0, value=10.0, step=5.0)
+        payout_amt = p2.number_input("Potential Total Return ($)", min_value=1.0, value=19.0, step=5.0)
+        ticket_notes = p3.text_input("Notes", "Model edge play")
+
+        lock_submit = st.form_submit_button("Lock In Bet")
+        if lock_submit:
+            if bet_type == "Game Total":
+                prob_calc = calculate_win_prob(strike, final_proj, std_bracket, is_under=(side == "Under"))
+                bet_label = f"{side} {strike}"
+            else:
+                prob_calc = home_win_prob if picked_t == home_team else away_win_prob
+                bet_label = f"{picked_t} ML"
+
+            ticket_record = {
                 "id": str(datetime.now().timestamp()),
-                "user": current_user.strip() if current_user.strip() else "Anonymous",
+                "user": current_user.strip() if current_user.strip() else "Flurk",
                 "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "type": "Single",
+                "bet_category": "Total" if bet_type == "Game Total" else "Moneyline",
                 "home_team": home_team,
                 "away_team": away_team,
+                "picked_team": picked_t,
                 "matchup": f"{away_team} @ {home_team}",
-                "bet": f"{bet_direction} {actual_line} (@ {contract_price}¢)",
-                "target_line": float(actual_line),
-                "bet_direction": bet_direction,
-                "cost_cents": int(contract_price),
-                "pregame_proj": round(pregame_total, 1),
-                "halftime_proj": round(final_proj, 1),
-                "proj_shift": f"{shift:+.1f}",
-                "original_win_prob": f"{calc_prob * 100:.1f}%",
+                "bet": bet_label,
+                "target_line": strike,
+                "bet_direction": side,
+                "risk_dollars": float(risk_amt),
+                "payout_dollars": float(payout_amt),
+                "model_proj": round(final_proj, 1),
+                "bracket": bracket_stage,
+                "win_prob": f"{prob_calc * 100:.1f}%",
                 "status": "Pending",
-                "notes": user_notes
+                "notes": ticket_notes
             }
-            st.session_state.saved_bets.insert(0, new_bet)
+            st.session_state.saved_bets.insert(0, ticket_record)
             save_bets(st.session_state.saved_bets)
-            st.success(f"Bet saved to {current_user}'s ticket history!")
+            st.success("Ticket saved to history!")
 
-# TAB 2: COMBO TICKET BUILDER
-with tab_combo:
-    st.subheader("🔗 Multi-Leg Combo Builder (3 to 5 Legs)")
-    legs_count = st.radio("Number of Legs", [3, 4, 5], horizontal=True)
-    combo_legs_data = []
+# ==========================================
+# PAGE 2: 2 TO 5 LEG COMBO BUILDER
+# ==========================================
+elif menu_choice == "2-5 Leg Combo Builder":
+    st.subheader("🔗 Multi-Leg Combo Builder (2 to 5 Legs)")
+    legs_count = st.radio("Select Number of Legs", [2, 3, 4, 5], horizontal=True)
+
+    combo_legs = []
     compound_prob = 1.0
-
     game_choices = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data] if games_data else ["Manual Matchup"]
 
     for i in range(legs_count):
-        st.markdown(f"### Leg {i+1}")
+        st.markdown(f"#### Leg {i+1}")
         def_idx = min(i, len(game_choices) - 1)
-        selected_leg_idx = st.selectbox(f"Select Matchup for Leg {i+1}", range(len(game_choices)), index=def_idx, format_func=lambda x: game_choices[x], key=f"cb_picker_{i}")
-        
+        selected_idx = st.selectbox(f"Matchup for Leg {i+1}", range(len(game_choices)), index=def_idx, format_func=lambda x: game_choices[x], key=f"leg_sel_{i}")
+
         if games_data:
-            leg_g = games_data[selected_leg_idx]
-            leg_gid = leg_g.get("id", str(selected_leg_idx))
-            def_home = leg_g["home_team"]
-            def_away = leg_g["away_team"]
-            def_home_score = leg_g["home_score"]
-            def_away_score = leg_g["away_score"]
+            leg_g = games_data[selected_idx]
+            d_h, d_a = leg_g["home_team"], leg_g["away_team"]
+            d_h_pts, d_a_pts = leg_g["home_score"], leg_g["away_score"]
+            d_h_rec, d_a_rec = leg_g.get("home_record", "0-0"), leg_g.get("away_record", "0-0")
         else:
-            leg_gid = f"man_{i}"
-            def_home = f"Home {i+1}"
-            def_away = f"Away {i+1}"
-            def_home_score = 14
-            def_away_score = 10
+            d_h, d_a = f"Home {i+1}", f"Away {i+1}"
+            d_h_pts, d_a_pts = 14, 10
+            d_h_rec, d_a_rec = "5-2", "4-3"
 
-        l_key = f"leg_{i}_{leg_gid}"
+        col_a, col_b, col_c = st.columns(3)
+        wager_cat = col_a.selectbox(f"Wager Type (Leg {i+1})", ["Game Total", "Straight Up Winner"], key=f"wtype_{i}")
 
-        c_sub1, c_sub2, c_sub3, c_sub4 = st.columns(4)
-        with c_sub1:
-            pre_tot = st.number_input(f"Pre-Game Total", value=47.5, step=0.5, key=f"c_pre_{l_key}")
-        with c_sub2:
-            h_pts = st.number_input(f"{def_home} Pts", min_value=0, value=def_home_score, key=f"c_hpts_{l_key}")
-        with c_sub3:
-            a_pts = st.number_input(f"{def_away} Pts", min_value=0, value=def_away_score, key=f"c_apts_{l_key}")
-        with c_sub4:
-            leg_h1 = h_pts + a_pts
-            leg_margin = abs(h_pts - a_pts)
-            leg_pace_diff = leg_h1 - (pre_tot * 0.525)
-            leg_script = -3.5 if leg_margin >= 17 else (-1.5 if leg_margin >= 10 else (1.5 if leg_margin <= 3 else 0.0))
-            leg_final_proj = leg_h1 + (pre_tot * 0.475) + (leg_pace_diff * 0.30) + leg_script + 0.5
-            st.metric("Projected Total", f"{leg_final_proj:.1f} pts")
-
-        b_col1, b_col2, b_col3, b_col4 = st.columns(4)
-        with b_col1:
-            leg_side = st.selectbox(f"Side", ["Under", "Over"], key=f"c_side_{l_key}")
-        with b_col2:
-            default_strike = float(round(leg_final_proj + 3.0) if leg_side == "Under" else round(leg_final_proj - 3.0))
-            leg_target_line = st.number_input(f"Strike Line", value=default_strike, step=0.5, key=f"c_line_{l_key}")
-        with b_col3:
-            leg_cost = st.number_input(f"Cost (¢)", min_value=1, max_value=99, value=52, step=1, key=f"c_cost_{l_key}")
-        with b_col4:
-            leg_prob = calculate_win_prob(leg_target_line, leg_final_proj, 7.0, is_under=(leg_side == "Under"))
-            st.metric("Leg Probability", f"{leg_prob * 100:.1f}%")
+        if wager_cat == "Game Total":
+            side = col_b.selectbox("Side", ["Under", "Over"], key=f"lside_{i}")
+            strike = col_c.number_input("Line (pts)", value=44.5, step=0.5, key=f"lstrike_{i}")
+            leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
+            leg_desc = f"{d_a} @ {d_h}: {side} {strike}"
+        else:
+            winner = col_b.selectbox("Pick Winner", [d_h, d_a], key=f"lwinner_{i}")
+            strike = None
+            h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec)
+            leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
+            leg_desc = f"{d_a} @ {d_h}: {winner} ML"
+            col_c.write(f"Estimated Win: **{leg_prob * 100:.1f}%**")
 
         compound_prob *= leg_prob
-        combo_legs_data.append({
-            "matchup": f"{def_away} @ {def_home}",
-            "home_team": def_home,
-            "away_team": def_away,
-            "side": leg_side,
-            "line": leg_target_line,
-            "cost": leg_cost,
-            "prob": leg_prob
-        })
+        combo_legs.append({"desc": leg_desc, "prob": leg_prob})
         st.markdown("---")
 
-    st.metric("Compound Ticket Probability", f"{compound_prob * 100:.1f}%")
+    st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%")
 
-    with st.form("save_combo_ticket_form"):
-        combo_ticket_notes = st.text_input("Combo Notes")
-        lock_combo_btn = st.form_submit_button(f"Lock In Ticket as {current_user}")
-        if lock_combo_btn:
-            legs_display = " | ".join([f"{l['matchup']}: {l['side']} {l['line']}" for l in combo_legs_data])
+    with st.form("save_combo_form"):
+        c_r1, c_r2, c_r3 = st.columns(3)
+        c_risk = c_r1.number_input("Ticket Risk ($)", min_value=1.0, value=10.0, step=5.0)
+        c_payout = c_r2.number_input("Total Potential Return ($)", min_value=1.0, value=round(10.0 / compound_prob, 2), step=10.0)
+        c_notes = c_r3.text_input("Notes", f"{legs_count}-Leg Parlay")
+
+        save_c_btn = st.form_submit_button("Lock In Combo Ticket")
+        if save_c_btn:
+            legs_str = " | ".join([cl["desc"] for cl in combo_legs])
             combo_record = {
                 "id": str(datetime.now().timestamp()),
-                "user": current_user.strip() if current_user.strip() else "Anonymous",
+                "user": current_user.strip() if current_user.strip() else "Flurk",
                 "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "type": f"{legs_count}-Leg Combo",
-                "matchup": legs_display,
+                "bet_category": "Combo",
+                "matchup": legs_str,
                 "bet": f"{legs_count} Legs ({compound_prob * 100:.1f}% Prob)",
                 "target_line": None,
                 "bet_direction": None,
-                "cost_cents": 50,
-                "pregame_proj": "Multi",
-                "halftime_proj": f"{compound_prob * 100:.1f}% Prob",
-                "proj_shift": "N/A",
-                "original_win_prob": f"{compound_prob * 100:.1f}%",
+                "risk_dollars": float(c_risk),
+                "payout_dollars": float(c_payout),
+                "win_prob": f"{compound_prob * 100:.1f}%",
                 "status": "Pending",
-                "notes": combo_ticket_notes
+                "notes": c_notes
             }
             st.session_state.saved_bets.insert(0, combo_record)
             save_bets(st.session_state.saved_bets)
-            st.success("Ticket saved!")
+            st.success("Combo ticket locked in!")
 
-# TAB 3: BET HISTORY & LIVE GAME MONITOR
-with tab_history:
-    st.subheader("📜 Live Bet Tracker & History")
+# ==========================================
+# PAGE 3: LOCKED BETS & HISTORY
+# ==========================================
+elif menu_choice == "Locked Bets History":
+    st.subheader("📜 Locked Bets History & Live Scoreboard")
 
-    top_c1, top_c2 = st.columns([3, 1])
-    with top_c1:
-        bettor_options = ["All Bettors"] + sorted(list({b.get("user", "Flurk") for b in st.session_state.saved_bets}))
-        user_filter = st.selectbox("Filter Bets by User", bettor_options)
-    with top_c2:
-        if st.button("⚡ Auto-Resolve Final Games"):
-            resolved_count = 0
-            for b in st.session_state.saved_bets:
-                if b["status"] == "Pending" and b.get("target_line") is not None:
-                    matched = find_game_for_bet(b, games_data)
-                    if matched and (matched.get("completed", False) or "final" in matched["status"].lower()):
-                        tot = matched["away_score"] + matched["home_score"]
-                        t_line = b["target_line"]
+    b_col1, b_col2 = st.columns([3, 1])
+    user_filter = b_col1.selectbox("Filter Bettor", ["All Bettors"] + sorted(list({b.get("user", "Flurk") for b in st.session_state.saved_bets})))
+
+    if b_col2.button("⚡ Auto-Resolve Finals"):
+        res_count = 0
+        for b in st.session_state.saved_bets:
+            if b.get("status") == "Pending":
+                match_game = find_game_for_bet(b, games_data)
+                if match_game and (match_game.get("completed", False) or "final" in match_game["status"].lower()):
+                    tot = match_game["away_score"] + match_game["home_score"]
+                    b_cat = b.get("bet_category", "Total")
+                    if b_cat == "Total" and b.get("target_line") is not None:
                         is_und = (b.get("bet_direction", "Under") == "Under")
-                        b["status"] = "Won" if ((tot < t_line) if is_und else (tot > t_line)) else "Lost"
-                        resolved_count += 1
-            if resolved_count > 0:
-                save_bets(st.session_state.saved_bets)
-                st.success(f"Resolved {resolved_count} completed bets!")
-                st.rerun()
-            else:
-                st.info("No completed pending bets found.")
+                        b["status"] = "Won" if ((tot < b["target_line"]) if is_und else (tot > b["target_line"])) else "Lost"
+                        res_count += 1
+                    elif b_cat == "Moneyline" and b.get("picked_team"):
+                        h_won = match_game["home_score"] > match_game["away_score"]
+                        actual_winner = match_game["home_team"] if h_won else match_game["away_team"]
+                        b["status"] = "Won" if (b["picked_team"] == actual_winner) else "Lost"
+                        res_count += 1
+        if res_count > 0:
+            save_bets(st.session_state.saved_bets)
+            st.success(f"Resolved {res_count} tickets!")
+            st.rerun()
 
-    filtered_bets = [b for b in st.session_state.saved_bets if user_filter == "All Bettors" or b.get("user", "Flurk") == user_filter]
+    active_tickets = [b for b in st.session_state.saved_bets if user_filter == "All Bettors" or b.get("user", "Flurk") == user_filter]
 
-    if not filtered_bets:
-        st.info("No bets recorded for this filter.")
+    if not active_tickets:
+        st.info("No recorded tickets found.")
     else:
-        for idx, bet in enumerate(filtered_bets):
-            real_idx = st.session_state.saved_bets.index(bet)
+        for b in active_tickets:
+            real_idx = st.session_state.saved_bets.index(b)
             with st.container():
-                # Columns with added "Live Room" Action button
-                h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7 = st.columns([1.6, 2.3, 2.2, 2.2, 1.3, 1.1, 0.6])
-                
-                with h_col1:
-                    st.write(f"**{bet.get('user', 'Flurk')}**")
-                    st.caption(f"{bet['date']} | {bet['type']}")
+                r1, r2, r3, r4, r5 = st.columns([2, 3, 2, 2, 1])
+                r1.write(f"**{b.get('user', 'Flurk')}**\n\n`{b['date']}`\n\n{b['type']}")
+                r2.write(f"**{b['matchup']}**\n\nPick: `{b['bet']}`\n\nRisk: **${b.get('risk_dollars', 10.0):.2f}** | Payout: **${b.get('payout_dollars', 19.0):.2f}**")
 
-                with h_col2:
-                    st.write(f"**{bet['matchup']}**")
-                    st.write(f"Pick: `{bet['bet']}`")
-                    if bet.get("notes"):
-                        st.caption(f"Notes: {bet['notes']}")
+                live_m = find_game_for_bet(b, games_data)
+                if live_m:
+                    tot_score = live_m['away_score'] + live_m['home_score']
+                    r3.write(f"**{live_m['away_short']} {live_m['away_score']} - {live_m['home_score']} {live_m['home_short']}**\n\nTotal: **{tot_score} pts** ({live_m['status']})")
+                else:
+                    r3.write("Score: *Final / Inactive*")
 
-                target_line = bet.get("target_line")
-                bet_dir = bet.get("bet_direction", "Under")
-                if target_line is None:
-                    match_num = re.search(r"(\d+(\.\d+)?)", bet.get("bet", ""))
-                    if match_num:
-                        target_line = float(match_num.group(1))
-                    if "over" in bet.get("bet", "").lower():
-                        bet_dir = "Over"
+                status_list = ["Pending", "Won", "Lost"]
+                cur_stat_idx = status_list.index(b["status"]) if b["status"] in status_list else 0
+                new_stat = r4.selectbox("Result", status_list, index=cur_stat_idx, key=f"stat_{b['id']}")
+                if new_stat != b["status"]:
+                    st.session_state.saved_bets[real_idx]["status"] = new_stat
+                    save_bets(st.session_state.saved_bets)
+                    st.rerun()
 
-                is_under_bet = (bet_dir == "Under")
-                live_game_info = find_game_for_bet(bet, games_data)
+                if r5.button("🔍 View", key=f"vw_{b['id']}"):
+                    st.session_state.selected_bet_id = b["id"]
+                    st.rerun()
 
-                with h_col3:
-                    if live_game_info:
-                        curr_away = live_game_info["away_score"]
-                        curr_home = live_game_info["home_score"]
-                        total_pts = curr_away + curr_home
-                        status_str = live_game_info["status"]
-                        
-                        st.write(f"**{live_game_info['away_short']} {curr_away} - {curr_home} {live_game_info['home_short']}**")
-                        st.write(f"Total: **{total_pts} pts** ({status_str})")
-                    else:
-                        st.write("Score: *Final / Inactive*")
-
-                with h_col4:
-                    if live_game_info and target_line is not None:
-                        curr_total = live_game_info["away_score"] + live_game_info["home_score"]
-                        is_final = live_game_info.get("completed", False) or "final" in live_game_info["status"].lower()
-                        
-                        if is_final:
-                            won = (curr_total < target_line) if is_under_bet else (curr_total > target_line)
-                            st.success("🏆 **WON**") if won else st.error("❌ **LOST**")
-                        else:
-                            period = live_game_info.get("period", 2)
-                            decay_sigma = 7.0 if period <= 2 else (4.8 if period == 3 else 2.4)
-                            frac_rem = 0.5 if period <= 2 else (0.25 if period == 3 else 0.08)
-                            
-                            halftime_pts = bet.get("halftime_proj", curr_total + 10.0)
-                            if isinstance(halftime_pts, str):
-                                try:
-                                    halftime_pts = float(halftime_pts.replace(" pts", "").replace("% Prob", ""))
-                                except:
-                                    halftime_pts = curr_total + 10.0
-
-                            in_game_projected = curr_total + ((halftime_pts - curr_total) * frac_rem) if halftime_pts > curr_total else curr_total + 3.0
-                            current_prob = calculate_win_prob(target_line, in_game_projected, std_dev=decay_sigma, is_under=is_under_bet)
-                            prob_pct = current_prob * 100
-                            
-                            st.write(f"Live Prob: **{prob_pct:.1f}%**")
-                            cushion = target_line - curr_total if is_under_bet else curr_total - target_line
-                            st.caption(f"Cushion: {cushion:+.1f} pts")
-                    else:
-                        st.write(f"Baseline: **{bet['pregame_proj']}**")
-                        st.write(f"Halftime: **{bet['halftime_proj']}**")
-
-                with h_col5:
-                    status_options = ["Pending", "Won", "Lost"]
-                    current_idx = status_options.index(bet["status"]) if bet["status"] in status_options else 0
-                    new_status = st.selectbox("Result", status_options, index=current_idx, key=f"status_{bet['id']}")
-                    if new_status != bet["status"]:
-                        st.session_state.saved_bets[real_idx]["status"] = new_status
-                        save_bets(st.session_state.saved_bets)
-                        st.rerun()
-
-                with h_col6:
-                    if st.button("🔍 Live Room", key=f"view_{bet['id']}"):
-                        st.session_state.selected_bet_id = bet["id"]
-                        st.rerun()
-
-                with h_col7:
-                    if st.button("🗑️", key=f"del_{bet['id']}"):
-                        st.session_state.saved_bets.pop(real_idx)
-                        save_bets(st.session_state.saved_bets)
-                        st.rerun()
+                if r5.button("🗑️", key=f"dl_{b['id']}"):
+                    st.session_state.saved_bets.pop(real_idx)
+                    save_bets(st.session_state.saved_bets)
+                    st.rerun()
 
                 st.markdown("---")
 
-# TAB 4: COMMUNITY LEADERBOARD
-with tab_board:
+# ==========================================
+# PAGE 4: SQUAD LEADERBOARD
+# ==========================================
+elif menu_choice == "🏆 Squad Leaderboard":
     st.subheader("🏆 Flurkstradamus Squad Leaderboard")
-    
-    users_stats = {}
-    for bet in st.session_state.saved_bets:
-        u = bet.get("user", "Flurk")
-        if u not in users_stats:
-            users_stats[u] = {"Wins": 0, "Losses": 0, "Pending": 0, "Total": 0, "Net_Profit_Cents": 0, "Total_Risked_Cents": 0}
-        
-        status = bet.get("status", "Pending")
-        cost = bet.get("cost_cents", 50)
-        users_stats[u]["Total"] += 1
-        
-        if status in ["Won", "Lost"]:
-            users_stats[u]["Total_Risked_Cents"] += cost
-        
-        if status == "Won":
-            users_stats[u]["Wins"] += 1
-            users_stats[u]["Net_Profit_Cents"] += (100 - cost)
-        elif status == "Lost":
-            users_stats[u]["Losses"] += 1
-            users_stats[u]["Net_Profit_Cents"] -= cost
-        else:
-            users_stats[u]["Pending"] += 1
 
-    board_rows = []
-    for u, s in users_stats.items():
+    user_stats = {}
+    for b in st.session_state.saved_bets:
+        u = b.get("user", "Flurk")
+        if u not in user_stats:
+            user_stats[u] = {"Wins": 0, "Losses": 0, "Pending": 0, "Total_Risk": 0.0, "Net_Profit": 0.0}
+
+        risk = b.get("risk_dollars", 10.0)
+        payout = b.get("payout_dollars", 19.0)
+        stat = b.get("status", "Pending")
+
+        if stat == "Won":
+            user_stats[u]["Wins"] += 1
+            user_stats[u]["Total_Risk"] += risk
+            user_stats[u]["Net_Profit"] += (payout - risk)
+        elif stat == "Lost":
+            user_stats[u]["Losses"] += 1
+            user_stats[u]["Total_Risk"] += risk
+            user_stats[u]["Net_Profit"] -= risk
+        else:
+            user_stats[u]["Pending"] += 1
+
+    board = []
+    for u, s in user_stats.items():
         decided = s["Wins"] + s["Losses"]
         win_rate = (s["Wins"] / decided * 100) if decided > 0 else 0.0
-        profit_dollars = s["Net_Profit_Cents"] / 100.0
-        roi = (s["Net_Profit_Cents"] / s["Total_Risked_Cents"] * 100) if s["Total_Risked_Cents"] > 0 else 0.0
-        
-        badge = "🎯 Sniper" if win_rate >= 65 and decided >= 3 else ("🔥 On Fire" if s["Wins"] >= 3 and s["Losses"] == 0 else ("🥶 Cold" if s["Losses"] >= 3 and win_rate < 35 else "⚡ Contender"))
+        roi = (s["Net_Profit"] / s["Total_Risk"] * 100) if s["Total_Risk"] > 0 else 0.0
+        badge = "🎯 Sniper" if win_rate >= 65 and decided >= 3 else ("🔥 On Fire" if s["Wins"] >= 3 and s["Losses"] == 0 else "⚡ Contender")
 
-        board_rows.append({
+        board.append({
             "user": f"{u} ({badge})",
             "record": f"{s['Wins']}-{s['Losses']}-{s['Pending']}",
             "win_rate": f"{win_rate:.1f}%",
             "roi": f"{roi:+.1f}%",
             "decided": decided,
-            "profit": profit_dollars
+            "net_profit": s["Net_Profit"]
         })
 
-    board_rows.sort(key=lambda x: x["profit"], reverse=True)
-    
-    if not board_rows:
-        st.info("No recorded bets yet to calculate leaderboard standings.")
+    board.sort(key=lambda x: x["net_profit"], reverse=True)
+
+    if not board:
+        st.info("No recorded results available yet.")
     else:
-        header = "| Rank | Bettor | Record (W-L-P) | Win Rate | ROI | Decided | Est. Profit/Loss |\n|---|---|---|---|---|---|---|\n"
-        rows_str = ""
-        for i, row in enumerate(board_rows):
-            p_str = f"+${row['profit']:.2f}" if row['profit'] >= 0 else f"-${abs(row['profit']):.2f}"
-            rows_str += f"| **#{i+1}** | **{row['user']}** | `{row['record']}` | {row['win_rate']} | {row['roi']} | {row['decided']} | **{p_str}** |\n"
-        
-        st.markdown(header + rows_str)
+        header = "| Rank | Bettor | Record (W-L-P) | Win Rate | ROI % | Decided | Net Profit ($) |\n|---|---|---|---|---|---|---|\n"
+        rows = ""
+        for i, row in enumerate(board):
+            p_val = f"+${row['net_profit']:.2f}" if row['net_profit'] >= 0 else f"-${abs(row['net_profit']):.2f}"
+            rows += f"| **#{i+1}** | **{row['user']}** | `{row['record']}` | {row['win_rate']} | {row['roi']} | {row['decided']} | **{p_val}** |\n"
+        st.markdown(header + rows)
