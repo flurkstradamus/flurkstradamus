@@ -129,6 +129,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def get_current_et_time():
+    """Returns true Eastern Time (ET) regardless of host server timezone."""
+    utc_now = datetime.utcnow()
+    et_now = utc_now - timedelta(hours=4)
+    return et_now
+
 def clean_abbr(team_name, espn_abbr):
     if team_name in OFFICIAL_ABBR_MAP:
         return OFFICIAL_ABBR_MAP[team_name]
@@ -273,7 +279,7 @@ if st.session_state.logged_in_user is None:
                         "password_hash": hash_password(new_pword),
                         "is_admin": False,
                         "is_banned": False,
-                        "created_at": datetime.now().strftime("%Y-%m-%d"),
+                        "created_at": get_current_et_time().strftime("%Y-%m-%d"),
                         "favorite_team": fav_team.strip() if fav_team else "NFL",
                         "reset_token": None
                     }
@@ -712,29 +718,80 @@ elif menu_choice == "🔥 Live Squad Feed":
                     cat_label = b.get("bet_category", b.get("type", "Single"))
                     st.write(f"**Type:** `{cat_label}`")
 
-# 4. THE LOCKER ROOM
+# ==========================================
+# 4. THE LOCKER ROOM (EASTERN TIME, THREADED REPLIES & REACTIONS)
+# ==========================================
 elif menu_choice == "💬 The Locker Room":
     st.subheader("💬 The Locker Room")
-    st.caption("Squad banter & game commentary.")
+    st.caption("Live squad banter, message replies, and quick reactions.")
 
     with st.form("send_msg_form", clear_on_submit=True):
-        user_msg = st.text_input("Send a message", placeholder="Trash talk here...")
+        user_msg = st.text_input("Send a message", placeholder="Talk trash or share your live angle...")
         send_btn = st.form_submit_button("Post Message", use_container_width=True)
         if send_btn and user_msg.strip():
+            et_now = get_current_et_time()
             new_msg = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip(),
-                "time": datetime.now().strftime("%I:%M %p"),
-                "text": user_msg.strip()
+                "time": et_now.strftime("%I:%M %p ET"),
+                "text": user_msg.strip(),
+                "reactions": {},
+                "replies": []
             }
             st.session_state.chat_messages.insert(0, new_msg)
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
             st.rerun()
 
-    for m in st.session_state.chat_messages[:30]:
+    for m in st.session_state.chat_messages[:35]:
+        m_id = m.get("id", str(random.random()))
+        if "reactions" not in m:
+            m["reactions"] = {}
+        if "replies" not in m:
+            m["replies"] = []
+
         with st.container(border=True):
-            st.markdown(f"**{m.get('user')}** <span style='opacity:0.6;font-size:0.8rem;'>({m.get('time')})</span>", unsafe_allow_html=True)
-            st.write(m.get('text'))
+            st.markdown(f"**{m.get('user')}** &nbsp; <span style='opacity:0.55;font-size:0.8rem;'>{m.get('time')}</span>", unsafe_allow_html=True)
+            st.write(m.get("text"))
+
+            # Display active reactions
+            if m["reactions"]:
+                rx_badges = [f"{emoji} {count}" for emoji, count in m["reactions"].items() if count > 0]
+                if rx_badges:
+                    st.markdown(" ".join([f"<span style='background-color:rgba(255,255,255,0.08);padding:2px 8px;border-radius:12px;font-size:0.8rem;margin-right:4px;'>{b}</span>" for b in rx_badges]), unsafe_allow_html=True)
+
+            # Reactions Row
+            col_rx, col_rep_btn = st.columns([6, 4], vertical_alignment="center")
+            with col_rx:
+                rx_cols = st.columns(5)
+                emojis = ["🔥", "💀", "💰", "🏈", "🧢"]
+                for e_idx, emoji in enumerate(emojis):
+                    if rx_cols[e_idx].button(emoji, key=f"rx_{m_id}_{emoji}"):
+                        m["reactions"][emoji] = m["reactions"].get(emoji, 0) + 1
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
+                        st.rerun()
+
+            # Threaded Replies Expander
+            with st.expander(f"💬 Replies ({len(m['replies'])})", expanded=False):
+                for rep in m["replies"]:
+                    st.markdown(f"""
+                    <div style="border-left: 2px solid rgba(255,255,255,0.2); padding-left: 8px; margin-bottom: 6px;">
+                        <strong style="font-size:0.85rem;">{rep.get('user')}</strong> <span style="opacity:0.5;font-size:0.75rem;">({rep.get('time')})</span><br>
+                        <span style="font-size:0.9rem;">{rep.get('text')}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with st.form(f"reply_form_{m_id}", clear_on_submit=True):
+                    rep_input = st.text_input("Reply to message", placeholder="Your reply...", key=f"rep_in_{m_id}")
+                    post_rep = st.form_submit_button("Post Reply")
+                    if post_rep and rep_input.strip():
+                        et_now = get_current_et_time()
+                        m["replies"].append({
+                            "user": current_user.strip(),
+                            "time": et_now.strftime("%I:%M %p ET"),
+                            "text": rep_input.strip()
+                        })
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
+                        st.rerun()
 
 # 5. SQUAD LEADERBOARD
 elif menu_choice == "🏆 Squad Leaderboard":
@@ -1080,12 +1137,11 @@ elif menu_choice == "📖 Model Methodology & Math":
         st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
         st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
 
-# 9. 2-12 LEG COMBO BUILDER (WITH SAFE INDEX BOUNDS-CHECKING)
+# 9. 2-12 LEG COMBO BUILDER
 elif menu_choice == "2-12 Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
     game_choices = [f"[{gm['league']}] {gm['away_short']} @ {gm['home_short']} ({gm.get('kickoff', gm['status'])})" for gm in games_data]
 
-    # Bounds-check active legs if games_data shrank
     if st.session_state.combo_active_legs and games_data:
         for leg in st.session_state.combo_active_legs:
             if leg.get("matchup_idx", 0) >= len(games_data):
@@ -1104,7 +1160,6 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 "picked_team": g_item["home_team"]
             })
 
-    # AI Combo Recommender & Strategy Scanner
     with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
         st.markdown("#### Automated Strategy Generator")
         col_strat1, col_strat2 = st.columns(2)
@@ -1235,9 +1290,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
             st.session_state.ai_recommended_combo = selected_ai_legs
             st.session_state.editing_ai_combo = False
 
-        # SAFE BOUNDS-CHECKED RENDERING FOR AI RECOMMENDED COMBO
         if st.session_state.ai_recommended_combo and games_data:
-            # Drop any stale legs from a previously larger slate
             valid_legs = [l for l in st.session_state.ai_recommended_combo if 0 <= l.get("matchup_idx", -1) < len(games_data)]
             st.session_state.ai_recommended_combo = valid_legs
 
@@ -1457,7 +1510,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
             combo_record = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip(),
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "date": get_current_et_time().strftime("%Y-%m-%d %H:%M ET"),
                 "type": f"{len(combo_legs)}-Leg Combo",
                 "bet_category": "Combo",
                 "matchup": legs_str,
@@ -1732,7 +1785,7 @@ elif menu_choice == "Single Game Engine":
 
     with st.form(f"single_bet_form_v{form_ver}"):
         st.markdown(f"""
-        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
             <div style="display: flex; align-items: center; gap: 8px;">
                 <img src="{g.get('away_logo', DEFAULT_LOGO)}" width="28" height="28" style="border-radius: 50%;">
                 <strong>{g['away_short']}</strong> @
@@ -1771,7 +1824,7 @@ elif menu_choice == "Single Game Engine":
             ticket_record = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip(),
-                "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "date": get_current_et_time().strftime("%Y-%m-%d %H:%M ET"),
                 "type": "Single",
                 "bet_category": cat,
                 "home_team": home_team,
