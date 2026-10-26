@@ -36,27 +36,62 @@ st.markdown("""
         }
     }
 
-    /* ELIMINATE THE TOP GAP IN RECOMMENDATION CARDS */
-    div[data-testid="stVerticalBlockBorderWrapper"] {
+    /* BALANCED, TIGHT RECOMMENDATION ROWS */
+    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 8px !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
         background-color: rgba(255, 255, 255, 0.02) !important;
         padding: 6px 12px !important;
         margin-top: 3px !important;
         margin-bottom: 3px !important;
+        transition: all 0.2s ease-in-out;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"] > div {
+    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border-color: rgba(34, 197, 94, 0.4) !important;
+    }
+
+    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] > div {
         padding: 0 !important;
         margin: 0 !important;
         gap: 0 !important;
     }
-    div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stMarkdownContainer"] p {
+    div.rec-card-container div[data-testid="stMarkdownContainer"] p {
         margin: 0 !important;
         padding: 0 !important;
         line-height: 1.2 !important;
     }
 
-    /* TIGHT & LEFT-ALIGNED SIDEBAR BUTTONS */
+    /* HOVER-TO-REVEAL REMOVE BUTTON */
+    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stButton"] {
+        opacity: 0;
+        transition: opacity 0.2s ease-in-out;
+    }
+    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"]:hover div[data-testid="stButton"] {
+        opacity: 1 !important;
+    }
+
+    /* BUTTON STYLING (FLUSH RIGHT INSIDE CARD) */
+    div.rec-card-container div[data-testid="stButton"] button {
+        float: right !important;
+        padding: 1px 7px !important;
+        min-height: 1.5rem !important;
+        height: 1.5rem !important;
+        font-size: 0.75rem !important;
+        font-weight: 700 !important;
+        line-height: 1.4 !important;
+        border: 1px solid rgba(239, 68, 68, 0.45) !important;
+        color: #ef4444 !important;
+        background-color: rgba(239, 68, 68, 0.08) !important;
+        margin: 0 !important;
+        border-radius: 4px !important;
+    }
+    div.rec-card-container div[data-testid="stButton"] button:hover {
+        background-color: rgba(239, 68, 68, 0.25) !important;
+        border-color: #ef4444 !important;
+    }
+
+    /* LEFT-ALIGNED SIDEBAR BUTTONS */
     section[data-testid="stSidebar"] div[data-testid="stButton"] {
         margin-bottom: 2px !important;
         margin-top: 0px !important;
@@ -72,25 +107,6 @@ st.markdown("""
         font-size: 0.92rem !important;
         font-weight: 600 !important;
         border-radius: 6px !important;
-    }
-
-    /* FLUSH RIGHT MINI DELETE BUTTON */
-    div[data-testid="stColumn"]:last-child div[data-testid="stButton"] button {
-        float: right !important;
-        padding: 0px !important;
-        min-height: 1.45rem !important;
-        height: 1.45rem !important;
-        width: 1.45rem !important;
-        font-size: 0.72rem !important;
-        line-height: 1.45rem !important;
-        border: 1px solid rgba(239, 68, 68, 0.35) !important;
-        color: #ef4444 !important;
-        background-color: transparent !important;
-        margin: 0 !important;
-    }
-    div[data-testid="stColumn"]:last-child div[data-testid="stButton"] button:hover {
-        background-color: rgba(239, 68, 68, 0.15) !important;
-        border-color: #ef4444 !important;
     }
 
     .rec-item-row {
@@ -710,7 +726,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         "picked_team": c_h,
                         "prob": p,
                         "desc": f"{'Under' if is_u else 'Over'} {tgt_line}",
-                        "detail": f"Edge: {edge:.1f} pts (Proj {proj_tot:.1f})",
+                        "detail": f"Edge: {edge:.1f} pts",
                         "score_metric": edge * p
                     })
 
@@ -767,7 +783,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.session_state.ai_recommended_combo = selected_ai_legs
 
-        # INTEGRATED ULTRA-COMPACT CARDS WITHOUT IN-BETWEEN LABELS
+        # INTEGRATED ULTRA-COMPACT CARDS WITHOUT IN-BETWEEN LABELS OR EXTRA TOP GAP
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -776,7 +792,8 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
 
-            # Render each recommended leg in an equalized, centered container
+            # Dedicated container class for CSS targeting
+            st.markdown('<div class="rec-card-container">', unsafe_allow_html=True)
             for idx_ai, l_ai in enumerate(list(st.session_state.ai_recommended_combo)):
                 g_match = games_data[l_ai["matchup_idx"]]
                 leg_key = l_ai.get("leg_id", f"leg_{idx_ai}_{l_ai['matchup_idx']}")
@@ -815,6 +832,8 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         if st.button("✕", key=f"btn_remove_{leg_key}", help=f"Remove Leg {idx_ai+1}"):
                             st.session_state.ai_recommended_combo = [item for item in st.session_state.ai_recommended_combo if item.get("leg_id") != l_ai.get("leg_id")]
                             st.rerun()
+
+            st.markdown('</div>', unsafe_allow_html=True)
 
             m_rec1, m_rec2 = st.columns([2, 1], vertical_alignment="center")
             m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta=f"{len(st.session_state.ai_recommended_combo)} Legs Total")
@@ -1185,7 +1204,7 @@ elif menu_choice == "📖 Model Methodology & Math":
               * *Decisive ($10-16$ pt margin):* $-1.5$ pts.
               * *Close ($0-3$ pt margin):* $+1.5$ pts (stopping clock, hurry-up drives).
             * **3rd Quarter:** Locks 75% of actual scoring ($\sigma = 4.0$).
-            * **4th Quarter / Late Game:** Closes remaining scoring volume to actual game pace ($\sigma = 1.8$).
+            * **4th Quarter / Late Game:** Closes remaining scoring volume to actual game pace hazards ($\sigma = 1.8$).
             * **Final / Completed:** All remaining variance decays to zero ($\sigma \to 0$); probabilities resolve to 100% or 0%.
             """
         )
