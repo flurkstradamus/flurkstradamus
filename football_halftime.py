@@ -155,7 +155,7 @@ if st.session_state.logged_in_user is None:
     
     with tab_login:
         with st.form("user_login_form"):
-            uname = st.text_input("Username", placeholder="e.g. flurk").strip().lower()
+            uname = st.text_input("Username", placeholder="e.g. sharpbettor").strip().lower()
             pword = st.text_input("Password", type="password", placeholder="••••••••")
             submit_login = st.form_submit_button("Sign In to Flurkstradamus", use_container_width=True)
             
@@ -170,8 +170,8 @@ if st.session_state.logged_in_user is None:
                     
     with tab_signup:
         with st.form("user_signup_form"):
-            new_uname = st.text_input("Choose Username (Login ID)", placeholder="e.g. sharpshooter").strip().lower()
-            new_dname = st.text_input("Display Name / Bettor Handle", placeholder="e.g. Sharp Shooter")
+            new_uname = st.text_input("Choose Username (Login ID)", placeholder="e.g. gridiron_guru").strip().lower()
+            new_dname = st.text_input("Display Name / Bettor Handle", placeholder="e.g. Gridiron Guru")
             new_pword = st.text_input("Choose Password", type="password", placeholder="••••••••")
             new_pword_confirm = st.text_input("Confirm Password", type="password", placeholder="••••••••")
             fav_team = st.text_input("Favorite Team (Optional)", placeholder="e.g. Philadelphia Eagles")
@@ -202,9 +202,16 @@ if st.session_state.logged_in_user is None:
                     st.rerun()
     st.stop()
 
-# ACTIVE USER IDENTITY
+# ACTIVE USER IDENTITY (NORMALIZED FOR "FLURK" BET HISTORY RECOVERY)
 current_user_profile = st.session_state.logged_in_user
-current_user = current_user_profile.get("display_name", current_user_profile.get("username", "Flurk"))
+active_uname = current_user_profile.get("username", "").strip().lower()
+
+# Ensure "Flurk" is the canonical display name if admin logs in
+if active_uname == "flurk":
+    current_user = "Flurk"
+else:
+    current_user = current_user_profile.get("display_name", current_user_profile.get("username", "Bettor"))
+
 is_user_admin = current_user_profile.get("is_admin", False)
 
 # ==========================================
@@ -346,7 +353,6 @@ if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True):
     st.session_state.user_accounts = u_data
     st.rerun()
 
-# Ingest games for the active league
 games_data = get_extended_games(league)
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages)
 
@@ -529,10 +535,13 @@ elif menu_choice == "🏆 Squad Leaderboard":
     for b in st.session_state.saved_bets:
         u_raw = b.get("user", "Flurk")
         u_clean = u_raw.strip() if u_raw.strip() else "Flurk"
+        # Normalize handle: match 'flurk' and 'Flurk' together
         u_key = u_clean.lower()
+        display_name = "Flurk" if u_key == "flurk" else u_clean
+
         if u_key not in user_stats:
             user_stats[u_key] = {
-                "display_name": u_clean,
+                "display_name": display_name,
                 "Wins": 0,
                 "Losses": 0,
                 "Pending": 0,
@@ -597,13 +606,19 @@ elif menu_choice == "🏆 Squad Leaderboard":
                     st.markdown(f"<div style='text-align:right;'><span style='color:{p_color};font-size:1.4rem;font-weight:700;'>{p_text}</span></div>", unsafe_allow_html=True)
                     st.markdown(f"<div style='text-align:right;opacity:0.6;font-size:0.85rem;'>ROI: {bettor['roi']:+.1f}%</div>", unsafe_allow_html=True)
 
-# 6. LOCKED BETS HISTORY
+# 6. LOCKED BETS HISTORY (RECOVERS PAST "FLURK" BETS)
 elif menu_choice == "Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
     st.caption("Your personalized active slips, scores, and settled tickets.")
 
     curr_user_clean = current_user.strip().lower()
-    my_tickets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() == curr_user_clean]
+    
+    # Matches tickets whether they were logged as "Flurk", "flurk", or under your handle
+    my_tickets = [
+        b for b in st.session_state.saved_bets 
+        if b.get("user", "").strip().lower() == curr_user_clean 
+        or (curr_user_clean == "flurk" and b.get("user", "").strip().lower() in ["flurk", "admin"])
+    ]
 
     h_top1, h_top2 = st.columns([3, 1])
     with h_top1:
@@ -644,7 +659,7 @@ elif menu_choice == "Locked Bets History":
                 else:
                     card_style = "border: 1.5px solid rgba(255, 255, 255, 0.2); background-color: rgba(255, 255, 255, 0.03);"
                     badge_html = "<span style='background-color:rgba(255, 255, 255, 0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ PENDING</span>"
-
+            
             if live_m:
                 a_short = live_m.get("away_short", "AWAY")
                 h_short = live_m.get("home_short", "HOME")
@@ -687,7 +702,8 @@ elif menu_choice == "Locked Bets History":
                     roi_pct = ((p_val - r_val) / max(r_val, 0.01)) * 100
                     st.markdown(f"<span class='clean-subtext'>Risk: ${r_val:.2f} | Return: ${p_val:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
                 with c_row3:
-                    st.caption(f"Type: {b.get('type', 'Single')}")
+                    cat_label = b.get("bet_category", b.get("type", "Single"))
+                    st.caption(f"Type: {cat_label}")
                 with c_row4:
                     if st.button("🗑️", key=f"del_slip_{b['id']}", help="Delete this ticket", use_container_width=True):
                         st.session_state.saved_bets.pop(real_idx)
@@ -751,7 +767,6 @@ elif menu_choice == "2-12 Leg Combo Builder":
             })
 
     combo_legs = []
-    parsed_legs = []
     compound_prob = 1.0
 
     ver = st.session_state.combo_version
@@ -810,7 +825,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts)
             st.success("Combo ticket locked in!")
 
-# 10. SINGLE GAME ENGINE (FULL BODY)
+# 10. SINGLE GAME ENGINE
 elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Engine")
 
@@ -1067,7 +1082,7 @@ elif menu_choice == "Single Game Engine":
 
     with st.form(f"single_bet_form_v{form_ver}"):
         st.markdown(f"""
-        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
             <div style="display: flex; align-items: center; gap: 8px;">
                 <img src="{g.get('away_logo', DEFAULT_LOGO)}" width="28" height="28" style="border-radius: 50%;">
                 <strong>{g['away_short']}</strong> @
