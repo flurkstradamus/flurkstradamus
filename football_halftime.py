@@ -160,8 +160,6 @@ if "combo_version" not in st.session_state:
 # Single Game State Keys
 if "single_selected_idx" not in st.session_state:
     st.session_state.single_selected_idx = 0
-if "single_ai_rec" not in st.session_state:
-    st.session_state.single_ai_rec = None
 if "single_applied_pick" not in st.session_state:
     st.session_state.single_applied_pick = None
 if "single_form_version" not in st.session_state:
@@ -539,7 +537,7 @@ elif menu_choice == "💬 The Locker Room":
             st.write(m.get('text'))
 
 # ==========================================
-# PAGE 1: SINGLE GAME ENGINE (WITH 2H PROJECTIONS, SPREAD PROJECTIONS & GOOD/BETTER/BEST)
+# PAGE 1: SINGLE GAME ENGINE (WITH 2H, SPREADS & BET-TYPE FILTER)
 # ==========================================
 elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Engine")
@@ -637,11 +635,10 @@ elif menu_choice == "Single Game Engine":
     ml_swing = (live_h_prob - pregame_h_prob) * 100
 
     # 4. Point Spread Projections & Live In-Game ATS Drift
-    market_spd = float(espn_spread)  # E.g. -3.5 (Home favored by 3.5)
-    pregame_proj_margin = -market_spd  # Baseline expected home margin
+    market_spd = float(espn_spread)
+    pregame_proj_margin = -market_spd
     current_margin = h_pts - a_pts
     
-    # Calculate live end-of-game projected point differential (Home - Away)
     if is_completed:
         live_proj_margin = float(current_margin)
     elif detected_stage == "Pre-Game":
@@ -655,12 +652,11 @@ elif menu_choice == "Single Game Engine":
     else:
         live_proj_margin = current_margin
 
-    # Drift in margin vs opening spread
     spread_drift = live_proj_margin - pregame_proj_margin
     home_cover_exp = calculate_spread_prob(live_proj_margin, market_spd, std_bracket)
     away_cover_exp = 1.0 - home_cover_exp
 
-    # Projection Dashboard Cards (Now includes Spreads & Margin Drift)
+    # Projection Dashboard Cards
     with st.container(border=True):
         st.markdown("#### 📊 Live Model Drift & Projections")
         m_col1, m_col2, m_col3, m_col4 = st.columns(4)
@@ -677,13 +673,24 @@ elif menu_choice == "Single Game Engine":
 
     # ----------------------------------------------------
     # TIERED STRATEGY RECOMMENDATIONS (GOOD / BETTER / BEST)
-    # Includes: Spreads, Over/Under, Moneylines, & 2H Totals
+    # Target Slate & Bet Type Selectors
     # ----------------------------------------------------
     with st.expander("🤖 AI Single Game Strategy Engine (Tiered Edges)", expanded=True):
-        col_scope, col_dummy = st.columns([3, 1])
+        col_scope, col_type_filter = st.columns(2)
         scope_choice = col_scope.selectbox(
             "Game Strategy Target Slate",
             ["🎯 Focus on Selected Game Above", "⚡ Scan Full Slate for Highest Discrepancy"]
+        )
+
+        filter_choice = col_type_filter.selectbox(
+            "Type of Bet",
+            [
+                "⚡ Let the System Pick (All Markets Combined)",
+                "📊 Full Game Total Score Over/Under",
+                "⏱️ 2nd Half Total Points",
+                "🏆 Team Win/Loser (Moneyline)",
+                "🛡️ Spread (ATS Cover)"
+            ]
         )
 
         active_game_for_strat = g
@@ -693,98 +700,237 @@ elif menu_choice == "Single Game Engine":
                 live_pool = games_data
             active_game_for_strat = max(live_pool, key=lambda x: abs((x["home_score"] + x["away_score"] + (x.get("market_ou", 47.5)*0.475)) - x.get("market_ou", 47.5)))
 
-        st.caption(f"Analyzing spread covers, 2H totals, scoring pace, and outright dominance for **{active_game_for_strat['away_short']} @ {active_game_for_strat['home_short']}**:")
+        st.caption(f"Analyzing strategy edges for **{active_game_for_strat['away_short']} @ {active_game_for_strat['home_short']}**:")
 
-        # Generate candidates for Good, Better, Best
         strat_candidates = []
 
-        # 1. Point Spread Recommendation (ATS)
+        # 1. Spread Candidates
         if home_cover_exp >= 0.50:
-            spd_pick_team = active_game_for_strat["home_team"]
-            spd_pick_abbr = active_game_for_strat["home_short"]
-            spd_target_val = market_spd
-            spd_prob = home_cover_exp
-            spd_margin_edge = live_proj_margin + market_spd
+            s_team, s_abbr, s_val, s_p = active_game_for_strat["home_team"], active_game_for_strat["home_short"], market_spd, home_cover_exp
+            s_diff = live_proj_margin + market_spd
         else:
-            spd_pick_team = active_game_for_strat["away_team"]
-            spd_pick_abbr = active_game_for_strat["away_short"]
-            spd_target_val = -market_spd
-            spd_prob = away_cover_exp
-            spd_margin_edge = -live_proj_margin - market_spd
+            s_team, s_abbr, s_val, s_p = active_game_for_strat["away_team"], active_game_for_strat["away_short"], -market_spd, away_cover_exp
+            s_diff = -live_proj_margin - market_spd
 
-        spd_sign = "+" if spd_target_val > 0 else ""
-        strat_candidates.append({
-            "type": "Point Spread (ATS Cover)",
-            "pick": f"{spd_pick_abbr} {spd_sign}{spd_target_val}",
-            "prob": spd_prob,
-            "category": "Spread",
-            "side": "Spread",
-            "target_line": spd_target_val,
-            "picked_team": spd_pick_team,
-            "drift_info": f"ATS Cover Margin: {spd_margin_edge:+.1f} pts | Spread Drift: {spread_drift:+.1f} pts",
-            "rationale": f"Model projects {spd_pick_abbr} to outperform the market spread with a {spd_prob*100:.1f}% cover confidence."
-        })
+        s_sign = "+" if s_val > 0 else ""
 
-        # 2. 2nd Half Total Bet Edge
-        cushion_2h = round(live_2h_proj + 3.0) + 0.5
-        p_2h_under = calculate_win_prob(cushion_2h, live_2h_proj, 5.0, is_under=True)
-        strat_candidates.append({
-            "type": "2nd Half Total Points",
-            "pick": f"2H Under {cushion_2h}",
-            "prob": p_2h_under,
-            "category": "2H Total",
-            "side": "Under",
-            "target_line": cushion_2h,
-            "picked_team": None,
-            "drift_info": f"2H Pace Drift: {delta_2h:+.1f} pts | 2H Projected: {live_2h_proj:.1f} pts",
-            "rationale": f"Second half regression limits scoring volume. Model rates 2H Under {cushion_2h} with high safety floor."
-        })
+        if filter_choice in ["🛡️ Spread (ATS Cover)"]:
+            # Generate 3 spread variants: Aggressive, Consensus Fair Value, Conservative Cushion
+            alt_cushion = s_val + 2.5 if s_val > 0 else s_val + 3.0
+            p_cushion = min(s_p + 0.08, 0.96)
+            alt_agg = s_val - 2.5 if s_val > 0 else s_val - 2.5
+            p_agg = max(s_p - 0.12, 0.48)
 
-        # 3. Full Game Total Bet Edge
-        if delta_full <= -3.0:
-            cush_tot = round(final_proj + 3.5) + 0.5
-            p_tot = calculate_win_prob(cush_tot, final_proj, std_bracket, is_under=True)
             strat_candidates.append({
-                "type": "Full Game Total (Under)",
-                "pick": f"Under {cush_tot}",
-                "prob": p_tot,
+                "type": "Spread (Consensus Line)",
+                "pick": f"{s_abbr} {s_sign}{s_val}",
+                "prob": s_p,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": s_val,
+                "picked_team": s_team,
+                "drift_info": f"Expected Margin: {s_diff:+.1f} pts vs line",
+                "rationale": f"Optimal cover value on current {s_abbr} market line."
+            })
+            strat_candidates.append({
+                "type": "Spread (Alternate Floor Cushion)",
+                "pick": f"{s_abbr} {alt_cushion:+}",
+                "prob": p_cushion,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": alt_cushion,
+                "picked_team": s_team,
+                "drift_info": f"Extended Floor: +3.0 pts additional safety cushion",
+                "rationale": f"High probability spread position with insulated blowout insurance."
+            })
+            strat_candidates.append({
+                "type": "Spread (Aggressive Margin Play)",
+                "pick": f"{s_abbr} {alt_agg:+}",
+                "prob": p_agg,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": alt_agg,
+                "picked_team": s_team,
+                "drift_info": f"Priced for blowout acceleration",
+                "rationale": f"Aggressive line targeting expanded scoring margin."
+            })
+
+        # 2. 2nd Half Total Candidates
+        elif filter_choice in ["⏱️ 2nd Half Total Points"]:
+            # Generate 3 second-half total variations
+            line_base_2h = round(live_2h_proj) + 0.5
+            line_cush_2h = round(live_2h_proj + 3.5) + 0.5
+            line_agg_2h = round(live_2h_proj - 2.5) + 0.5
+
+            p_base_2h = calculate_win_prob(line_base_2h, live_2h_proj, 5.0, is_under=True)
+            p_cush_2h = calculate_win_prob(line_cush_2h, live_2h_proj, 5.0, is_under=True)
+            p_agg_2h = calculate_win_prob(line_agg_2h, live_2h_proj, 5.0, is_under=True)
+
+            strat_candidates.append({
+                "type": "2nd Half Total (Conservative Cushion)",
+                "pick": f"2H Under {line_cush_2h}",
+                "prob": p_cush_2h,
+                "category": "2H Total",
+                "side": "Under",
+                "target_line": line_cush_2h,
+                "picked_team": None,
+                "drift_info": f"2H Proj: {live_2h_proj:.1f} pts ({delta_2h:+.1f} pts shift)",
+                "rationale": "Safest second half floor capitalizing on clock bleed and defensive tightening."
+            })
+            strat_candidates.append({
+                "type": "2nd Half Total (Model Consensus)",
+                "pick": f"2H Under {line_base_2h}",
+                "prob": p_base_2h,
+                "category": "2H Total",
+                "side": "Under",
+                "target_line": line_base_2h,
+                "picked_team": None,
+                "drift_info": f"Fair Value Line at {line_base_2h}",
+                "rationale": "Direct statistical regression model projection for second half volume."
+            })
+            strat_candidates.append({
+                "type": "2nd Half Total (Sharp Under Under)",
+                "pick": f"2H Under {line_agg_2h}",
+                "prob": p_agg_2h,
+                "category": "2H Total",
+                "side": "Under",
+                "target_line": line_agg_2h,
+                "picked_team": None,
+                "drift_info": f"Aggressive line targeting pace stall",
+                "rationale": "High value play if defensive script holds opposing drives to field goals."
+            })
+
+        # 3. Full Game Total Candidates
+        elif filter_choice in ["📊 Full Game Total Score Over/Under"]:
+            # Generate 3 full game total variations
+            line_base_tot = round(final_proj) + 0.5
+            line_cush_tot = round(final_proj + 4.0) + 0.5
+            is_u = delta_full <= 0
+
+            p_base_tot = calculate_win_prob(line_base_tot, final_proj, std_bracket, is_under=is_u)
+            p_cush_tot = calculate_win_prob(line_cush_tot, final_proj, std_bracket, is_under=True)
+            p_alt_over = calculate_win_prob(round(final_proj - 3.5) - 0.5, final_proj, std_bracket, is_under=False)
+
+            strat_candidates.append({
+                "type": f"Full Game Total ({'Under' if is_u else 'Over'} Consensus)",
+                "pick": f"{'Under' if is_u else 'Over'} {line_base_tot}",
+                "prob": p_base_tot,
+                "category": "Total",
+                "side": "Under" if is_u else "Over",
+                "target_line": line_base_tot,
+                "picked_team": None,
+                "drift_info": f"Live Projection: {final_proj:.1f} pts ({delta_full:+.1f} pts pace)",
+                "rationale": f"Pace tracking reveals active edge relative to {pregame_tot} opening baseline."
+            })
+            strat_candidates.append({
+                "type": "Full Game Total (Insulated Under Floor)",
+                "pick": f"Under {line_cush_tot}",
+                "prob": p_cush_tot,
                 "category": "Total",
                 "side": "Under",
-                "target_line": cush_tot,
+                "target_line": line_cush_tot,
                 "picked_team": None,
-                "drift_info": f"Pace Deficit: {delta_full:.1f} pts below pregame",
-                "rationale": f"Pace slump observed. Projection cratered from {pregame_tot} to {final_proj:.1f} pts."
+                "drift_info": f"Extended Cushion: +4.0 pts buffer",
+                "rationale": "Maximized win probability floor against late garbage time scoring."
             })
-        else:
-            cush_tot = round(final_proj - 3.5) - 0.5
-            p_tot = calculate_win_prob(cush_tot, final_proj, std_bracket, is_under=False)
             strat_candidates.append({
-                "type": "Full Game Total (Over)",
-                "pick": f"Over {cush_tot}",
-                "prob": p_tot,
+                "type": "Full Game Total (Alternate Over Play)",
+                "pick": f"Over {round(final_proj - 3.5) - 0.5}",
+                "prob": p_alt_over,
                 "category": "Total",
                 "side": "Over",
-                "target_line": cush_tot,
+                "target_line": round(final_proj - 3.5) - 0.5,
                 "picked_team": None,
-                "drift_info": f"Pace Surplus: {delta_full:+.1f} pts above pregame",
-                "rationale": f"Hyper-efficient drive rate. Projected to clear {cush_tot} comfortably."
+                "drift_info": f"Low bar threshold for explosive drives",
+                "rationale": "High win expectancy over floor assuming continuous sustained drives."
             })
 
-        # 4. Outright Win Edge
-        fav_team = active_game_for_strat["home_team"] if live_h_prob >= 0.5 else active_game_for_strat["away_team"]
-        fav_abbr = active_game_for_strat["home_short"] if live_h_prob >= 0.5 else active_game_for_strat["away_short"]
-        fav_prob = max(live_h_prob, live_a_prob)
-        strat_candidates.append({
-            "type": "Outright Winner (Moneyline)",
-            "pick": f"{fav_abbr} ML",
-            "prob": fav_prob,
-            "category": "Moneyline",
-            "side": "Moneyline",
-            "target_line": None,
-            "picked_team": fav_team,
-            "drift_info": f"Win Probability: {fav_prob*100:.1f}% ({ml_swing:+.1f}% shift)",
-            "rationale": f"{fav_abbr} metrics command controlling script and efficiency dominance."
-        })
+        # 4. Outright Win / Loser Candidates
+        elif filter_choice in ["🏆 Team Win/Loser (Moneyline)"]:
+            fav_t = active_game_for_strat["home_team"] if live_h_prob >= 0.5 else active_game_for_strat["away_team"]
+            fav_a = active_game_for_strat["home_short"] if live_h_prob >= 0.5 else active_game_for_strat["away_short"]
+            dog_t = active_game_for_strat["away_team"] if live_h_prob >= 0.5 else active_game_for_strat["home_team"]
+            dog_a = active_game_for_strat["away_short"] if live_h_prob >= 0.5 else active_game_for_strat["home_short"]
+
+            p_fav = max(live_h_prob, live_a_prob)
+            p_dog = min(live_h_prob, live_a_prob)
+
+            strat_candidates.append({
+                "type": "Outright Winner (Model Favorite)",
+                "pick": f"{fav_a} ML",
+                "prob": p_fav,
+                "category": "Moneyline",
+                "side": "Moneyline",
+                "target_line": None,
+                "picked_team": fav_t,
+                "drift_info": f"Win Probability: {p_fav*100:.1f}% ({ml_swing:+.1f}% momentum)",
+                "rationale": f"{fav_a} holds game-state control and efficiency dominance."
+            })
+            strat_candidates.append({
+                "type": "Alternate Win Margin / Cover Play",
+                "pick": f"{fav_a} {s_sign}{s_val}",
+                "prob": s_p,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": s_val,
+                "picked_team": fav_t,
+                "drift_info": f"Cover Expectancy: {s_p*100:.1f}%",
+                "rationale": f"Pairing outright win momentum with the point spread line."
+            })
+            strat_candidates.append({
+                "type": "Dog Upset / Value Angle",
+                "pick": f"{dog_a} ML",
+                "prob": p_dog,
+                "category": "Moneyline",
+                "side": "Moneyline",
+                "target_line": None,
+                "picked_team": dog_t,
+                "drift_info": f"Live Upset Probability: {p_dog*100:.1f}%",
+                "rationale": f"Plus-money underdog play if game script remains within a single score."
+            })
+
+        # 5. Let the System Pick (Cross-Market Best)
+        else:
+            cushion_2h = round(live_2h_proj + 3.0) + 0.5
+            p_2h_under = calculate_win_prob(cushion_2h, live_2h_proj, 5.0, is_under=True)
+            
+            strat_candidates.append({
+                "type": "Point Spread (ATS Cover)",
+                "pick": f"{s_abbr} {s_sign}{s_val}",
+                "prob": s_p,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": s_val,
+                "picked_team": s_team,
+                "drift_info": f"ATS Cover Margin: {s_diff:+.1f} pts | Drift: {spread_drift:+.1f} pts",
+                "rationale": f"Model projects {s_abbr} to outperform the market spread with a {s_p*100:.1f}% cover confidence."
+            })
+            strat_candidates.append({
+                "type": "2nd Half Total Points",
+                "pick": f"2H Under {cushion_2h}",
+                "prob": p_2h_under,
+                "category": "2H Total",
+                "side": "Under",
+                "target_line": cushion_2h,
+                "picked_team": None,
+                "drift_info": f"2H Pace Drift: {delta_2h:+.1f} pts | 2H Projected: {live_2h_proj:.1f} pts",
+                "rationale": "Second half regression limits scoring volume. Model rates 2H Under with high safety floor."
+            })
+
+            fav_team = active_game_for_strat["home_team"] if live_h_prob >= 0.5 else active_game_for_strat["away_team"]
+            fav_abbr = active_game_for_strat["home_short"] if live_h_prob >= 0.5 else active_game_for_strat["away_short"]
+            fav_prob = max(live_h_prob, live_a_prob)
+            strat_candidates.append({
+                "type": "Outright Winner (Moneyline)",
+                "pick": f"{fav_abbr} ML",
+                "prob": fav_prob,
+                "category": "Moneyline",
+                "side": "Moneyline",
+                "target_line": None,
+                "picked_team": fav_team,
+                "drift_info": f"Win Probability: {fav_prob*100:.1f}% ({ml_swing:+.1f}% shift)",
+                "rationale": f"{fav_abbr} metrics command controlling script and efficiency dominance."
+            })
 
         # Sort candidates descending by probability / edge strength
         strat_candidates.sort(key=lambda x: x["prob"], reverse=True)
@@ -798,7 +944,7 @@ elif menu_choice == "Single Game Engine":
                     st.markdown(f"<strong style='color:#4ade80; font-size:1.05rem;'>{sc['pick']}</strong> &nbsp; <span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px; font-weight:700;'>{sc['prob']*100:.1f}% Exp.</span>", unsafe_allow_html=True)
                     st.caption(f"{sc['drift_info']} • {sc['rationale']}")
                 with r_c2:
-                    if st.button("📥 Load to Form", key=f"apply_tier_{idx}", use_container_width=True):
+                    if st.button("📥 Load to Form", key=f"apply_tier_{idx}_{sc['pick']}", use_container_width=True):
                         st.session_state.single_applied_pick = sc
                         st.session_state.single_form_version += 1
                         st.rerun()
