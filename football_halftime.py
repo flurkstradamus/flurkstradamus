@@ -10,8 +10,38 @@ st.set_page_config(
     page_title="Flurkstradamus Edge Engine",
     page_icon="🔮",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
+
+# App-like mobile styling
+st.markdown("""
+<style>
+    /* Mobile-first compact padding */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 2rem;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
+    /* Smooth card edges */
+    [data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background-color: rgba(255, 255, 255, 0.02);
+    }
+    /* Better metrics readability on phones */
+    [data-testid="stMetricValue"] {
+        font-size: 1.35rem !important;
+        font-weight: 700;
+    }
+    /* Touch-friendly buttons */
+    .stButton button {
+        border-radius: 8px;
+        min-height: 2.4rem;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # CONFIGURATION & PERSISTENCE ENGINE
@@ -25,7 +55,6 @@ CHAT_FILE = "chat_history.json"
 
 DEFAULT_LOGO = "https://a.espncdn.com/combiner/i?img=/i/teamlogos/default-team-logo-500.png&w=60&h=60"
 
-# Standard official abbreviation mappings for NCAA/NFL clarity
 OFFICIAL_ABBR_MAP = {
     "North Dakota State Bison": "NDSU",
     "North Dakota State": "NDSU",
@@ -71,7 +100,6 @@ def format_espn_kickoff(date_str, fallback_status):
         return fallback_status
     try:
         dt = datetime.strptime(date_str.replace("Z", "+0000"), "%Y-%m-%dT%H:%M%z")
-        # Shift to Eastern Time (UTC-4 / UTC-5 approx)
         dt_et = dt - timedelta(hours=4)
         return dt_et.strftime("%a %m/%d - %I:%M %p ET")
     except Exception:
@@ -146,19 +174,16 @@ if "authenticated" not in st.session_state:
 if "selected_bet_id" not in st.session_state:
     st.session_state.selected_bet_id = None
 
-if "legs_count_choice" not in st.session_state:
-    st.session_state.legs_count_choice = 3
-
-if "applied_ai_combo" not in st.session_state:
-    st.session_state.applied_ai_combo = None
+if "combo_active_legs" not in st.session_state:
+    st.session_state.combo_active_legs = []
 
 # Access Gatekeeper
 if not st.session_state.authenticated:
-    st.title("🔮 Flurkstradamus: Private Syndicate")
-    st.caption("Consensus Live Edge & Market Terminal")
+    st.title("🔮 Flurkstradamus")
+    st.caption("Private Edge & Consensus Terminal")
     with st.form("pin_login"):
         pin_entry = st.text_input("Group Passcode", type="password")
-        login_btn = st.form_submit_button("Enter Terminal")
+        login_btn = st.form_submit_button("Enter Terminal", use_container_width=True)
         if login_btn:
             if pin_entry == GROUP_PASSCODE:
                 st.session_state.authenticated = True
@@ -307,7 +332,7 @@ def get_extended_games(league_code="nfl"):
         except Exception:
             pass
 
-    # Fallback calendar schedule with kickoff dates
+    # Built-in fallback slate if ESPN returns fewer than 3 games
     if len([g for g in all_games if not g["completed"]]) < 3:
         backup_slate = [
             {"id": "up_1", "league": "NFL", "name": "Bills @ Dolphins", "kickoff": "Thu 10/29 - 8:15 PM ET", "home_team": "Miami Dolphins", "home_short": "MIA", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/mia.png", "home_record": "7-2", "away_team": "Buffalo Bills", "away_short": "BUF", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/buf.png", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Thu 8:15 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 48.5, "market_spread": 2.5},
@@ -408,7 +433,7 @@ menu_choice = st.sidebar.radio(
     "Navigation Menu",
     [
         "Single Game Engine",
-        "2-10 Leg Combo Builder",
+        "2-12 Leg Combo Builder",
         "🔥 Live Squad Feed",
         "💬 The Locker Room",
         "Locked Bets History",
@@ -426,7 +451,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### ⏱️ Live Updates")
 auto_refresh = st.sidebar.toggle("Auto-Refresh Live Scores", value=True)
 refresh_interval = st.sidebar.slider("Interval (seconds)", min_value=10, max_value=60, value=15, step=5)
-if st.sidebar.button("🔄 Manual Scoreboard Sync"):
+if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True):
     st.cache_data.clear()
     b_data, c_data = load_storage()
     st.session_state.saved_bets = b_data
@@ -443,7 +468,7 @@ auto_resolve_bets(st.session_state.saved_bets, games_data)
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
 
-    if st.button("⬅️ Back to Main Dashboard"):
+    if st.button("⬅️ Back to Main Dashboard", use_container_width=True):
         st.session_state.selected_bet_id = None
         st.rerun()
 
@@ -469,18 +494,18 @@ if st.session_state.selected_bet_id is not None:
     is_final = live_game_info.get("completed", False) or "final" in live_game_info["status"].lower()
     period = live_game_info.get("period", 2)
 
-    col_s1, col_s2, col_s3 = st.columns([2, 1, 2])
-    with col_s1:
-        st.image(live_game_info["away_logo"], width=50)
-        st.markdown(f"### {live_game_info['away_short']} ({live_game_info['away_team']})\n# **{curr_away}**\n`{live_game_info['away_record']}`")
-    with col_s2:
-        st.markdown(f"### Kickoff / Status\n**{live_game_info.get('kickoff', live_game_info['status'])}**")
-        st.caption(f"Clock: `{live_game_info.get('displayClock', 'Live')}`")
-    with col_s3:
-        st.image(live_game_info["home_logo"], width=50)
-        st.markdown(f"### {live_game_info['home_short']} ({live_game_info['home_team']})\n# **{curr_home}**\n`{live_game_info['home_record']}`")
+    with st.container(border=True):
+        col_s1, col_s2, col_s3 = st.columns([2, 1, 2])
+        with col_s1:
+            st.image(live_game_info["away_logo"], width=45)
+            st.markdown(f"**{live_game_info['away_short']}**\n# **{curr_away}**")
+        with col_s2:
+            st.caption(f"{live_game_info.get('kickoff', live_game_info['status'])}")
+            st.caption(f"Clock: `{live_game_info.get('displayClock', 'Live')}`")
+        with col_s3:
+            st.image(live_game_info["home_logo"], width=45)
+            st.markdown(f"**{live_game_info['home_short']}**\n# **{curr_home}**")
 
-    st.markdown("---")
     risk = selected_bet.get("risk_dollars", 10.0)
     payout = selected_bet.get("payout_dollars", 19.0)
 
@@ -488,20 +513,18 @@ if st.session_state.selected_bet_id is not None:
         h_prob = calculate_moneyline_prob(curr_home, curr_away, live_game_info["home_record"], live_game_info["away_record"], is_final=is_final)
         picked_home = selected_bet.get("picked_team") == live_game_info["home_team"]
         win_prob = h_prob if picked_home else (1.0 - h_prob)
-        m1, m2, m3 = st.columns(3)
+        m1, m2 = st.columns(2)
         m1.metric("Selected Winner", selected_bet.get("picked_team", "N/A"))
-        m2.metric("Score Margin", f"{curr_home - curr_away:+d} pts")
-        m3.metric("Live Win Probability", f"{win_prob * 100:.1f}%")
+        m2.metric("Live Win Prob", f"{win_prob * 100:.1f}%")
 
     elif bet_category == "Spread":
         diff = curr_home - curr_away
         is_home = selected_bet.get("picked_team") == live_game_info["home_team"]
         proj_diff = diff + 1.5 if is_home else -diff - 1.5
         win_prob = calculate_spread_prob(proj_diff, target_line, std_dev=4.5)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Selected Spread", f"{selected_bet.get('picked_team')} {target_line:+}")
-        m2.metric("Margin Needed", f"{diff:+d} pts currently")
-        m3.metric("Live Win Probability", f"{win_prob * 100:.1f}%")
+        m1, m2 = st.columns(2)
+        m1.metric("Spread Pick", f"{selected_bet.get('picked_team')} {target_line:+}")
+        m2.metric("Live Win Prob", f"{win_prob * 100:.1f}%")
 
     else:
         is_under = (bet_dir == "Under")
@@ -521,54 +544,43 @@ if st.session_state.selected_bet_id is not None:
 
         win_prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under)
         cushion = target_line - total_pts if is_under else total_pts - target_line
-        m1, m2, m3 = st.columns(4)
+        m1, m2 = st.columns(2)
         m1.metric("Live Total", f"{total_pts} pts")
-        m2.metric("Target Line", f"{bet_dir} {target_line}")
-        m3.metric("Safety Cushion", f"{cushion:+.1f} pts")
-        m4.metric("Live Win Prob", f"{win_prob * 100:.1f}%")
+        m2.metric("Safety Cushion", f"{cushion:+.1f} pts")
 
-    st.markdown("---")
-    st.subheader("💰 Live Equity & Smart Hedging")
-    cur_equity = payout * win_prob
-    c_h1, c_h2, c_h3 = st.columns(3)
-    c_h1.metric("Initial Risk", f"${risk:.2f}")
-    c_h2.metric("Payout Potential", f"${payout:.2f}")
-    c_h3.metric("Current Fair Equity", f"${cur_equity:.2f}", delta=f"{cur_equity - risk:+.2f}")
+    with st.container(border=True):
+        st.subheader("💰 Live Equity & Smart Cashout")
+        cur_equity = payout * win_prob
+        c_h1, c_h2, c_h3 = st.columns(3)
+        c_h1.metric("Risk", f"${risk:.2f}")
+        c_h2.metric("Payout", f"${payout:.2f}")
+        c_h3.metric("Fair Value", f"${cur_equity:.2f}", delta=f"{cur_equity - risk:+.2f}")
     st.stop()
 
 # PAGE: LIVE SQUAD FEED
 if menu_choice == "🔥 Live Squad Feed":
     st.subheader("🔥 Live Squad Feed")
-    st.caption("Real-time feed of all bets placed by your crew. Tail action or share slips with one click.")
+    st.caption("Real-time feed of all bets placed across the squad.")
 
     if not st.session_state.saved_bets:
         st.info("No bets have been locked in yet.")
     else:
         for b in st.session_state.saved_bets[:15]:
-            with st.container():
-                f1, f2, f3 = st.columns([3, 2, 2])
+            with st.container(border=True):
                 status_badge = "⏳ Active" if b["status"] == "Pending" else ("🏆 Won" if b["status"] == "Won" else "❌ Lost")
-                
-                with f1:
-                    st.markdown(f"**{b.get('user', 'Flurk')}** locked in `{b.get('bet')}`")
-                    st.caption(f"{b.get('matchup')} | Risk: ${b.get('risk_dollars', 10.0):.2f} to win ${b.get('payout_dollars', 19.0):.2f}")
-                with f2:
-                    st.write(f"Logged: `{b.get('date')}`")
-                    st.write(f"Status: **{status_badge}**")
-                with f3:
-                    share_text = f"🔮 {b.get('user')} locked in {b.get('bet')} on {b.get('matchup')}! Track it on Flurkstradamus: https://flurkstradamus.streamlit.app"
-                    st.text_input("Copy Share Text", value=share_text, key=f"share_{b['id']}")
-
-                st.markdown("---")
+                st.markdown(f"**{b.get('user', 'Flurk')}** locked `{b.get('bet')}`")
+                st.caption(f"{b.get('matchup')} | Risk: ${b.get('risk_dollars', 10.0):.2f} ➜ Win: ${b.get('payout_dollars', 19.0):.2f} ({status_badge})")
+                share_text = f"🔮 {b.get('user')} locked in {b.get('bet')} on {b.get('matchup')}! Track it on Flurkstradamus: https://flurkstradamus.streamlit.app"
+                st.text_input("Share Text", value=share_text, key=f"share_{b['id']}")
 
 # PAGE: THE LOCKER ROOM
 elif menu_choice == "💬 The Locker Room":
     st.subheader("💬 The Locker Room")
-    st.caption("Live squad trash talk & game commentary.")
+    st.caption("Squad banter & game commentary.")
 
     with st.form("send_msg_form", clear_on_submit=True):
-        user_msg = st.text_input("Send a message to the group", placeholder="e.g., That Under is looking dangerous...")
-        send_btn = st.form_submit_button("Post Message")
+        user_msg = st.text_input("Send a message", placeholder="Trash talk here...")
+        send_btn = st.form_submit_button("Post Message", use_container_width=True)
         if send_btn and user_msg.strip():
             new_msg = {
                 "id": str(datetime.now().timestamp()),
@@ -580,19 +592,18 @@ elif menu_choice == "💬 The Locker Room":
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
             st.rerun()
 
-    if not st.session_state.chat_messages:
-        st.info("The locker room is quiet. Post the first message above!")
-    else:
-        for m in st.session_state.chat_messages[:30]:
-            st.markdown(f"**{m.get('user')}** `({m.get('time')})`: {m.get('text')}")
+    for m in st.session_state.chat_messages[:30]:
+        with st.container(border=True):
+            st.markdown(f"**{m.get('user')}** <span style='opacity:0.6;font-size:0.8rem;'>({m.get('time')})</span>", unsafe_allow_html=True)
+            st.write(m.get('text'))
 
 # PAGE 1: SINGLE GAME ENGINE
 elif menu_choice == "Single Game Engine":
-    st.subheader("⚡ Single Game Consensus & Edge Terminal")
+    st.subheader("⚡ Single Game Engine")
 
     if games_data:
-        game_options = [f"[{g['league']}] {g['away_short']} @ {g['home_short']} - {g['away_team']} @ {g['home_team']} ({g.get('kickoff', g['status'])})" for g in games_data]
-        selected_idx = st.selectbox("Select Active Matchup", range(len(game_options)), format_func=lambda x: game_options[x])
+        game_options = [f"[{g['league']}] {g['away_short']} @ {g['home_short']} ({g.get('kickoff', g['status'])})" for g in games_data]
+        selected_idx = st.selectbox("Select Matchup", range(len(game_options)), format_func=lambda x: game_options[x])
         g = games_data[selected_idx]
         g_id = g.get("id", str(selected_idx))
         detected_stage = g["checkpoint"]
@@ -606,14 +617,11 @@ elif menu_choice == "Single Game Engine":
         espn_ou = 47.5
         espn_spread = -3.5
 
-    banner_c1, banner_c2, banner_c3 = st.columns([1, 4, 1])
-    with banner_c1:
-        st.image(g.get("away_logo", DEFAULT_LOGO), width=65)
-    with banner_c2:
-        st.markdown(f"### **{g['away_short']}** ({g['away_team']})  @  **{g['home_short']}** ({g['home_team']})")
-        st.caption(f"Kickoff: **{g.get('kickoff', g['status'])}** | Records: {g['away_short']} ({g['away_record']}) vs {g['home_short']} ({g['home_record']})")
-    with banner_c3:
-        st.image(g.get("home_logo", DEFAULT_LOGO), width=65)
+    with st.container(border=True):
+        b1, b2, b3 = st.columns([1, 4, 1])
+        b1.image(g.get("away_logo", DEFAULT_LOGO), width=45)
+        b2.markdown(f"### **{g['away_short']}** @ **{g['home_short']}**\n{g.get('kickoff', g['status'])}")
+        b3.image(g.get("home_logo", DEFAULT_LOGO), width=45)
 
     all_stages = ["Pre-Game", "1st Quarter", "Halftime", "3rd Quarter", "4th Quarter / Late Game", "Final / Game Completed"]
     default_stage_idx = all_stages.index(detected_stage) if detected_stage in all_stages else 2
@@ -623,15 +631,15 @@ elif menu_choice == "Single Game Engine":
     with c1:
         home_team = st.text_input("Home Team", value=g["home_team"], key=f"h_{g_id}")
         away_team = st.text_input("Away Team", value=g["away_team"], key=f"a_{g_id}")
-        home_rec = st.text_input(f"{home_team} Record", value=g.get("home_record", "0-0"), key=f"h_rec_{g_id}")
-        away_rec = st.text_input(f"{away_team} Record", value=g.get("away_record", "0-0"), key=f"a_rec_{g_id}")
-        pregame_total = st.number_input("Pre-Game Total (Full)", value=espn_ou, step=0.5, key=f"pre_{g_id}")
+        home_rec = st.text_input(f"{g['home_short']} Record", value=g.get("home_record", "0-0"), key=f"h_rec_{g_id}")
+        away_rec = st.text_input(f"{g['away_short']} Record", value=g.get("away_record", "0-0"), key=f"a_rec_{g_id}")
+        pregame_total = st.number_input("Pre-Game Baseline Total", value=espn_ou, step=0.5, key=f"pre_{g_id}")
 
     with c2:
         sc1, sc2 = st.columns(2)
-        h_pts = sc1.number_input(f"{g['home_short']} Score", min_value=0, value=g["home_score"], key=f"hp_{g_id}")
-        a_pts = sc2.number_input(f"{g['away_short']} Score", min_value=0, value=g["away_score"], key=f"ap_{g_id}")
-        market_line = st.number_input("Market Total Line (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
+        h_pts = sc1.number_input(f"{g['home_short']} Pts", min_value=0, value=g["home_score"], key=f"hp_{g_id}")
+        a_pts = sc2.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"ap_{g_id}")
+        market_line = st.number_input("Market Total Offered", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
         spread_line = st.number_input(f"{g['home_short']} Spread", value=espn_spread, step=0.5, key=f"spd_{g_id}")
 
     pts_scored = h_pts + a_pts
@@ -662,19 +670,16 @@ elif menu_choice == "Single Game Engine":
         final_proj = pts_scored + rem_points_exp
         std_bracket = 1.8
 
-    st.markdown("---")
     home_win_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), home_rec, away_rec, is_final=is_completed)
     away_win_prob = 1.0 - home_win_prob
     proj_margin = (h_pts + (final_proj / 2.0)) - (a_pts + (final_proj / 2.0))
     home_cover_prob = calculate_spread_prob(proj_margin, spread_line, std_bracket)
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Projected Total", f"{final_proj:.1f} pts", delta=f"{final_proj - pregame_total:+.1f} shift")
-    m2.metric(f"{g['home_short']} Win Exp.", f"{home_win_prob * 100:.1f}%")
-    m3.metric(f"{g['away_short']} Win Exp.", f"{away_win_prob * 100:.1f}%")
-    m4.metric(f"{g['home_short']} Spread ({spread_line:+})", f"{home_cover_prob * 100:.1f}%")
+    with st.container(border=True):
+        m1, m2 = st.columns(2)
+        m1.metric("Projected Total", f"{final_proj:.1f} pts")
+        m2.metric(f"{g['home_short']} Win Exp.", f"{home_win_prob * 100:.1f}%")
 
-    st.markdown("---")
     bet_type = st.radio("Wager Type", ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)"], horizontal=True, key=f"btype_sel_{g_id}")
 
     with st.form("single_bet_form"):
@@ -695,12 +700,12 @@ elif menu_choice == "Single Game Engine":
             strike = None
             picked_t = st.selectbox("Winning Team", [home_team, away_team], format_func=lambda x: f"{g['home_short']} ({home_team})" if x == home_team else f"{g['away_short']} ({away_team})", key=f"ml_pick_{g_id}")
 
-        p1, p2, p3 = st.columns(3)
-        risk_amt = p1.number_input("Risk Amount ($)", min_value=1.0, value=10.0, step=5.0)
-        payout_amt = p2.number_input("Total Potential Return ($)", min_value=1.0, value=19.0, step=5.0)
-        ticket_notes = p3.text_input("Notes", "Model edge play")
+        p1, p2 = st.columns(2)
+        risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
+        payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=19.0, step=5.0)
+        ticket_notes = st.text_input("Notes", "Model play")
 
-        lock_submit = st.form_submit_button("Lock In Bet")
+        lock_submit = st.form_submit_button("Lock In Bet", use_container_width=True)
         if lock_submit:
             if bet_type == "Game Total":
                 prob_calc = calculate_win_prob(strike, final_proj, std_bracket, is_under=(side == "Under"))
@@ -751,20 +756,28 @@ elif menu_choice == "Single Game Engine":
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
             st.success("Ticket saved to history!")
 
-# PAGE 2: 2 TO 10 LEG COMBO BUILDER
-elif menu_choice == "2-10 Leg Combo Builder":
-    st.subheader("🔗 Multi-Leg Combo Builder (Up to 10 Legs)")
-    st.caption("Construct multi-game parlays manually or deploy the algorithmic scanner to find optimal combinations with official team logos, abbreviations, and kickoff dates.")
-
-    # Matchup list showing Date and Official Abbreviations
+# PAGE 2: 2 TO 12 LEG COMBO BUILDER
+elif menu_choice == "2-12 Leg Combo Builder":
+    st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
     game_choices = [f"[{g['league']}] {g['away_short']} @ {g['home_short']} ({g.get('kickoff', g['status'])})" for g in games_data]
 
-    # --- AI STRATEGY COMBO OPTIMIZER ---
-    with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
-        st.markdown("#### Automated Strategy Generator")
-        col_strat1, col_strat2, col_strat3 = st.columns([2, 1, 1])
+    if not st.session_state.combo_active_legs:
+        init_count = min(3, len(games_data))
+        st.session_state.combo_active_legs = []
+        for j in range(init_count):
+            g_item = games_data[j]
+            st.session_state.combo_active_legs.append({
+                "matchup_idx": j,
+                "type": "Game Total",
+                "side": "Under",
+                "line": float(g_item.get("market_ou", 47.5)),
+                "picked_team": g_item["home_team"]
+            })
+
+    with st.expander("🤖 AI Strategy Scanner & Optimizer", expanded=True):
+        col_strat1, col_strat2 = st.columns(2)
         strategy_mode = col_strat1.selectbox(
-            "Optimization Objective",
+            "Strategy Objective",
             [
                 "🎯 Maximum Win Probability (Safest Floor)",
                 "🔥 High Expected Value (+EV Total Edge)",
@@ -774,13 +787,15 @@ elif menu_choice == "2-10 Leg Combo Builder":
         )
 
         active_candidate_games = [g for g in games_data if not g.get("completed", False)]
+        max_possible_legs = min(12, max(2, len(active_candidate_games)))
+
         suggest_legs_count = col_strat2.number_input(
-            "Target Legs",
+            "Legs (2-12)",
             min_value=2,
-            max_value=min(10, max(2, len(active_candidate_games))),
-            value=min(3, max(2, len(active_candidate_games)))
+            max_value=max_possible_legs,
+            value=min(max(len(st.session_state.combo_active_legs), 3), max_possible_legs)
         )
-        generate_clicked = col_strat3.button("⚡ Scan & Recommend")
+        generate_clicked = st.button("⚡ Scan & Recommend Across Slates", use_container_width=True)
 
         if generate_clicked and games_data:
             candidate_legs = []
@@ -817,6 +832,7 @@ elif menu_choice == "2-10 Leg Combo Builder":
                         "type": "Game Total",
                         "side": "Under",
                         "line": cushion_line,
+                        "picked_team": c_h,
                         "prob": p,
                         "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr} ({c_kickoff}): Under {cushion_line}",
                         "score_metric": p
@@ -828,7 +844,9 @@ elif menu_choice == "2-10 Leg Combo Builder":
                         candidate_legs.append({
                             "matchup_idx": games_data.index(g_c),
                             "type": "Straight Up Winner",
-                            "winner": ml_fav,
+                            "side": "Under",
+                            "line": cushion_line,
+                            "picked_team": ml_fav,
                             "prob": ml_p,
                             "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr} ({c_kickoff}): {fav_abbr} ML",
                             "score_metric": ml_p
@@ -844,6 +862,7 @@ elif menu_choice == "2-10 Leg Combo Builder":
                         "type": "Game Total",
                         "side": "Under" if is_u else "Over",
                         "line": tgt_line,
+                        "picked_team": c_h,
                         "prob": p,
                         "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr} ({c_kickoff}): {'Under' if is_u else 'Over'} {tgt_line} (Edge: {edge:.1f} pts)",
                         "score_metric": edge * p
@@ -856,7 +875,9 @@ elif menu_choice == "2-10 Leg Combo Builder":
                     candidate_legs.append({
                         "matchup_idx": games_data.index(g_c),
                         "type": "Straight Up Winner",
-                        "winner": ml_fav,
+                        "side": "Under",
+                        "line": c_ou,
+                        "picked_team": ml_fav,
                         "prob": ml_p,
                         "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr} ({c_kickoff}): {fav_abbr} ML ({ml_p*100:.1f}%)",
                         "score_metric": ml_p
@@ -870,6 +891,7 @@ elif menu_choice == "2-10 Leg Combo Builder":
                         "type": "Game Total",
                         "side": "Under",
                         "line": cushion_line,
+                        "picked_team": c_h,
                         "prob": p,
                         "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr} ({c_kickoff}): Under {cushion_line}",
                         "score_metric": p
@@ -893,141 +915,141 @@ elif menu_choice == "2-10 Leg Combo Builder":
                     if len(selected_ai_legs) == suggest_legs_count:
                         break
 
-            st.session_state.user_legs_slider = len(selected_ai_legs)
-            st.session_state.legs_count_choice = len(selected_ai_legs)
-            st.session_state.applied_ai_combo = selected_ai_legs
-
-            for idx_k, l_k in enumerate(selected_ai_legs):
-                st.session_state[f"leg_sel_{idx_k}"] = l_k["matchup_idx"]
-                st.session_state[f"wtype_{idx_k}"] = l_k["type"]
-                if l_k["type"] == "Game Total":
-                    st.session_state[f"lside_{idx_k}"] = l_k.get("side", "Under")
-                    st.session_state[f"lstrike_{idx_k}"] = float(l_k.get("line", 44.5))
-                else:
-                    g_match = games_data[l_k["matchup_idx"]]
-                    opt = [g_match["home_team"], g_match["away_team"]]
-                    pick = l_k.get("winner", g_match["home_team"])
-                    st.session_state[f"lwinner_{idx_k}"] = pick if pick in opt else opt[0]
-
+            st.session_state.combo_active_legs = [
+                {
+                    "matchup_idx": l_item["matchup_idx"],
+                    "type": l_item["type"],
+                    "side": l_item.get("side", "Under"),
+                    "line": float(l_item.get("line", 47.5)),
+                    "picked_team": l_item.get("picked_team", games_data[l_item["matchup_idx"]]["home_team"])
+                }
+                for l_item in selected_ai_legs
+            ]
             st.rerun()
 
-        if st.session_state.applied_ai_combo:
-            st.success(f"Algorithm Applied {len(st.session_state.applied_ai_combo)}-Leg Ticket with Kickoff Dates:")
-            comp_p = 1.0
-            for idx_ai, l_ai in enumerate(st.session_state.applied_ai_combo):
-                st.write(f"• **Leg {idx_ai+1}:** `{l_ai['desc']}` — Model Probability: **{l_ai['prob']*100:.1f}%**")
-                comp_p *= l_ai["prob"]
-            st.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta="Scheduled Slate Mix")
-
-    # --- COMBO BUILDER SECTION ---
-    st.markdown("---")
-    current_legs_num = int(st.session_state.get("legs_count_choice", 3))
-    legs_count = st.slider("Select Number of Legs (2 to 10)", min_value=2, max_value=10, value=current_legs_num, key="user_legs_slider")
-    
-    if legs_count != st.session_state.legs_count_choice:
-        st.session_state.legs_count_choice = legs_count
+    ctrl_c1, ctrl_c2 = st.columns([3, 1])
+    with ctrl_c1:
+        st.markdown(f"#### Active Slip ({len(st.session_state.combo_active_legs)} Legs)")
+    with ctrl_c2:
+        if st.button("➕ Add Leg", use_container_width=True, disabled=(len(st.session_state.combo_active_legs) >= 12)):
+            next_idx = min(len(st.session_state.combo_active_legs), len(games_data) - 1)
+            g_next = games_data[next_idx]
+            st.session_state.combo_active_legs.append({
+                "matchup_idx": next_idx,
+                "type": "Game Total",
+                "side": "Under",
+                "line": float(g_next.get("market_ou", 47.5)),
+                "picked_team": g_next["home_team"]
+            })
+            st.rerun()
 
     combo_legs = []
     parsed_legs = []
     compound_prob = 1.0
 
-    for i in range(legs_count):
-        st.markdown(f"#### Leg {i+1}")
-        
-        def_idx = min(i, len(game_choices) - 1)
-        selected_idx = st.selectbox(
-            f"Matchup for Leg {i+1}",
-            range(len(game_choices)),
-            index=def_idx,
-            format_func=lambda x: game_choices[x],
-            key=f"leg_sel_{i}"
-        )
+    for i, leg_data in enumerate(st.session_state.combo_active_legs):
+        with st.container(border=True):
+            top_col1, top_col2 = st.columns([4, 1])
+            with top_col1:
+                sel_matchup = st.selectbox(
+                    f"Leg {i+1} Matchup",
+                    range(len(game_choices)),
+                    index=min(leg_data["matchup_idx"], len(game_choices) - 1),
+                    format_func=lambda x: game_choices[x],
+                    key=f"m_sel_{i}"
+                )
+                leg_data["matchup_idx"] = sel_matchup
+            with top_col2:
+                st.write("")
+                if st.button("❌", key=f"del_leg_{i}", help="Remove this leg"):
+                    st.session_state.combo_active_legs.pop(i)
+                    st.rerun()
 
-        leg_g = games_data[selected_idx]
-        d_h, d_a = leg_g["home_team"], leg_g["away_team"]
-        d_h_abbr, d_a_abbr = leg_g["home_short"], leg_g["away_short"]
-        d_kickoff = leg_g.get("kickoff", leg_g["status"])
-        d_h_pts, d_a_pts = leg_g["home_score"], leg_g["away_score"]
-        d_h_rec, d_a_rec = leg_g.get("home_record", "0-0"), leg_g.get("away_record", "0-0")
-        leg_completed = leg_g["completed"]
+            leg_g = games_data[leg_data["matchup_idx"]]
+            d_h, d_a = leg_g["home_team"], leg_g["away_team"]
+            d_h_abbr, d_a_abbr = leg_g["home_short"], leg_g["away_short"]
+            d_kickoff = leg_g.get("kickoff", leg_g["status"])
+            d_h_pts, d_a_pts = leg_g["home_score"], leg_g["away_score"]
+            d_h_rec, d_a_rec = leg_g.get("home_record", "0-0"), leg_g.get("away_record", "0-0")
+            leg_completed = leg_g["completed"]
 
-        # Visual Matchup Card showing Date/Time + Logos + Official Abbreviations
-        card_col1, card_col2, card_col3 = st.columns([1, 4, 1])
-        with card_col1:
-            st.image(leg_g.get("away_logo", DEFAULT_LOGO), width=48)
-            st.caption(f"**{d_a_abbr}**")
-        with card_col2:
-            st.markdown(f"**{d_a_abbr}** ({d_a_rec}) @ **{d_h_abbr}** ({d_h_rec})")
-            st.caption(f"🗓️ **{d_kickoff}** | Market Line: **{leg_g.get('market_ou', 47.5)} pts**")
-        with card_col3:
-            st.image(leg_g.get("home_logo", DEFAULT_LOGO), width=48)
-            st.caption(f"**{d_h_abbr}**")
-
-        wager_cat = st.radio(
-            f"Wager Type (Leg {i+1})",
-            ["Game Total", "Straight Up Winner"],
-            horizontal=True,
-            key=f"wtype_{i}"
-        )
-
-        if wager_cat == "Game Total":
-            col_b, col_c = st.columns(2)
-            side = col_b.selectbox("Side", ["Under", "Over"], key=f"lside_{i}")
-            strike = col_c.number_input("Line (pts)", value=float(leg_g.get("market_ou", 44.5)), step=0.5, key=f"lstrike_{i}")
-            leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
-            leg_desc = f"{d_a_abbr} @ {d_h_abbr} ({d_kickoff}): {side} {strike}"
-            parsed_legs.append({
-                "matchup": f"{d_a_abbr} @ {d_h_abbr}",
-                "type": "Total",
-                "side": side,
-                "line": strike,
-                "prob": leg_prob
-            })
-        else:
-            col_b, col_c = st.columns(2)
-            teams_opt = [d_h, d_a]
-            winner = col_b.selectbox(
-                "Pick Winner",
-                teams_opt,
-                format_func=lambda x: f"{d_h_abbr} ({d_h})" if x == d_h else f"{d_a_abbr} ({d_a})",
-                key=f"lwinner_{i}"
+            wager_cat = st.radio(
+                f"Wager Type (Leg {i+1})",
+                ["Game Total", "Straight Up Winner"],
+                horizontal=True,
+                index=0 if leg_data["type"] == "Game Total" else 1,
+                key=f"wtype_{i}"
             )
-            win_abbr = d_h_abbr if winner == d_h else d_a_abbr
-            h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec, is_final=leg_completed)
-            leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
-            leg_desc = f"{d_a_abbr} @ {d_h_abbr} ({d_kickoff}): {win_abbr} ML"
-            col_c.metric("Model Win Expectancy", f"{leg_prob * 100:.1f}%")
-            parsed_legs.append({
-                "matchup": f"{d_a_abbr} @ {d_h_abbr}",
-                "type": "Moneyline",
-                "picked_team": winner,
-                "prob": leg_prob
-            })
+            leg_data["type"] = wager_cat
 
-        compound_prob *= leg_prob
-        combo_legs.append({"desc": leg_desc, "prob": leg_prob})
-        st.markdown("---")
+            if wager_cat == "Game Total":
+                col_b, col_c = st.columns(2)
+                side = col_b.selectbox("Side", ["Under", "Over"], index=0 if leg_data.get("side", "Under") == "Under" else 1, key=f"lside_{i}")
+                strike = col_c.number_input("Line (pts)", value=float(leg_data.get("line", leg_g.get("market_ou", 44.5))), step=0.5, key=f"lstrike_{i}")
+                leg_data["side"] = side
+                leg_data["line"] = strike
 
-    st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%")
+                leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
+                leg_desc = f"{d_a_abbr} @ {d_h_abbr}: {side} {strike}"
+                parsed_legs.append({
+                    "matchup": f"{d_a_abbr} @ {d_h_abbr}",
+                    "type": "Total",
+                    "side": side,
+                    "line": strike,
+                    "prob": leg_prob
+                })
+            else:
+                col_b, col_c = st.columns(2)
+                teams_opt = [d_h, d_a]
+                prev_pick = leg_data.get("picked_team", d_h)
+                pick_idx = teams_opt.index(prev_pick) if prev_pick in teams_opt else 0
+
+                winner = col_b.selectbox(
+                    "Pick Winner",
+                    teams_opt,
+                    index=pick_idx,
+                    format_func=lambda x: f"{d_h_abbr} ({d_h})" if x == d_h else f"{d_a_abbr} ({d_a})",
+                    key=f"lwinner_{i}"
+                )
+                leg_data["picked_team"] = winner
+
+                win_abbr = d_h_abbr if winner == d_h else d_a_abbr
+                h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec, is_final=leg_completed)
+                leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
+                leg_desc = f"{d_a_abbr} @ {d_h_abbr}: {win_abbr} ML"
+                col_c.metric("Model Win %", f"{leg_prob * 100:.1f}%")
+                parsed_legs.append({
+                    "matchup": f"{d_a_abbr} @ {d_h_abbr}",
+                    "type": "Moneyline",
+                    "picked_team": winner,
+                    "prob": leg_prob
+                })
+
+            compound_prob *= leg_prob
+            combo_legs.append({"desc": leg_desc, "prob": leg_prob})
+
+    active_leg_count = len(st.session_state.combo_active_legs)
+    with st.container(border=True):
+        st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%")
 
     with st.form("save_combo_form"):
-        c_r1, c_r2, c_r3 = st.columns(3)
-        c_risk = c_r1.number_input("Ticket Risk ($)", min_value=1.0, value=10.0, step=5.0)
+        c_r1, c_r2 = st.columns(2)
+        c_risk = c_r1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
         est_payout = round(c_risk / max(compound_prob, 0.005), 2)
-        c_payout = c_r2.number_input("Total Potential Return ($)", min_value=1.0, value=float(min(est_payout, 50000.0)), step=25.0)
-        c_notes = c_r3.text_input("Notes", f"{legs_count}-Leg Parlay")
+        c_payout = c_r2.number_input("Payout ($)", min_value=1.0, value=float(min(est_payout, 50000.0)), step=25.0)
+        c_notes = st.text_input("Notes", f"{active_leg_count}-Leg Parlay")
 
-        save_c_btn = st.form_submit_button("Lock In Combo Ticket")
+        save_c_btn = st.form_submit_button(f"Lock In {active_leg_count}-Leg Ticket", use_container_width=True)
         if save_c_btn:
             legs_str = " | ".join([cl["desc"] for cl in combo_legs])
             combo_record = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip() if current_user.strip() else "Flurk",
                 "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "type": f"{legs_count}-Leg Combo",
+                "type": f"{active_leg_count}-Leg Combo",
                 "bet_category": "Combo",
                 "matchup": legs_str,
-                "bet": f"{legs_count} Legs ({compound_prob * 100:.1f}% Prob)",
+                "bet": f"{active_leg_count} Legs ({compound_prob * 100:.1f}% Prob)",
                 "target_line": None,
                 "bet_direction": None,
                 "risk_dollars": float(c_risk),
@@ -1039,28 +1061,18 @@ elif menu_choice == "2-10 Leg Combo Builder":
             }
             st.session_state.saved_bets.insert(0, combo_record)
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
-            st.success(f"{legs_count}-Leg combo ticket locked in!")
+            st.success(f"{active_leg_count}-Leg combo ticket locked in!")
 
 # PAGE 3: LOCKED BETS & HISTORY
 elif menu_choice == "Locked Bets History":
-    st.subheader("📜 Locked Bets History & Live Scoreboard")
+    st.subheader("📜 Bet Tracker & Slips")
 
-    b_col1, b_col2, b_col3 = st.columns([2, 1, 1])
+    b_col1, b_col2 = st.columns(2)
     user_filter = b_col1.selectbox("Filter Bettor", ["All Bettors"] + sorted(list({b.get("user", "Flurk") for b in st.session_state.saved_bets})))
-
-    if b_col2.button("⚡ Force Grade Finals"):
+    if b_col2.button("⚡ Grade Finals", use_container_width=True):
         if auto_resolve_bets(st.session_state.saved_bets, games_data):
             st.success("Updated tickets!")
             st.rerun()
-        else:
-            st.info("Up to date.")
-
-    if st.session_state.saved_bets:
-        csv_lines = ["Date,User,Type,Category,Matchup,Pick,Risk,Payout,Status"]
-        for b in st.session_state.saved_bets:
-            csv_lines.append(f'"{b.get("date","")}","{b.get("user","")}","{b.get("type","")}","{b.get("bet_category","")}","{b.get("matchup","")}","{b.get("bet","")}",{b.get("risk_dollars",0)},{b.get("payout_dollars",0)},"{b.get("status","")}"')
-        csv_data = "\n".join(csv_lines)
-        b_col3.download_button("📥 Export CSV", data=csv_data, file_name="flurkstradamus_bets.csv", mime="text/csv")
 
     active_tickets = [b for b in st.session_state.saved_bets if user_filter == "All Bettors" or b.get("user", "Flurk") == user_filter]
 
@@ -1069,151 +1081,171 @@ elif menu_choice == "Locked Bets History":
     else:
         for b in active_tickets:
             real_idx = st.session_state.saved_bets.index(b)
-            with st.container():
-                r1, r2, r3, r4, r5 = st.columns([2, 3, 2, 2, 1])
-                r1.write(f"**{b.get('user', 'Flurk')}**\n\n`{b['date']}`\n\n{b['type']}")
-                r2.write(f"**{b['matchup']}**\n\nPick: `{b['bet']}`\n\nRisk: **${b.get('risk_dollars', 10.0):.2f}** | Payout: **${b.get('payout_dollars', 19.0):.2f}**")
+            with st.container(border=True):
+                top_row1, top_row2 = st.columns([3, 1])
+                top_row1.markdown(f"**{b.get('user', 'Flurk')}** • <span style='opacity:0.6;font-size:0.8rem;'>{b['date']}</span>", unsafe_allow_html=True)
+                top_row2.caption(f"{b['type']}")
+
+                st.markdown(f"**Pick:** `{b['bet']}`")
+                st.caption(f"Risk: **${b.get('risk_dollars', 10.0):.2f}** ➜ Payout: **${b.get('payout_dollars', 19.0):.2f}**")
 
                 if b.get("bet_category") == "Combo" and b.get("parsed_legs"):
                     leg_statuses = []
                     for leg in b["parsed_legs"]:
                         m_g = find_game_for_bet({"matchup": leg["matchup"]}, games_data)
-                        if m_g:
-                            if m_g["completed"]:
-                                t_p = m_g["away_score"] + m_g["home_score"]
-                                if leg["type"] == "Total":
-                                    won = (t_p < leg["line"]) if leg["side"] == "Under" else (t_p > leg["line"])
-                                else:
-                                    w = m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]
-                                    won = (leg["picked_team"] == w)
-                                leg_statuses.append(f"✅ {m_g['away_short']}@{m_g['home_short']}" if won else f"❌ {m_g['away_short']}@{m_g['home_short']}")
-                            else:
-                                leg_statuses.append(f"⏳ {m_g['away_short']}@{m_g['home_short']} ({m_g.get('kickoff', m_g['status'])})")
-                    r3.write("**Parlay Progress:**\n\n" + "<br>".join(leg_statuses), unsafe_allow_html=True)
+                        if m_g and m_g["completed"]:
+                            t_p = m_g["away_score"] + m_g["home_score"]
+                            won = (t_p < leg["line"]) if leg["type"] == "Total" and leg["side"] == "Under" else (t_p > leg["line"] if leg["type"] == "Total" else leg["picked_team"] == (m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]))
+                            leg_statuses.append(f"✅ {m_g['away_short']}@{m_g['home_short']}" if won else f"❌ {m_g['away_short']}@{m_g['home_short']}")
+                        elif m_g:
+                            leg_statuses.append(f"⏳ {m_g['away_short']}@{m_g['home_short']}")
+                    st.markdown("**Parlay Progress:** " + " • ".join(leg_statuses))
                 else:
                     live_m = find_game_for_bet(b, games_data)
                     if live_m:
-                        tot_score = live_m['away_score'] + live_m['home_score']
-                        r3.write(f"**{live_m['away_short']} {live_m['away_score']} - {live_m['home_score']} {live_m['home_short']}**\n\nTotal: **{tot_score} pts** ({live_m.get('kickoff', live_m['status'])})")
-                    else:
-                        r3.write("Score: *Final / Inactive*")
+                        st.caption(f"Score: **{live_m['away_short']} {live_m['away_score']} - {live_m['home_score']} {live_m['home_short']}** ({live_m['status']})")
 
-                    status_list = ["Pending", "Won", "Lost"]
-                    cur_stat_idx = status_list.index(b["status"]) if b["status"] in status_list else 0
-                    new_stat = r4.selectbox("Result", status_list, index=cur_stat_idx, key=f"stat_{b['id']}")
-                    if new_stat != b["status"]:
-                        st.session_state.saved_bets[real_idx]["status"] = new_stat
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
-                        st.rerun()
+                b_act1, b_act2 = st.columns([3, 1])
+                status_list = ["Pending", "Won", "Lost"]
+                cur_stat_idx = status_list.index(b["status"]) if b["status"] in status_list else 0
+                new_stat = b_act1.selectbox("Status", status_list, index=cur_stat_idx, key=f"stat_{b['id']}")
+                if new_stat != b["status"]:
+                    st.session_state.saved_bets[real_idx]["status"] = new_stat
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
+                    st.rerun()
 
-                    if b.get("bet_category") != "Combo":
-                        if r5.button("🔍 View", key=f"vw_{b['id']}"):
-                            st.session_state.selected_bet_id = b["id"]
-                            st.rerun()
+                if b_act2.button("🗑️", key=f"dl_{b['id']}", use_container_width=True):
+                    st.session_state.saved_bets.pop(real_idx)
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
+                    st.rerun()
 
-                    if r5.button("🗑️", key=f"dl_{b['id']}"):
-                        st.session_state.saved_bets.pop(real_idx)
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
-                        st.rerun()
-
-                st.markdown("---")
-
-# PAGE 4: SQUAD LEADERBOARD
+# ==========================================
+# PAGE 4: SQUAD LEADERBOARD (DEDUPLICATED & MOBILE-FIRST)
+# ==========================================
 elif menu_choice == "🏆 Squad Leaderboard":
-    st.subheader("🏆 Flurkstradamus Squad Leaderboard")
+    st.subheader("🏆 Squad Leaderboard")
+    st.caption("Consensus standings and betting performance.")
 
+    # Deduplicate and group by user
     user_stats = {}
     for b in st.session_state.saved_bets:
-        u = b.get("user", "Flurk")
-        if u not in user_stats:
-            user_stats[u] = {"Wins": 0, "Losses": 0, "Pending": 0, "Total_Risk": 0.0, "Net_Profit": 0.0}
+        u_raw = b.get("user", "Flurk")
+        u_clean = u_raw.strip() if u_raw.strip() else "Flurk"
+        
+        # Consistent key
+        u_key = u_clean.lower()
+        if u_key not in user_stats:
+            user_stats[u_key] = {
+                "display_name": u_clean,
+                "Wins": 0,
+                "Losses": 0,
+                "Pending": 0,
+                "Total_Risk": 0.0,
+                "Net_Profit": 0.0
+            }
 
-            risk = b.get("risk_dollars", 10.0)
-            payout = b.get("payout_dollars", 19.0)
-            stat = b.get("status", "Pending")
+        risk = float(b.get("risk_dollars", 10.0))
+        payout = float(b.get("payout_dollars", 19.0))
+        stat = b.get("status", "Pending")
 
-            if stat == "Won":
-                user_stats[u]["Wins"] += 1
-                user_stats[u]["Total_Risk"] += risk
-                user_stats[u]["Net_Profit"] += (payout - risk)
-            elif stat == "Lost":
-                user_stats[u]["Losses"] += 1
-                user_stats[u]["Total_Risk"] += risk
-                user_stats[u]["Net_Profit"] -= risk
-            else:
-                user_stats[u]["Pending"] += 1
-
-        board = []
-        for u, s in user_stats.items():
-            decided = s["Wins"] + s["Losses"]
-            win_rate = (s["Wins"] / decided * 100) if decided > 0 else 0.0
-            roi = (s["Net_Profit"] / s["Total_Risk"] * 100) if s["Total_Risk"] > 0 else 0.0
-            badge = "🎯 Sniper" if win_rate >= 65 and decided >= 3 else ("🔥 On Fire" if s["Wins"] >= 3 and s["Losses"] == 0 else "⚡ Contender")
-
-            board.append({
-                "user": f"{u} ({badge})",
-                "record": f"{s['Wins']}-{s['Losses']}-{s['Pending']}",
-                "win_rate": f"{win_rate:.1f}%",
-                "roi": f"{roi:+.1f}%",
-                "decided": decided,
-                "net_profit": s["Net_Profit"]
-            })
-
-        board.sort(key=lambda x: x["net_profit"], reverse=True)
-
-        if not board:
-            st.info("No recorded results available yet.")
+        if stat == "Won":
+            user_stats[u_key]["Wins"] += 1
+            user_stats[u_key]["Total_Risk"] += risk
+            user_stats[u_key]["Net_Profit"] += (payout - risk)
+        elif stat == "Lost":
+            user_stats[u_key]["Losses"] += 1
+            user_stats[u_key]["Total_Risk"] += risk
+            user_stats[u_key]["Net_Profit"] -= risk
         else:
-            header = "| Rank | Bettor | Record (W-L-P) | Win Rate | ROI % | Decided | Net Profit ($) |\n|---|---|---|---|---|---|---|\n"
-            rows = ""
-            for i, row in enumerate(board):
-                p_val = f"+${row['net_profit']:.2f}" if row['net_profit'] >= 0 else f"-${abs(row['net_profit']):.2f}"
-                rows += f"| **#{i+1}** | **{row['user']}** | `{row['record']}` | {row['win_rate']} | {row['roi']} | {row['decided']} | **{p_val}** |\n"
-            st.markdown(header + rows)
+            user_stats[u_key]["Pending"] += 1
+
+    board = []
+    for u_k, s in user_stats.items():
+        decided = s["Wins"] + s["Losses"]
+        win_rate = (s["Wins"] / decided * 100) if decided > 0 else 0.0
+        roi = (s["Net_Profit"] / s["Total_Risk"] * 100) if s["Total_Risk"] > 0 else 0.0
+        
+        badge = "🎯 Sniper" if win_rate >= 65 and decided >= 3 else ("🔥 On Fire" if s["Wins"] >= 3 and s["Losses"] == 0 else ("⚡ Contender" if decided > 0 else "🌱 Rookie"))
+
+        board.append({
+            "name": s["display_name"],
+            "badge": badge,
+            "wins": s["Wins"],
+            "losses": s["Losses"],
+            "pending": s["Pending"],
+            "win_rate": win_rate,
+            "roi": roi,
+            "decided": decided,
+            "net_profit": s["Net_Profit"]
+        })
+
+    # Sort strictly descending by profit
+    board.sort(key=lambda x: x["net_profit"], reverse=True)
+
+    if not board:
+        st.info("No bets recorded yet to rank.")
+    else:
+        # Standings overview
+        top_c1, top_c2 = st.columns(2)
+        top_c1.metric("Total Bettors", f"{len(board)}")
+        tot_profit = sum(x['net_profit'] for x in board)
+        top_c2.metric("Squad Net P&L", f"${tot_profit:+.2f}", delta=f"{'+' if tot_profit>=0 else ''}{tot_profit:.2f}")
+
+        # Render one mobile card per bettor
+        for rank_idx, bettor in enumerate(board):
+            medal = "🥇" if rank_idx == 0 else ("🥈" if rank_idx == 1 else ("🥉" if rank_idx == 2 else f"#{rank_idx+1}"))
+            
+            with st.container(border=True):
+                r_c1, r_c2 = st.columns([3, 2])
+                with r_c1:
+                    st.markdown(f"### {medal} **{bettor['name']}**")
+                    st.caption(f"{bettor['badge']} • {bettor['wins']}W - {bettor['losses']}L - {bettor['pending']}P")
+                with r_c2:
+                    p_color = "#4ade80" if bettor['net_profit'] >= 0 else "#f87171"
+                    p_text = f"+${bettor['net_profit']:.2f}" if bettor['net_profit'] >= 0 else f"-${abs(bettor['net_profit']):.2f}"
+                    st.markdown(f"<div style='text-align:right;'><span style='color:{p_color};font-size:1.4rem;font-weight:700;'>{p_text}</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align:right;opacity:0.6;font-size:0.85rem;'>ROI: {bettor['roi']:+.1f}%</div>", unsafe_allow_html=True)
+
+                s1, s2, s3 = st.columns(3)
+                s1.metric("Win Rate", f"{bettor['win_rate']:.1f}%")
+                s2.metric("Decided", f"{bettor['decided']}")
+                s3.metric("Pending", f"{bettor['pending']}")
 
 # PAGE 5: MODEL METHODOLOGY & MATH BREAKDOWN
 elif menu_choice == "📖 Model Methodology & Math":
-    st.subheader("📖 Flurkstradamus Quantitative Model Architecture")
-    st.caption("How every projection, probability percentage, and edge tier is computed.")
+    st.subheader("📖 Model Architecture & Math")
+    st.caption("How edge, variance, and straight-up win rates are calculated.")
 
-    st.markdown("### 1. In-Game Pace & Drift Modeling")
-    st.write(
-        "Sportsbooks typically project points using static half-time divisions. "
-        "Flurkstradamus continuously recalculates variance and drift across 6 distinct states:"
-    )
+    with st.container(border=True):
+        st.markdown("### 1. In-Game Pace & Drift Modeling")
+        st.write(
+            "Sportsbooks typically project points using static half-time divisions. "
+            "Flurkstradamus continuously recalculates variance and drift across 6 distinct states:"
+        )
+        st.markdown(
+            """
+            * **Pre-Game:** Baseline = Open Total, $\sigma = 8.5$.
+            * **1st Quarter:** Evaluates scoring pace relative to a 25% game duration baseline:
+              $$Pace\ Delta = Points\ Scored - (Pregame \times 0.25)$$
+              Adjusts the final projection by 40% of the early deviation ($\sigma = 7.5$).
+            * **Halftime:** Factor in point margins and game script:
+              $$Projected\ 2H = (Pregame \times 0.475) + (Pace\ Delta \times 0.30) + Game\ Script\ Modifier$$
+              * *Blowout ($\ge 17$ pt margin):* $-3.5$ pts (clock bleed).
+              * *Decisive ($10-16$ pt margin):* $-1.5$ pts.
+              * *Close ($0-3$ pt margin):* $+1.5$ pts (stopping clock, hurry-up drives).
+            * **3rd Quarter:** Locks 75% of actual scoring ($\sigma = 4.0$).
+            * **4th Quarter / Late Game:** Closes remaining scoring volume to actual game pace ($\sigma = 1.8$).
+            * **Final / Completed:** All remaining variance decays to zero ($\sigma \to 0$); probabilities resolve to 100% or 0%.
+            """
+        )
 
-    st.markdown(
-        """
-        * **Pre-Game:** Baseline = Open Total, $\sigma = 8.5$.
-        * **1st Quarter:** Evaluates scoring pace relative to a 25% game duration baseline:
-          $$Pace\ Delta = Points\ Scored - (Pregame \times 0.25)$$
-          Adjusts the final projection by 40% of the early deviation ($\sigma = 7.5$).
-        * **Halftime:** Factor in point margins and game script:
-          $$Projected\ 2H = (Pregame \times 0.475) + (Pace\ Delta \times 0.30) + Game\ Script\ Modifier$$
-          * *Blowout ($\ge 17$ pt margin):* $-3.5$ pts (clock bleed).
-          * *Decisive ($10-16$ pt margin):* $-1.5$ pts.
-          * *Close ($0-3$ pt margin):* $+1.5$ pts (stopping clock, hurry-up drives).
-        * **3rd Quarter:** Locks 75% of actual scoring ($\sigma = 4.0$).
-        * **4th Quarter / Late Game:** Closes remaining scoring volume to actual game pace ($\sigma = 1.8$).
-        * **Final / Completed:** All remaining variance decays to zero ($\sigma \to 0$); probabilities resolve to 100% or 0%.
-        """
-    )
+    with st.container(border=True):
+        st.markdown("### 2. Normal CDF & Win Probability Calculation")
+        st.write("Target line comparison uses the cumulative normal distribution function:")
+        st.latex(r"Z = \frac{L - \mu}{\sigma}")
+        st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
 
-    st.markdown("---")
-    st.markdown("### 2. Normal CDF & Win Probability Calculation")
-    st.write("Target line comparison uses the cumulative normal distribution function:")
-    st.latex(r"Z = \frac{L - \mu}{\sigma}")
-    st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
-
-    st.markdown("---")
-    st.markdown("### 3. Straight-Up Moneyline & Spread Engines")
-    st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
-    st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
-
-    st.markdown("---")
-    st.markdown("### 4. Multi-Leg Combo Optimization")
-    st.write(
-        "Parlays multiply individual probabilities: $P(\\text{Combo}) = \\prod_{i=1}^n P(\\text{Leg}_i)$. "
-        "The AI Scanner ranks legs using expected edge $EV = P(\\text{Model}) - P(\\text{Market Implied})$ "
-        "and pairs independent slates to maximize compound probability without same-game cross-correlation."
-    )
+    with st.container(border=True):
+        st.markdown("### 3. Straight-Up Moneyline & Spread Engines")
+        st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
+        st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
