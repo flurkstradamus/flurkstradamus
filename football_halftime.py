@@ -50,17 +50,11 @@ st.markdown("""
         min-height: 2.4rem;
         font-weight: 600;
     }
-    .rec-card {
-        background-color: rgba(34, 197, 94, 0.08);
-        border: 1px solid rgba(34, 197, 94, 0.35);
-        border-radius: 10px;
-        padding: 8px 12px;
-        margin-bottom: 8px;
+    .rec-item-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
         gap: 8px;
+        flex-wrap: wrap;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -618,6 +612,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                     cushion_line = round(proj_tot + (sigma * 1.5)) + 0.5
                     p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
                     candidate_legs.append({
+                        "leg_id": f"tot_{g_c['id']}_under_{cushion_line}",
                         "matchup_idx": games_data.index(g_c),
                         "type": "Game Total",
                         "side": "Under",
@@ -632,6 +627,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                     ml_p = max(h_prob, 1.0 - h_prob)
                     if ml_p >= 0.55:
                         candidate_legs.append({
+                            "leg_id": f"ml_{g_c['id']}_{ml_fav}",
                             "matchup_idx": games_data.index(g_c),
                             "type": "Straight Up Winner",
                             "side": "Under",
@@ -648,6 +644,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                     tgt_line = c_ou
                     p = calculate_win_prob(tgt_line, proj_tot, sigma, is_under=is_u)
                     candidate_legs.append({
+                        "leg_id": f"ev_{g_c['id']}_{'u' if is_u else 'o'}_{tgt_line}",
                         "matchup_idx": games_data.index(g_c),
                         "type": "Game Total",
                         "side": "Under" if is_u else "Over",
@@ -663,6 +660,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                     fav_abbr = c_h_abbr if h_prob >= 0.5 else c_a_abbr
                     ml_p = max(h_prob, 1.0 - h_prob)
                     candidate_legs.append({
+                        "leg_id": f"ml_{g_c['id']}_{ml_fav}",
                         "matchup_idx": games_data.index(g_c),
                         "type": "Straight Up Winner",
                         "side": "Under",
@@ -677,6 +675,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                     cushion_line = round(proj_tot + 4.5) + 0.5
                     p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
                     candidate_legs.append({
+                        "leg_id": f"def_{g_c['id']}_under_{cushion_line}",
                         "matchup_idx": games_data.index(g_c),
                         "type": "Game Total",
                         "side": "Under",
@@ -707,7 +706,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.session_state.ai_recommended_combo = selected_ai_legs
 
-        # RECOMMENDATION PREVIEW WITH REMOVE (❌) BUTTON DIRECTLY IN PREVIEW
+        # INTEGRATED CLEAN PREVIEW CARDS WITH VERTICAL ALIGNMENT
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -716,16 +715,18 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
 
-            # Render each recommended leg on its own clean line with a remove button
+            # Render each recommended leg in a single bordered card
             for idx_ai, l_ai in enumerate(list(st.session_state.ai_recommended_combo)):
                 g_match = games_data[l_ai["matchup_idx"]]
-                
-                c_card, c_del = st.columns([11, 1])
-                with c_card:
-                    st.markdown(f"""
-                    <div class="rec-card">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.78rem; padding: 2px 7px; border-radius: 6px;">
+                leg_key = l_ai.get("leg_id", f"leg_{idx_ai}_{l_ai['matchup_idx']}")
+
+                with st.container(border=True):
+                    c_left, c_mid, c_btn = st.columns([5.5, 3.5, 1.0], vertical_alignment="center")
+                    
+                    with c_left:
+                        st.markdown(f"""
+                        <div class="rec-item-row">
+                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 7px; border-radius: 6px;">
                                 LEG {idx_ai+1}
                             </span>
                             <img src="{g_match['away_logo']}" width="24" height="24" style="border-radius: 50%;">
@@ -733,24 +734,27 @@ elif menu_choice == "2-12 Leg Combo Builder":
                             <span style="opacity: 0.5;">@</span>
                             <img src="{g_match['home_logo']}" width="24" height="24" style="border-radius: 50%;">
                             <strong>{g_match['home_short']}</strong>
-                            <span style="opacity: 0.65; font-size: 0.85rem; margin-left: 6px;">({g_match.get('kickoff', g_match['status'])})</span>
+                            <span style="opacity: 0.65; font-size: 0.8rem;">({g_match.get('kickoff', g_match['status'])})</span>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span style="font-weight: 700; color: #4ade80;">{l_ai['desc']}</span>
-                            <span style="background-color: rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">
-                                {l_ai['prob']*100:.1f}% Win Prob
+                        """, unsafe_allow_html=True)
+                    
+                    with c_mid:
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
+                            <strong style="color: #4ade80; font-size: 0.95rem;">{l_ai['desc']}</strong>
+                            <span style="background-color: rgba(255, 255, 255, 0.08); padding: 2px 7px; border-radius: 6px; font-size: 0.8rem; font-weight: 600;">
+                                {l_ai['prob']*100:.1f}%
                             </span>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                with c_del:
-                    st.write("")
-                    if st.button("❌", key=f"del_rec_{idx_ai}", help=f"Remove Leg {idx_ai+1} from recommendation before applying"):
-                        st.session_state.ai_recommended_combo.pop(idx_ai)
-                        st.rerun()
+                        """, unsafe_allow_html=True)
+                    
+                    with c_btn:
+                        if st.button("❌", key=f"btn_remove_{leg_key}", help=f"Remove Leg {idx_ai+1} from ticket"):
+                            st.session_state.ai_recommended_combo = [item for item in st.session_state.ai_recommended_combo if item.get("leg_id") != l_ai.get("leg_id")]
+                            st.rerun()
 
-            m_rec1, m_rec2 = st.columns([2, 1])
-            m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta="Highest Probability Mix")
+            m_rec1, m_rec2 = st.columns([2, 1], vertical_alignment="center")
+            m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta=f"{len(st.session_state.ai_recommended_combo)} Legs Total")
 
             if m_rec2.button("📥 Apply Recommended Picks into Combo Builder", use_container_width=True):
                 st.session_state.combo_active_legs = [
@@ -766,7 +770,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 st.rerun()
 
     # SLIP BUILDER CONTROLS
-    ctrl_c1, ctrl_c2 = st.columns([3, 1])
+    ctrl_c1, ctrl_c2 = st.columns([3, 1], vertical_alignment="center")
     with ctrl_c1:
         st.markdown(f"#### Active Slip ({len(st.session_state.combo_active_legs)} Legs)")
     with ctrl_c2:
