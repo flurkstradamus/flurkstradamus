@@ -54,7 +54,7 @@ st.markdown("""
         background-color: rgba(34, 197, 94, 0.08);
         border: 1px solid rgba(34, 197, 94, 0.35);
         border-radius: 10px;
-        padding: 10px 14px;
+        padding: 8px 12px;
         margin-bottom: 8px;
         display: flex;
         align-items: center;
@@ -562,7 +562,9 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 "picked_team": g_item["home_team"]
             })
 
-    with st.expander("🤖 AI Strategy Scanner & Optimizer", expanded=True):
+    # AI Strategy Scanner Accordion
+    with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
+        st.markdown("#### Automated Strategy Generator")
         col_strat1, col_strat2 = st.columns(2)
         strategy_mode = col_strat1.selectbox(
             "Strategy Objective",
@@ -578,7 +580,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
         max_possible_legs = min(12, max(2, len(active_candidate_games)))
 
         suggest_legs_count = col_strat2.number_input(
-            "Legs (2-12)",
+            "Target Legs (Up to 12)",
             min_value=2,
             max_value=max_possible_legs,
             value=min(max(len(st.session_state.combo_active_legs), 3), max_possible_legs)
@@ -705,43 +707,51 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.session_state.ai_recommended_combo = selected_ai_legs
 
-        # Display the separated clean lines with team logos
+        # RECOMMENDATION PREVIEW WITH REMOVE (❌) BUTTON DIRECTLY IN PREVIEW
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
-            
-            st.markdown(f"#### 🎯 Algorithm Recommended {num_legs_rec}-Leg Ticket:")
-            
-            for idx_ai, l_ai in enumerate(st.session_state.ai_recommended_combo):
+            for l_item in st.session_state.ai_recommended_combo:
+                comp_p *= l_item["prob"]
+
+            st.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
+
+            # Render each recommended leg on its own clean line with a remove button
+            for idx_ai, l_ai in enumerate(list(st.session_state.ai_recommended_combo)):
                 g_match = games_data[l_ai["matchup_idx"]]
-                comp_p *= l_ai["prob"]
                 
-                # Dedicated HTML Row for each leg with official logos and distinct lines
-                st.markdown(f"""
-                <div class="rec-card">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.78rem; padding: 2px 7px; border-radius: 6px;">
-                            LEG {idx_ai+1}
-                        </span>
-                        <img src="{g_match['away_logo']}" width="24" height="24" style="border-radius: 50%;">
-                        <strong>{g_match['away_short']}</strong>
-                        <span style="opacity: 0.5;">@</span>
-                        <img src="{g_match['home_logo']}" width="24" height="24" style="border-radius: 50%;">
-                        <strong>{g_match['home_short']}</strong>
-                        <span style="opacity: 0.65; font-size: 0.85rem; margin-left: 6px;">({g_match.get('kickoff', g_match['status'])})</span>
+                c_card, c_del = st.columns([11, 1])
+                with c_card:
+                    st.markdown(f"""
+                    <div class="rec-card">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.78rem; padding: 2px 7px; border-radius: 6px;">
+                                LEG {idx_ai+1}
+                            </span>
+                            <img src="{g_match['away_logo']}" width="24" height="24" style="border-radius: 50%;">
+                            <strong>{g_match['away_short']}</strong>
+                            <span style="opacity: 0.5;">@</span>
+                            <img src="{g_match['home_logo']}" width="24" height="24" style="border-radius: 50%;">
+                            <strong>{g_match['home_short']}</strong>
+                            <span style="opacity: 0.65; font-size: 0.85rem; margin-left: 6px;">({g_match.get('kickoff', g_match['status'])})</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-weight: 700; color: #4ade80;">{l_ai['desc']}</span>
+                            <span style="background-color: rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">
+                                {l_ai['prob']*100:.1f}% Win Prob
+                            </span>
+                        </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-weight: 700; color: #4ade80;">{l_ai['desc']}</span>
-                        <span style="background-color: rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;">
-                            {l_ai['prob']*100:.1f}% Win Prob
-                        </span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
+                    """, unsafe_allow_html=True)
+                with c_del:
+                    st.write("")
+                    if st.button("❌", key=f"del_rec_{idx_ai}", help=f"Remove Leg {idx_ai+1} from recommendation before applying"):
+                        st.session_state.ai_recommended_combo.pop(idx_ai)
+                        st.rerun()
+
             m_rec1, m_rec2 = st.columns([2, 1])
             m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta="Highest Probability Mix")
-            
+
             if m_rec2.button("📥 Apply Recommended Picks into Combo Builder", use_container_width=True):
                 st.session_state.combo_active_legs = [
                     {
@@ -755,6 +765,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 ]
                 st.rerun()
 
+    # SLIP BUILDER CONTROLS
     ctrl_c1, ctrl_c2 = st.columns([3, 1])
     with ctrl_c1:
         st.markdown(f"#### Active Slip ({len(st.session_state.combo_active_legs)} Legs)")
@@ -778,21 +789,14 @@ elif menu_choice == "2-12 Leg Combo Builder":
     # RENDER ACTIVE LEGS WITH OFFICIAL TEAM LOGOS IN THE FORM
     for i, leg_data in enumerate(st.session_state.combo_active_legs):
         with st.container(border=True):
-            top_col1, top_col2 = st.columns([5, 1])
-            with top_col1:
-                sel_matchup = st.selectbox(
-                    f"Leg {i+1} Matchup",
-                    range(len(game_choices)),
-                    index=min(leg_data["matchup_idx"], len(game_choices) - 1),
-                    format_func=lambda x: game_choices[x],
-                    key=f"m_sel_{i}"
-                )
-                leg_data["matchup_idx"] = sel_matchup
-            with top_col2:
-                st.write("")
-                if st.button("❌ Remove", key=f"del_leg_{i}", help="Remove this leg"):
-                    st.session_state.combo_active_legs.pop(i)
-                    st.rerun()
+            sel_matchup = st.selectbox(
+                f"Leg {i+1} Matchup",
+                range(len(game_choices)),
+                index=min(leg_data["matchup_idx"], len(game_choices) - 1),
+                format_func=lambda x: game_choices[x],
+                key=f"m_sel_{i}"
+            )
+            leg_data["matchup_idx"] = sel_matchup
 
             leg_g = games_data[leg_data["matchup_idx"]]
             d_h, d_a = leg_g["home_team"], leg_g["away_team"]
