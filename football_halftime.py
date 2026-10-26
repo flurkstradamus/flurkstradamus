@@ -172,6 +172,8 @@ if "editing_ai_combo" not in st.session_state:
     st.session_state.editing_ai_combo = False
 if "combo_version" not in st.session_state:
     st.session_state.combo_version = 0
+if "editing_msg_id" not in st.session_state:
+    st.session_state.editing_msg_id = None
 
 # Single Game State Keys
 if "single_selected_idx" not in st.session_state:
@@ -719,14 +721,15 @@ elif menu_choice == "🔥 Live Squad Feed":
                     st.write(f"**Type:** `{cat_label}`")
 
 # ==========================================
-# 4. THE LOCKER ROOM (EASTERN TIME, THREADED REPLIES & REACTIONS)
+# 4. THE LOCKER ROOM (EDIT, REMOVE, EASTERN TIME, REPLIES, REACTIONS)
 # ==========================================
 elif menu_choice == "💬 The Locker Room":
     st.subheader("💬 The Locker Room")
-    st.caption("Live squad banter, message replies, and quick reactions.")
+    st.caption("Squad banter, threaded replies, reactions, and editable posts.")
 
+    # Top Post Box
     with st.form("send_msg_form", clear_on_submit=True):
-        user_msg = st.text_input("Send a message", placeholder="Talk trash or share your live angle...")
+        user_msg = st.text_input("Send a message", placeholder="Talk trash, call your shot, or share your angle...")
         send_btn = st.form_submit_button("Post Message", use_container_width=True)
         if send_btn and user_msg.strip():
             et_now = get_current_et_time()
@@ -742,16 +745,54 @@ elif menu_choice == "💬 The Locker Room":
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
             st.rerun()
 
-    for m in st.session_state.chat_messages[:35]:
-        m_id = m.get("id", str(random.random()))
+    # Feed loop
+    for m_idx, m in enumerate(list(st.session_state.chat_messages[:40])):
+        m_id = m.get("id", str(m_idx))
         if "reactions" not in m:
             m["reactions"] = {}
         if "replies" not in m:
             m["replies"] = []
 
+        is_author = (m.get("user", "").strip().lower() == current_user.strip().lower() or is_user_admin)
+
         with st.container(border=True):
-            st.markdown(f"**{m.get('user')}** &nbsp; <span style='opacity:0.55;font-size:0.8rem;'>{m.get('time')}</span>", unsafe_allow_html=True)
-            st.write(m.get("text"))
+            top_col1, top_col2 = st.columns([7, 3])
+            with top_col1:
+                st.markdown(f"**{m.get('user')}** &nbsp; <span style='opacity:0.55;font-size:0.8rem;'>{m.get('time')}</span>", unsafe_allow_html=True)
+            with top_col2:
+                # Author controls: Edit & Delete
+                if is_author:
+                    btn_c1, btn_c2 = st.columns(2)
+                    with btn_c1:
+                        if st.button("✏️ Edit", key=f"edit_trig_{m_id}", use_container_width=True):
+                            st.session_state.editing_msg_id = m_id if st.session_state.editing_msg_id != m_id else None
+                            st.rerun()
+                    with btn_c2:
+                        if st.button("🗑️ Del", key=f"del_msg_{m_id}", use_container_width=True):
+                            st.session_state.chat_messages.pop(m_idx)
+                            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
+                            st.rerun()
+
+            # Inline Edit Form
+            if st.session_state.editing_msg_id == m_id:
+                with st.form(f"inline_edit_form_{m_id}"):
+                    edited_text = st.text_input("Edit message", value=m.get("text", ""))
+                    e_btn1, e_btn2 = st.columns(2)
+                    save_edit = e_btn1.form_submit_button("Save Changes")
+                    cancel_edit = e_btn2.form_submit_button("Cancel")
+
+                    if save_edit and edited_text.strip():
+                        m["text"] = edited_text.strip()
+                        if "edited" not in m.get("time", ""):
+                            m["time"] = f"{m.get('time')} (edited)"
+                        st.session_state.editing_msg_id = None
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
+                        st.rerun()
+                    elif cancel_edit:
+                        st.session_state.editing_msg_id = None
+                        st.rerun()
+            else:
+                st.write(m.get("text"))
 
             # Display active reactions
             if m["reactions"]:
