@@ -144,11 +144,19 @@ if "combo_active_legs" not in st.session_state:
 if "ai_recommended_combo" not in st.session_state:
     st.session_state.ai_recommended_combo = None
 if "active_nav_page" not in st.session_state:
-    st.session_state.active_nav_page = "2-12 Leg Combo Builder"
+    st.session_state.active_nav_page = "Single Game Engine"
 if "editing_ai_combo" not in st.session_state:
     st.session_state.editing_ai_combo = False
 if "combo_version" not in st.session_state:
     st.session_state.combo_version = 0
+
+# Single Game AI Strategy State
+if "single_selected_idx" not in st.session_state:
+    st.session_state.single_selected_idx = 0
+if "single_ai_rec" not in st.session_state:
+    st.session_state.single_ai_rec = None
+if "single_applied_pick" not in st.session_state:
+    st.session_state.single_applied_pick = None
 
 # Access Gatekeeper
 if not st.session_state.authenticated:
@@ -267,7 +275,7 @@ def get_extended_games(league_code="nfl"):
     return all_games
 
 # ==========================================
-# SIDEBAR NAVIGATION (BETTOR HANDLE ON TOP, LEFT-ALIGNED TABS)
+# SIDEBAR NAVIGATION
 # ==========================================
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
@@ -449,13 +457,28 @@ elif menu_choice == "💬 The Locker Room":
             st.markdown(f"**{m.get('user')}** <span style='opacity:0.6;font-size:0.8rem;'>({m.get('time')})</span>", unsafe_allow_html=True)
             st.write(m.get('text'))
 
-# PAGE 1: SINGLE GAME ENGINE
+# ==========================================
+# PAGE 1: SINGLE GAME ENGINE (WITH AUTOMATED STRATEGY)
+# ==========================================
 elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Engine")
 
     if games_data:
         game_options = [f"[{g['league']}] {g['away_short']} @ {g['home_short']} ({g.get('kickoff', g['status'])})" for g in games_data]
-        selected_idx = st.selectbox("Select Matchup", range(len(game_options)), format_func=lambda x: game_options[x])
+        
+        # Ensure selected index stays in bounds
+        if st.session_state.single_selected_idx >= len(game_options):
+            st.session_state.single_selected_idx = 0
+            
+        selected_idx = st.selectbox(
+            "Select Matchup", 
+            range(len(game_options)), 
+            index=st.session_state.single_selected_idx, 
+            format_func=lambda x: game_options[x],
+            key="single_matchup_dropdown"
+        )
+        st.session_state.single_selected_idx = selected_idx
+        
         g = games_data[selected_idx]
         g_id = g.get("id", str(selected_idx))
         detected_stage = g["checkpoint"]
@@ -469,12 +492,134 @@ elif menu_choice == "Single Game Engine":
         espn_ou = 47.5
         espn_spread = -3.5
 
+    # Matchup Header Banner
     with st.container(border=True):
         b1, b2, b3 = st.columns([1, 4, 1])
         b1.image(g.get("away_logo", DEFAULT_LOGO), width=45)
         b2.markdown(f"### **{g['away_short']}** @ **{g['home_short']}**\n{g.get('kickoff', g['status'])}")
         b3.image(g.get("home_logo", DEFAULT_LOGO), width=45)
 
+    # ----------------------------------------------------
+    # AUTOMATED AI STRATEGY ENGINE FOR SINGLE GAME
+    # ----------------------------------------------------
+    with st.expander("🤖 AI Single Game Strategy Engine", expanded=True):
+        col_opt1, col_opt2 = st.columns(2)
+        game_scope = col_opt1.selectbox(
+            "Target Game Mode",
+            ["🎯 Analyze Selected Matchup Above", "⚡ Let System Pick Highest Edge Game on Slate"]
+        )
+        bet_strategy_focus = col_opt2.selectbox(
+            "Strategy Bet Type",
+            ["🏆 Outright Winner (Moneyline)", "📊 Over / Under Total Points"]
+        )
+
+        if st.button("⚡ Scan & Recommend Game Strategy", use_container_width=True):
+            target_game = g
+            # If user wants the system to scan the entire slate for the highest mismatch
+            if "Highest Edge Game" in game_scope and games_data:
+                candidates = [gm for gm in games_data if not gm.get("completed", False)]
+                if not candidates:
+                    candidates = games_data
+                
+                if "Moneyline" in bet_strategy_focus:
+                    # Pick game with largest win expectancy difference
+                    def ml_diff(item):
+                        p = calculate_moneyline_prob(item["home_score"]+14, item["away_score"]+14, item["home_record"], item["away_record"])
+                        return abs(p - 0.5)
+                    target_game = max(candidates, key=ml_diff)
+                else:
+                    # Pick game with largest pace difference
+                    def tot_diff(item):
+                        ou = item.get("market_ou", 47.5)
+                        current_tot = item["home_score"] + item["away_score"]
+                        period = item.get("period", 1)
+                        proj = current_tot + (ou * 0.475) if period == 2 else ou
+                        return abs(proj - ou)
+                    target_game = max(candidates, key=tot_diff)
+                
+                # Update selected game state
+                if target_game in games_data:
+                    st.session_state.single_selected_idx = games_data.index(target_game)
+
+            # Analyze the Target Game
+            tg_home = target_game["home_team"]
+            tg_away = target_game["away_team"]
+            tg_h_short = target_game["home_short"]
+            tg_a_short = target_game["away_short"]
+            tg_h_score = target_game["home_score"]
+            tg_a_score = target_game["away_score"]
+            tg_ou = target_game.get("market_ou", 47.5)
+            tg_period = target_game.get("period", 1)
+
+            if "Moneyline" in bet_strategy_focus:
+                p_home = calculate_moneyline_prob(tg_h_score + 14, tg_a_score + 14, target_game.get("home_record", "0-0"), target_game.get("away_record", "0-0"))
+                pick_team = tg_home if p_home >= 0.5 else tg_away
+                pick_abbr = tg_h_short if p_home >= 0.5 else tg_a_short
+                win_pct = p_home if p_home >= 0.5 else (1.0 - p_home)
+
+                st.session_state.single_ai_rec = {
+                    "game_id": target_game["id"],
+                    "category": "Moneyline",
+                    "pick": f"{pick_abbr} ML",
+                    "picked_team": pick_team,
+                    "target_line": None,
+                    "side": "Moneyline",
+                    "prob": win_pct,
+                    "explanation": f"Model rates **{pick_abbr}** with a **{win_pct*100:.1f}%** outright win expectancy against {tg_a_short if pick_team==tg_home else tg_h_short} based on in-game momentum and season efficiency records."
+                }
+            else:
+                # Total Points Evaluation
+                current_pts = tg_h_score + tg_a_score
+                if tg_period <= 1:
+                    proj_t = tg_ou
+                    sig = 8.0
+                elif tg_period == 2:
+                    proj_t = current_pts + (tg_ou * 0.475)
+                    sig = 6.0
+                else:
+                    proj_t = current_pts + 10.0
+                    sig = 4.0
+
+                cushion = round(proj_t + 3.5) + 0.5
+                p_under = calculate_win_prob(cushion, proj_t, sig, is_under=True)
+
+                st.session_state.single_ai_rec = {
+                    "game_id": target_game["id"],
+                    "category": "Total",
+                    "pick": f"Under {cushion}",
+                    "picked_team": None,
+                    "target_line": cushion,
+                    "side": "Under",
+                    "prob": p_under,
+                    "explanation": f"Model projects total game points at **{proj_t:.1f} pts** vs {tg_ou} market baseline. **Under {cushion}** offers a **{p_under*100:.1f}%** safe floor cover expectancy."
+                }
+            st.rerun()
+
+        # Display Recommended Strategy Box
+        if st.session_state.single_ai_rec:
+            rec = st.session_state.single_ai_rec
+            st.markdown(f"""
+            <div style="background-color: rgba(34, 197, 94, 0.08); border: 1.5px solid #22c55e; border-radius: 8px; padding: 10px 14px; margin-top: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <strong style="color: #4ade80; font-size: 1.05rem;">Suggested Pick: {rec['pick']}</strong>
+                    <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px;">
+                        {rec['prob']*100:.1f}% Edge
+                    </span>
+                </div>
+                <div style="font-size: 0.88rem; opacity: 0.85; line-height: 1.3;">
+                    {rec['explanation']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if st.button("📥 Apply Strategy Pick to Form Below", use_container_width=True):
+                st.session_state.single_applied_pick = rec
+                st.success("Pick loaded into ticket inputs below!")
+                st.rerun()
+
+    # ----------------------------------------------------
+    # SINGLE GAME INPUT FORM & MODEL CALCULATIONS
+    # ----------------------------------------------------
     all_stages = ["Pre-Game", "1st Quarter", "Halftime", "3rd Quarter", "4th Quarter / Late Game", "Final / Game Completed"]
     default_stage_idx = all_stages.index(detected_stage) if detected_stage in all_stages else 2
     bracket_stage = st.selectbox("Game Checkpoint / Period", options=all_stages, index=default_stage_idx)
@@ -532,14 +677,31 @@ elif menu_choice == "Single Game Engine":
         m1.metric("Projected Total", f"{final_proj:.1f} pts")
         m2.metric(f"{g['home_short']} Win Exp.", f"{home_win_prob * 100:.1f}%")
 
-    bet_type = st.radio("Wager Type", ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)"], horizontal=True, key=f"btype_sel_{g_id}")
+    # Determine default wager type based on applied strategy pick
+    applied = st.session_state.single_applied_pick
+    default_wtype_idx = 0
+    if applied:
+        if applied["category"] == "Moneyline":
+            default_wtype_idx = 1
+        elif applied["category"] == "Total":
+            default_wtype_idx = 0
+
+    bet_type = st.radio(
+        "Wager Type", 
+        ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)"], 
+        index=default_wtype_idx,
+        horizontal=True, 
+        key=f"btype_sel_{g_id}"
+    )
 
     with st.form("single_bet_form"):
         if bet_type == "Game Total":
             f1, f2 = st.columns(2)
-            side = f1.selectbox("Side", ["Under", "Over"], key=f"side_{g_id}")
-            default_strike = round(final_proj + 2.5) + 0.5 if not is_completed else float(pts_scored)
-            strike = f2.number_input("Target Line (pts)", value=float(default_strike), step=0.5, key=f"strike_{g_id}")
+            default_side_idx = 0 if (applied and applied.get("side") == "Under") else 0
+            side = f1.selectbox("Side", ["Under", "Over"], index=default_side_idx, key=f"side_{g_id}")
+            
+            calc_strike = applied["target_line"] if (applied and applied.get("target_line")) else (round(final_proj + 2.5) + 0.5 if not is_completed else float(pts_scored))
+            strike = f2.number_input("Target Line (pts)", value=float(calc_strike), step=0.5, key=f"strike_{g_id}")
             picked_t = None
         elif bet_type == "Point Spread (ATS)":
             f1, f2 = st.columns(2)
@@ -550,12 +712,16 @@ elif menu_choice == "Single Game Engine":
         else:
             side = "Moneyline"
             strike = None
-            picked_t = st.selectbox("Winning Team", [home_team, away_team], format_func=lambda x: f"{g['home_short']} ({home_team})" if x == home_team else f"{g['away_short']} ({away_team})", key=f"ml_pick_{g_id}")
+            default_team_idx = 0
+            if applied and applied.get("picked_team"):
+                default_team_idx = 0 if applied["picked_team"] == home_team else 1
+            picked_t = st.selectbox("Winning Team", [home_team, away_team], index=default_team_idx, format_func=lambda x: f"{g['home_short']} ({home_team})" if x == home_team else f"{g['away_short']} ({away_team})", key=f"ml_pick_{g_id}")
 
         p1, p2 = st.columns(2)
         risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
         payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=19.0, step=5.0)
-        ticket_notes = st.text_input("Notes", "Model play")
+        default_notes = "AI Strategy play" if applied else "Model play"
+        ticket_notes = st.text_input("Notes", default_notes)
 
         lock_submit = st.form_submit_button("Lock In Bet", use_container_width=True)
         if lock_submit:
@@ -606,6 +772,7 @@ elif menu_choice == "Single Game Engine":
             }
             st.session_state.saved_bets.insert(0, ticket_record)
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
+            st.session_state.single_applied_pick = None
             st.success("Ticket saved to history!")
 
 # PAGE 2: 2 TO 12 LEG COMBO BUILDER
