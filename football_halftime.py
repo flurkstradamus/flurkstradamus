@@ -80,7 +80,7 @@ if "selected_bet_id" not in st.session_state:
 # Access Gatekeeper
 if not st.session_state.authenticated:
     st.title("🔮 Flurkstradamus: Private Syndicate")
-    st.caption("Mobile Edge & Consensus Terminal")
+    st.caption("Consensus Live Edge & Market Terminal")
     with st.form("pin_login"):
         pin_entry = st.text_input("Group Passcode", type="password")
         login_btn = st.form_submit_button("Enter Terminal")
@@ -100,20 +100,22 @@ if "saved_bets" not in st.session_state:
 # ==========================================
 def calculate_win_prob(target_line, projected_total, std_dev=7.0, is_under=True):
     if std_dev <= 0.2:
-        if is_under:
-            return 1.0 if projected_total < target_line else 0.0
-        else:
-            return 1.0 if projected_total > target_line else 0.0
-            
+        return 1.0 if (projected_total < target_line if is_under else projected_total > target_line) else 0.0
     std_dev = max(std_dev, 0.75)
     z = (target_line - projected_total) / std_dev
     under_prob = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
     return under_prob if is_under else (1.0 - under_prob)
 
+def calculate_spread_prob(projected_margin, target_spread, std_dev=7.0):
+    # projected_margin: (Home Projected - Away Projected)
+    # target_spread: spread for home team (e.g. -3.5 means home must win by > 3.5)
+    diff = projected_margin - (-target_spread)
+    z = diff / max(std_dev, 1.0)
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
 def calculate_moneyline_prob(home_proj, away_proj, home_record_str, away_record_str, is_final=False):
     if is_final:
         return 1.0 if home_proj > away_proj else 0.0
-        
     spread_exp = home_proj - away_proj
 
     def parse_rec(rec):
@@ -132,7 +134,7 @@ def calculate_moneyline_prob(home_proj, away_proj, home_record_str, away_record_
     return max(min(prob_home_win, 0.99), 0.01)
 
 # ==========================================
-# ESPN LIVE SCOREBOARD DATA FEED
+# ESPN LIVE SCOREBOARD & ODDS FEED
 # ==========================================
 @st.cache_data(ttl=10)
 def get_live_games(league_code="nfl"):
@@ -150,6 +152,14 @@ def get_live_games(league_code="nfl"):
             state_text = status_obj["type"]["state"]
             status_desc = status_obj["type"]["shortDetail"]
             period = status_obj.get("period", 1)
+
+            # Extract Odds line from ESPN if published
+            odds_overunder = 47.5
+            odds_spread = -3.5
+            if comp.get("odds"):
+                odds_data = comp["odds"][0]
+                odds_overunder = float(odds_data.get("overUnder", 47.5))
+                odds_spread = float(odds_data.get("spread", -3.5))
 
             if state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower():
                 checkpoint = "Final / Game Completed"
@@ -187,7 +197,9 @@ def get_live_games(league_code="nfl"):
                 "checkpoint": checkpoint,
                 "completed": is_completed,
                 "period": period,
-                "displayClock": status_obj.get("displayClock", "0:00")
+                "displayClock": status_obj.get("displayClock", "0:00"),
+                "market_ou": odds_overunder,
+                "market_spread": odds_spread
             })
         return games
     except Exception:
@@ -214,41 +226,68 @@ def auto_resolve_bets(bets, games):
     changed = False
     for b in bets:
         if b.get("status") == "Pending":
-            match_game = find_game_for_bet(b, games)
-            if match_game and (match_game.get("completed", False) or "final" in match_game["status"].lower()):
-                tot = match_game["away_score"] + match_game["home_score"]
-                b_cat = b.get("bet_category", "Total")
-                if b_cat == "Total" and b.get("target_line") is not None:
-                    is_und = (b.get("bet_direction", "Under") == "Under")
-                    b["status"] = "Won" if ((tot < b["target_line"]) if is_und else (tot > b["target_line"])) else "Lost"
+            b_cat = b.get("bet_category", "Total")
+            
+            # Single Wager Auto-Resolution
+            if b_cat != "Combo":
+                match_game = find_game_for_bet(b, games)
+                if match_game and (match_game.get("completed", False) or "final" in match_game["status"].lower()):
+                    tot = match_game["away_score"] + match_game["home_score"]
+                    h_score = match_game["home_score"]
+                    a_score = match_game["away_score"]
+                    
+                    if b_cat == "Total" and b.get("target_line") is not None:
+                        is_und = (b.get("bet_direction", "Under") == "Under")
+                        b["status"] = "Won" if ((tot < b["target_line"]) if is_und else (tot > b["target_line"])) else "Lost"
+                        changed = True
+                    elif b_cat == "Moneyline" and b.get("picked_team"):
+                        actual_winner = match_game["home_team"] if h_score > a_score else match_game["away_team"]
+                        b["status"] = "Won" if (b["picked_team"] == actual_winner) else "Lost"
+                        changed = True
+                    elif b_cat == "Spread" and b.get("target_line") is not None:
+                        team_picked = b.get("picked_team", match_game["home_team"])
+                        line = b["target_line"]
+                        diff = (h_score - a_score) if team_picked == match_game["home_team"] else (a_score - h_score)
+                        b["status"] = "Won" if (diff + line > 0) else "Lost"
+                        changed = True
+
+            # Multi-Leg Combo Auto-Resolution
+            elif b_cat == "Combo" and b.get("parsed_legs"):
+                all_done = True
+                any_lost = False
+                for leg in b["parsed_legs"]:
+                    m_g = find_game_for_bet({"matchup": leg["matchup"]}, games)
+                    if m_g and (m_g.get("completed", False) or "final" in m_g["status"].lower()):
+                        t_pts = m_g["away_score"] + m_g["home_score"]
+                        if leg["type"] == "Total":
+                            is_u = leg["side"] == "Under"
+                            if not ((t_pts < leg["line"]) if is_u else (t_pts > leg["line"])):
+                                any_lost = True
+                        elif leg["type"] == "Moneyline":
+                            act_win = m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]
+                            if leg["picked_team"] != act_win:
+                                any_lost = True
+                    else:
+                        all_done = False
+                
+                if any_lost:
+                    b["status"] = "Lost"
                     changed = True
-                elif b_cat == "Moneyline" and b.get("picked_team"):
-                    h_won = match_game["home_score"] > match_game["away_score"]
-                    actual_winner = match_game["home_team"] if h_won else match_game["away_team"]
-                    b["status"] = "Won" if (b["picked_team"] == actual_winner) else "Lost"
+                elif all_done:
+                    b["status"] = "Won"
                     changed = True
+
     if changed:
         save_bets(bets)
     return changed
 
 # ==========================================
-# MOBILE-FIRST SIDEBAR NAVIGATION
+# MOBILE-FIRST SIDEBAR (NAVIGATION AT TOP)
 # ==========================================
 st.sidebar.markdown("## 🔮 Flurkstradamus")
-current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
-league = st.sidebar.radio("Active League", ["NFL", "NCAA Football"])
-league_param = "nfl" if league == "NFL" else "college-football"
+st.sidebar.caption("The Live Football Edge Engine")
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("### ⏱️ Live Updates")
-auto_refresh = st.sidebar.toggle("Auto-Refresh Live Scores", value=True)
-refresh_interval = st.sidebar.slider("Interval (seconds)", min_value=10, max_value=60, value=15, step=5)
-if st.sidebar.button("🔄 Manual Scoreboard Sync"):
-    st.cache_data.clear()
-    st.session_state.saved_bets = load_bets()
-    st.rerun()
-
-st.sidebar.markdown("---")
+# 1. Navigation Menu Placed at the Top
 menu_choice = st.sidebar.radio(
     "Navigation Menu",
     [
@@ -260,6 +299,23 @@ menu_choice = st.sidebar.radio(
     ]
 )
 
+st.sidebar.markdown("---")
+
+# 2. Bettor & League Selector
+current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
+league = st.sidebar.radio("Active League", ["NFL", "NCAA Football"])
+league_param = "nfl" if league == "NFL" else "college-football"
+
+# 3. Live Update Settings
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ⏱️ Live Updates")
+auto_refresh = st.sidebar.toggle("Auto-Refresh Live Scores", value=True)
+refresh_interval = st.sidebar.slider("Interval (seconds)", min_value=10, max_value=60, value=15, step=5)
+if st.sidebar.button("🔄 Manual Scoreboard Sync"):
+    st.cache_data.clear()
+    st.session_state.saved_bets = load_bets()
+    st.rerun()
+
 # ==========================================
 # CORE APP FRAGMENT (AUTO-UPDATES LIVE)
 # ==========================================
@@ -269,7 +325,7 @@ def render_main_engine():
     auto_resolve_bets(st.session_state.saved_bets, games_data)
 
     # ------------------------------------------
-    # DETAIL PAGE: IN-GAME BET WAR ROOM
+    # DETAIL PAGE: IN-GAME BET WAR ROOM & HEDGE CALCULATOR
     # ------------------------------------------
     if st.session_state.selected_bet_id is not None:
         selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
@@ -291,7 +347,7 @@ def render_main_engine():
         live_game_info = find_game_for_bet(selected_bet, games_data)
 
         if not live_game_info:
-            st.warning("Live feed for this game is currently inactive.")
+            st.warning("Live scoreboard data for this game is currently inactive.")
             st.write(f"Target: **{bet_dir} {target_line}**" if target_line else f"Pick: **{selected_bet['bet']}**")
             return
 
@@ -308,6 +364,10 @@ def render_main_engine():
 
         st.markdown("---")
 
+        risk = selected_bet.get("risk_dollars", 10.0)
+        payout = selected_bet.get("payout_dollars", 19.0)
+
+        # In-Game Probability Engine
         if bet_category == "Moneyline":
             h_prob = calculate_moneyline_prob(curr_home, curr_away, live_game_info["home_record"], live_game_info["away_record"], is_final=is_final)
             picked_home = selected_bet.get("picked_team") == live_game_info["home_team"]
@@ -315,7 +375,18 @@ def render_main_engine():
 
             m1, m2, m3 = st.columns(3)
             m1.metric("Selected Winner", selected_bet.get("picked_team", "N/A"))
-            m2.metric("Current Margin", f"{curr_home - curr_away:+d} pts")
+            m2.metric("Score Margin", f"{curr_home - curr_away:+d} pts")
+            m3.metric("Live Win Probability", f"{win_prob * 100:.1f}%")
+
+        elif bet_category == "Spread":
+            diff = curr_home - curr_away
+            is_home = selected_bet.get("picked_team") == live_game_info["home_team"]
+            proj_diff = diff + 1.5 if is_home else -diff - 1.5
+            win_prob = calculate_spread_prob(proj_diff, target_line, std_dev=4.5)
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Selected Spread", f"{selected_bet.get('picked_team')} {target_line:+}")
+            m2.metric("Margin Needed", f"{diff:+d} pts currently")
             m3.metric("Live Win Probability", f"{win_prob * 100:.1f}%")
 
         else:
@@ -334,14 +405,33 @@ def render_main_engine():
                 proj_pts = selected_bet.get("model_proj", total_pts + 14.0)
                 in_game_proj = total_pts + ((proj_pts - total_pts) * 0.5)
 
-            prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under)
+            win_prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under)
             cushion = target_line - total_pts if is_under else total_pts - target_line
 
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Current Total", f"{total_pts} pts")
+            m1.metric("Live Total", f"{total_pts} pts")
             m2.metric("Target Line", f"{bet_dir} {target_line}")
             m3.metric("Safety Cushion", f"{cushion:+.1f} pts")
-            m4.metric("Live Win Prob", f"{prob * 100:.1f}%")
+            m4.metric("Live Win Prob", f"{win_prob * 100:.1f}%")
+
+        # Live Hedge & Cashout Value Engine
+        st.markdown("---")
+        st.subheader("💰 Live Equity & Smart Hedging")
+        cur_equity = payout * win_prob
+        c_h1, c_h2, c_h3 = st.columns(3)
+        c_h1.metric("Initial Risk", f"${risk:.2f}")
+        c_h2.metric("Full Payout Potential", f"${payout:.2f}")
+        c_h3.metric("Current Fair Equity", f"${cur_equity:.2f}", delta=f"{cur_equity - risk:+.2f}")
+
+        if not is_final:
+            opp_prob = 1.0 - win_prob
+            if win_prob >= 0.70 and cur_equity > risk:
+                hedge_size = (payout - risk) / 2.0
+                st.success(f"💡 **Favorable Position:** Your ticket has {win_prob*100:.1f}% equity. If the opposing side is offered at plus money, bet ~**${hedge_size:.2f}** on the other side to lock in guaranteed profit.")
+            elif win_prob <= 0.30:
+                st.warning(f"⚠️ **Under Pressure:** Win probability has dropped to {win_prob*100:.1f}%. Consider cutting early if a cashout above ${risk*0.35:.2f} is available.")
+            else:
+                st.info("⚖️ **Balanced Game:** Within standard deviation variance. Let the play run.")
 
         return
 
@@ -349,7 +439,7 @@ def render_main_engine():
     # PAGE 1: SINGLE GAME ENGINE
     # ------------------------------------------
     if menu_choice == "Single Game Engine":
-        st.subheader("⚡ Single Game Edge & Status Engine")
+        st.subheader("⚡ Single Game Consensus & Edge Terminal")
 
         if games_data:
             game_options = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
@@ -357,11 +447,15 @@ def render_main_engine():
             g = games_data[selected_idx]
             g_id = g.get("id", str(selected_idx))
             detected_stage = g["checkpoint"]
+            espn_ou = g["market_ou"]
+            espn_spread = g["market_spread"]
         else:
             st.warning("Manual Matchup Mode")
-            g = {"id": "man", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False}
+            g = {"id": "man", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False, "market_ou": 47.5, "market_spread": -3.5}
             g_id = "man"
             detected_stage = "Halftime"
+            espn_ou = 47.5
+            espn_spread = -3.5
 
         all_stages = [
             "Pre-Game",
@@ -386,18 +480,20 @@ def render_main_engine():
             away_team = st.text_input("Away Team", value=g["away_team"], key=f"a_{g_id}")
             home_rec = st.text_input(f"{home_team} Record", value=g.get("home_record", "0-0"), key=f"h_rec_{g_id}")
             away_rec = st.text_input(f"{away_team} Record", value=g.get("away_record", "0-0"), key=f"a_rec_{g_id}")
-            pregame_total = st.number_input("Pre-Game Baseline Total", value=47.5, step=0.5, key=f"pre_{g_id}")
+            pregame_total = st.number_input("Pre-Game Total (Full)", value=espn_ou, step=0.5, key=f"pre_{g_id}")
 
         with c2:
             sc1, sc2 = st.columns(2)
             h_pts = sc1.number_input(f"{home_team} Score", min_value=0, value=g["home_score"], key=f"hp_{g_id}")
             a_pts = sc2.number_input(f"{away_team} Score", min_value=0, value=g["away_score"], key=f"ap_{g_id}")
-            market_line = st.number_input("Market Total Line (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
+            market_line = st.number_input("Market Total Offered (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
+            spread_line = st.number_input(f"{home_team} Consensus Spread", value=espn_spread, step=0.5, key=f"spd_{g_id}")
 
         pts_scored = h_pts + a_pts
         margin = abs(h_pts - a_pts)
         is_completed = (bracket_stage == "Final / Game Completed")
 
+        # Dynamic Checkpoint Variance & Projections
         if is_completed:
             final_proj = float(pts_scored)
             std_bracket = 0.01
@@ -427,17 +523,20 @@ def render_main_engine():
 
         home_win_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), home_rec, away_rec, is_final=is_completed)
         away_win_prob = 1.0 - home_win_prob
+        proj_margin = (h_pts + (final_proj / 2.0)) - (a_pts + (final_proj / 2.0))
+        home_cover_prob = calculate_spread_prob(proj_margin, spread_line, std_bracket)
 
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Projected Total", f"{final_proj:.1f} pts", delta=f"{final_proj - pregame_total:+.1f} shift")
-        m2.metric(f"{home_team} Win Expectancy", f"{home_win_prob * 100:.1f}%")
-        m3.metric(f"{away_team} Win Expectancy", f"{away_win_prob * 100:.1f}%")
+        m2.metric(f"{home_team} Win Exp.", f"{home_win_prob * 100:.1f}%")
+        m3.metric(f"{away_team} Win Exp.", f"{away_win_prob * 100:.1f}%")
+        m4.metric(f"{home_team} Spread ({spread_line:+})", f"{home_cover_prob * 100:.1f}%")
 
         st.markdown("---")
         st.subheader("🎯 Suggested Edge Tiers")
 
         if is_completed:
-            st.info(f"🏁 **Game is Finished!** Final Total: **{pts_scored} Points** — Winner: **{home_team if h_pts > a_pts else away_team}**")
+            st.info(f"🏁 **Final Game Score:** {away_team} {a_pts} - {h_pts} {home_team} (Total: **{pts_scored} Points**)")
         else:
             line_good = round(final_proj + (5.5 if std_bracket > 3.0 else 2.5)) + 0.5
             line_better = round(final_proj + (3.0 if std_bracket > 3.0 else 1.0)) + 0.5
@@ -449,15 +548,14 @@ def render_main_engine():
             c_t2.info(f"🟡 **Balanced: Under {line_better}**\n\nWin Prob: **{prob_better * 100:.1f}%**")
             fav_team = home_team if home_win_prob > 0.5 else away_team
             fav_prob = max(home_win_prob, away_win_prob)
-            c_t3.warning(f"🔥 **Moneyline: {fav_team}**\n\nWin Prob: **{fav_prob * 100:.1f}%**")
+            c_t3.warning(f"🔥 **Straight-Up ML: {fav_team}**\n\nWin Prob: **{fav_prob * 100:.1f}%**")
 
         st.markdown("---")
         st.subheader(f"🔒 Lock In Ticket as {current_user}")
 
-        # Placed outside form to allow instant re-rendering of pick fields
         bet_type = st.radio(
             "Wager Type",
-            ["Game Total", "Straight Up Winner (Moneyline)"],
+            ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)"],
             horizontal=True,
             key=f"btype_sel_{g_id}"
         )
@@ -469,18 +567,20 @@ def render_main_engine():
                 default_strike = round(final_proj + 2.5) + 0.5 if not is_completed else float(pts_scored)
                 strike = f2.number_input("Target Line (pts)", value=float(default_strike), step=0.5, key=f"strike_{g_id}")
                 picked_t = None
+            elif bet_type == "Point Spread (ATS)":
+                f1, f2 = st.columns(2)
+                picked_t = f1.selectbox("Team to Cover", [home_team, away_team], key=f"spd_pick_{g_id}")
+                spd_val = spread_line if picked_t == home_team else -spread_line
+                strike = f2.number_input("Spread Line", value=float(spd_val), step=0.5, key=f"spd_val_{g_id}")
+                side = "Spread"
             else:
                 side = "Moneyline"
                 strike = None
-                picked_t = st.selectbox(
-                    "Select Winning Team",
-                    [home_team, away_team],
-                    key=f"ml_pick_{g_id}"
-                )
+                picked_t = st.selectbox("Winning Team", [home_team, away_team], key=f"ml_pick_{g_id}")
 
             p1, p2, p3 = st.columns(3)
             risk_amt = p1.number_input("Risk Amount ($)", min_value=1.0, value=10.0, step=5.0)
-            payout_amt = p2.number_input("Potential Total Return ($)", min_value=1.0, value=19.0, step=5.0)
+            payout_amt = p2.number_input("Total Potential Return ($)", min_value=1.0, value=19.0, step=5.0)
             ticket_notes = p3.text_input("Notes", "Model edge play")
 
             lock_submit = st.form_submit_button("Lock In Bet")
@@ -488,14 +588,23 @@ def render_main_engine():
                 if bet_type == "Game Total":
                     prob_calc = calculate_win_prob(strike, final_proj, std_bracket, is_under=(side == "Under"))
                     bet_label = f"{side} {strike}"
+                    cat = "Total"
+                elif bet_type == "Point Spread (ATS)":
+                    prob_calc = home_cover_prob if picked_t == home_team else (1.0 - home_cover_prob)
+                    bet_label = f"{picked_t} {strike:+}"
+                    cat = "Spread"
                 else:
                     prob_calc = home_win_prob if picked_t == home_team else away_win_prob
                     bet_label = f"{picked_t} ML"
+                    cat = "Moneyline"
 
                 initial_status = "Pending"
                 if is_completed:
-                    if bet_type == "Game Total":
+                    if cat == "Total":
                         initial_status = "Won" if ((pts_scored < strike) if side == "Under" else (pts_scored > strike)) else "Lost"
+                    elif cat == "Spread":
+                        actual_diff = (h_pts - a_pts) if picked_t == home_team else (a_pts - h_pts)
+                        initial_status = "Won" if (actual_diff + strike > 0) else "Lost"
                     else:
                         actual_winner = home_team if h_pts > a_pts else away_team
                         initial_status = "Won" if (picked_t == actual_winner) else "Lost"
@@ -505,7 +614,7 @@ def render_main_engine():
                     "user": current_user.strip() if current_user.strip() else "Flurk",
                     "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "type": "Single",
-                    "bet_category": "Total" if bet_type == "Game Total" else "Moneyline",
+                    "bet_category": cat,
                     "home_team": home_team,
                     "away_team": away_team,
                     "picked_team": picked_t,
@@ -533,6 +642,7 @@ def render_main_engine():
         legs_count = st.radio("Select Number of Legs", [2, 3, 4, 5], horizontal=True)
 
         combo_legs = []
+        parsed_legs = []
         compound_prob = 1.0
         game_choices = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data] if games_data else ["Manual Matchup"]
 
@@ -566,14 +676,26 @@ def render_main_engine():
                 strike = col_c.number_input("Line (pts)", value=44.5, step=0.5, key=f"lstrike_{i}")
                 leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
                 leg_desc = f"{d_a} @ {d_h}: {side} {strike}"
+                parsed_legs.append({
+                    "matchup": f"{d_a} @ {d_h}",
+                    "type": "Total",
+                    "side": side,
+                    "line": strike,
+                    "prob": leg_prob
+                })
             else:
                 col_b, col_c = st.columns(2)
                 winner = col_b.selectbox("Pick Winner", [d_h, d_a], key=f"lwinner_{i}")
-                strike = None
                 h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec, is_final=leg_completed)
                 leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
                 leg_desc = f"{d_a} @ {d_h}: {winner} ML"
                 col_c.metric("Model Win Expectancy", f"{leg_prob * 100:.1f}%")
+                parsed_legs.append({
+                    "matchup": f"{d_a} @ {d_h}",
+                    "type": "Moneyline",
+                    "picked_team": winner,
+                    "prob": leg_prob
+                })
 
             compound_prob *= leg_prob
             combo_legs.append({"desc": leg_desc, "prob": leg_prob})
@@ -604,6 +726,7 @@ def render_main_engine():
                     "payout_dollars": float(c_payout),
                     "win_prob": f"{compound_prob * 100:.1f}%",
                     "status": "Pending",
+                    "parsed_legs": parsed_legs,
                     "notes": c_notes
                 }
                 st.session_state.saved_bets.insert(0, combo_record)
@@ -616,15 +739,23 @@ def render_main_engine():
     elif menu_choice == "Locked Bets History":
         st.subheader("📜 Locked Bets History & Live Scoreboard")
 
-        b_col1, b_col2 = st.columns([3, 1])
+        b_col1, b_col2, b_col3 = st.columns([2, 1, 1])
         user_filter = b_col1.selectbox("Filter Bettor", ["All Bettors"] + sorted(list({b.get("user", "Flurk") for b in st.session_state.saved_bets})))
 
-        if b_col2.button("⚡ Force Grade Finished Games"):
+        if b_col2.button("⚡ Force Grade Finals"):
             if auto_resolve_bets(st.session_state.saved_bets, games_data):
-                st.success("Updated finished games to Won/Lost!")
+                st.success("Updated tickets!")
                 st.rerun()
             else:
-                st.info("All finished games are already up to date.")
+                st.info("Up to date.")
+
+        # CSV Backup Export
+        if st.session_state.saved_bets:
+            csv_lines = ["Date,User,Type,Category,Matchup,Pick,Risk,Payout,Status"]
+            for b in st.session_state.saved_bets:
+                csv_lines.append(f'"{b.get("date","")}","{b.get("user","")}","{b.get("type","")}","{b.get("bet_category","")}","{b.get("matchup","")}","{b.get("bet","")}",{b.get("risk_dollars",0)},{b.get("payout_dollars",0)},"{b.get("status","")}"')
+            csv_data = "\n".join(csv_lines)
+            b_col3.download_button("📥 Export CSV", data=csv_data, file_name="flurkstradamus_bets.csv", mime="text/csv")
 
         active_tickets = [b for b in st.session_state.saved_bets if user_filter == "All Bettors" or b.get("user", "Flurk") == user_filter]
 
@@ -638,12 +769,30 @@ def render_main_engine():
                     r1.write(f"**{b.get('user', 'Flurk')}**\n\n`{b['date']}`\n\n{b['type']}")
                     r2.write(f"**{b['matchup']}**\n\nPick: `{b['bet']}`\n\nRisk: **${b.get('risk_dollars', 10.0):.2f}** | Payout: **${b.get('payout_dollars', 19.0):.2f}**")
 
-                    live_m = find_game_for_bet(b, games_data)
-                    if live_m:
-                        tot_score = live_m['away_score'] + live_m['home_score']
-                        r3.write(f"**{live_m['away_short']} {live_m['away_score']} - {live_m['home_score']} {live_m['home_short']}**\n\nTotal: **{tot_score} pts** ({live_m['status']})")
+                    # Live Scoreboard & Parlay Progress Tracker
+                    if b.get("bet_category") == "Combo" and b.get("parsed_legs"):
+                        leg_statuses = []
+                        for leg in b["parsed_legs"]:
+                            m_g = find_game_for_bet({"matchup": leg["matchup"]}, games_data)
+                            if m_g:
+                                if m_g["completed"]:
+                                    t_p = m_g["away_score"] + m_g["home_score"]
+                                    if leg["type"] == "Total":
+                                        won = (t_p < leg["line"]) if leg["side"] == "Under" else (t_p > leg["line"])
+                                    else:
+                                        w = m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]
+                                        won = (leg["picked_team"] == w)
+                                    leg_statuses.append(f"✅ {m_g['away_short']}@{m_g['home_short']}" if won else f"❌ {m_g['away_short']}@{m_g['home_short']}")
+                                else:
+                                    leg_statuses.append(f"⏳ {m_g['away_short']}@{m_g['home_short']} ({m_g['status']})")
+                        r3.write("**Parlay Progress:**\n\n" + "<br>".join(leg_statuses), unsafe_allow_html=True)
                     else:
-                        r3.write("Score: *Final / Inactive*")
+                        live_m = find_game_for_bet(b, games_data)
+                        if live_m:
+                            tot_score = live_m['away_score'] + live_m['home_score']
+                            r3.write(f"**{live_m['away_short']} {live_m['away_score']} - {live_m['home_score']} {live_m['home_short']}**\n\nTotal: **{tot_score} pts** ({live_m['status']})")
+                        else:
+                            r3.write("Score: *Final / Inactive*")
 
                     status_list = ["Pending", "Won", "Lost"]
                     cur_stat_idx = status_list.index(b["status"]) if b["status"] in status_list else 0
@@ -653,9 +802,10 @@ def render_main_engine():
                         save_bets(st.session_state.saved_bets)
                         st.rerun()
 
-                    if r5.button("🔍 View", key=f"vw_{b['id']}"):
-                        st.session_state.selected_bet_id = b["id"]
-                        st.rerun()
+                    if b.get("bet_category") != "Combo":
+                        if r5.button("🔍 View", key=f"vw_{b['id']}"):
+                            st.session_state.selected_bet_id = b["id"]
+                            st.rerun()
 
                     if r5.button("🗑️", key=f"dl_{b['id']}"):
                         st.session_state.saved_bets.pop(real_idx)
@@ -756,7 +906,7 @@ def render_main_engine():
         st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
 
         st.markdown("---")
-        st.markdown("### 3. Straight-Up Moneyline / Win Expectancy Engine")
+        st.markdown("### 3. Straight-Up Moneyline & Spread Engines")
         st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
         st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
 
