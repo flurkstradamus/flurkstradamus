@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Responsive styling & button spacing
+# Responsive styling & STRICT LEFT-ALIGNMENT FOR SIDEBAR BUTTONS
 st.markdown("""
 <style>
     @media (min-width: 768px) {
@@ -36,6 +36,7 @@ st.markdown("""
         }
     }
 
+    /* FORCED LEFT ALIGNMENT FOR NAVIGATION BUTTONS */
     section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
         gap: 0.2rem !important;
     }
@@ -49,15 +50,25 @@ st.markdown("""
         justify-content: flex-start !important;
         display: flex !important;
         align-items: center !important;
-        padding-left: 12px !important;
+        padding-left: 14px !important;
         padding-top: 4px !important;
         padding-bottom: 4px !important;
-        min-height: 2.0rem !important;
-        height: 2.0rem !important;
+        min-height: 2.1rem !important;
+        height: 2.1rem !important;
         font-size: 0.88rem !important;
         font-weight: 600 !important;
         border-radius: 6px !important;
         width: 100% !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button p {
+        text-align: left !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
+        margin: 0 !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button * {
+        text-align: left !important;
+        justify-content: flex-start !important;
     }
 
     .clean-subtext {
@@ -202,11 +213,10 @@ if st.session_state.logged_in_user is None:
                     st.rerun()
     st.stop()
 
-# ACTIVE USER IDENTITY (NORMALIZED FOR "FLURK" BET HISTORY RECOVERY)
+# ACTIVE USER IDENTITY
 current_user_profile = st.session_state.logged_in_user
 active_uname = current_user_profile.get("username", "").strip().lower()
 
-# Ensure "Flurk" is the canonical display name if admin logs in
 if active_uname == "flurk":
     current_user = "Flurk"
 else:
@@ -535,7 +545,6 @@ elif menu_choice == "🏆 Squad Leaderboard":
     for b in st.session_state.saved_bets:
         u_raw = b.get("user", "Flurk")
         u_clean = u_raw.strip() if u_raw.strip() else "Flurk"
-        # Normalize handle: match 'flurk' and 'Flurk' together
         u_key = u_clean.lower()
         display_name = "Flurk" if u_key == "flurk" else u_clean
 
@@ -606,31 +615,36 @@ elif menu_choice == "🏆 Squad Leaderboard":
                     st.markdown(f"<div style='text-align:right;'><span style='color:{p_color};font-size:1.4rem;font-weight:700;'>{p_text}</span></div>", unsafe_allow_html=True)
                     st.markdown(f"<div style='text-align:right;opacity:0.6;font-size:0.85rem;'>ROI: {bettor['roi']:+.1f}%</div>", unsafe_allow_html=True)
 
-# 6. LOCKED BETS HISTORY (RECOVERS PAST "FLURK" BETS)
+# 6. LOCKED BETS HISTORY (ROBUST SEARCH & RESTORATION)
 elif menu_choice == "Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
     st.caption("Your personalized active slips, scores, and settled tickets.")
 
     curr_user_clean = current_user.strip().lower()
     
-    # Matches tickets whether they were logged as "Flurk", "flurk", or under your handle
-    my_tickets = [
-        b for b in st.session_state.saved_bets 
-        if b.get("user", "").strip().lower() == curr_user_clean 
-        or (curr_user_clean == "flurk" and b.get("user", "").strip().lower() in ["flurk", "admin"])
-    ]
+    col_filter1, col_filter2 = st.columns([3, 1])
+    with col_filter2:
+        show_all_history = st.toggle("Show All Squad Bets", value=False)
+        
+    if show_all_history:
+        my_tickets = st.session_state.saved_bets
+    else:
+        # Match case-insensitively across Flurk, flurk, admin, and current handle
+        my_tickets = [
+            b for b in st.session_state.saved_bets 
+            if b.get("user", "").strip().lower() == curr_user_clean 
+            or (curr_user_clean == "flurk" and b.get("user", "").strip().lower() in ["flurk", "admin"])
+        ]
 
-    h_top1, h_top2 = st.columns([3, 1])
-    with h_top1:
-        st.write(f"Showing **{len(my_tickets)}** ticket(s) placed by **{current_user}**.")
-    with h_top2:
+    with col_filter1:
+        st.write(f"Showing **{len(my_tickets)}** ticket(s) (Total in database: **{len(st.session_state.saved_bets)}**).")
         if st.button("⚡ Grade Finals", use_container_width=True):
             if auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages):
                 st.success("Updated tickets!")
                 st.rerun()
 
     if not my_tickets:
-        st.info(f"You don't have any locked bets yet under handle '{current_user}'. Lock in a pick in the Single Game or Combo Engine!")
+        st.info(f"You don't have any locked bets yet under handle '{current_user}'. (Tip: Toggle 'Show All Squad Bets' above if your bets were saved under another name).")
     else:
         for b in my_tickets:
             real_idx = st.session_state.saved_bets.index(b)
@@ -684,6 +698,7 @@ elif menu_choice == "Locked Bets History":
                         <img src="{away_logo}" width="26" height="26" style="border-radius: 50%;">
                         <strong style="font-size: 1.05rem;">{game_title}</strong>
                         <img src="{home_logo}" width="26" height="26" style="border-radius: 50%;">
+                        <span style="opacity: 0.6; font-size: 0.85rem; margin-left: 6px;">by <strong>{b.get('user', 'Flurk')}</strong></span>
                     </div>
                     <div>{badge_html}</div>
                 </div>
@@ -738,15 +753,44 @@ elif menu_choice == "💡 How It Works":
         * **Leaderboard Standings:** Ranks bettors by total net profit and win rate.
         """)
 
-# 8. MODEL METHODOLOGY & MATH BREAKDOWN
+# 8. MODEL METHODOLOGY & MATH BREAKDOWN (COMPLETE RESTORATION)
 elif menu_choice == "📖 Model Methodology & Math":
-    st.subheader("📖 Model Architecture & Math")
-    st.caption("How edge, variance, and straight-up win rates are calculated.")
+    st.subheader("📖 Model Architecture & Math Breakdown")
+    st.caption("Detailed statistical formulations governing in-game drift, variance decay, and logistic win probabilities.")
 
     with st.container(border=True):
         st.markdown("### 1. In-Game Pace & Drift Modeling")
+        st.write(
+            "Sportsbooks project points using static half-time splits. "
+            "Flurkstradamus continuously recalculates true variance and script deviations across 6 distinct states:"
+        )
+        st.markdown("""
+        * **Pre-Game:** Baseline = Open Total, Standard Deviation $\sigma = 8.5$.
+        * **1st Quarter:** Evaluates scoring pace relative to a 25% game duration baseline:
+          $$Pace\\ Delta = Points\\ Scored - (Pregame \\times 0.25)$$
+          Adjusts the final projection by 40% of the early deviation ($\sigma = 7.5$).
+        * **Halftime:** Incorporates point margin and second-half game script adjustments:
+          $$Projected\\ 2H = (Pregame \\times 0.475) + (Pace\\ Delta \\times 0.30) + Game\\ Script\\ Modifier$$
+          * *Blowout ($\ge 17$ pt margin):* $-3.5$ pts (clock bleed, run-heavy drives).
+          * *Decisive ($10-16$ pt margin):* $-1.5$ pts.
+          * *Close ($0-3$ pt margin):* $+1.5$ pts (hurry-up offense, stop-the-clock scenarios).
+        * **3rd Quarter:** Locks 75% of actual scoring ($\sigma = 4.0$).
+        * **4th Quarter / Late Game:** Closes remaining scoring volume to actual game pace hazards ($\sigma = 1.8$).
+        * **Final / Completed:** All remaining variance decays to zero ($\sigma \\to 0$).
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 2. Normal CDF & Win Probability Calculation")
+        st.write("Target line evaluation utilizes the cumulative normal distribution function:")
         st.latex(r"Z = \frac{L - \mu}{\sigma}")
         st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
+        st.latex(r"P(\text{Over}) = 1.0 - P(\text{Under})")
+
+    with st.container(border=True):
+        st.markdown("### 3. Straight-Up Moneyline & Spread Engines")
+        st.write("Calculates team efficiency differentials transformed through a logistic sigmoid function:")
+        st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
+        st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
 
 # 9. 2-12 LEG COMBO BUILDER
 elif menu_choice == "2-12 Leg Combo Builder":
@@ -1082,7 +1126,7 @@ elif menu_choice == "Single Game Engine":
 
     with st.form(f"single_bet_form_v{form_ver}"):
         st.markdown(f"""
-        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;">
             <div style="display: flex; align-items: center; gap: 8px;">
                 <img src="{g.get('away_logo', DEFAULT_LOGO)}" width="28" height="28" style="border-radius: 50%;">
                 <strong>{g['away_short']}</strong> @
