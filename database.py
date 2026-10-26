@@ -32,7 +32,7 @@ def load_storage():
             chat = data.get("chat", [])
             users = data.get("users", {})
             
-            # Ensure flurk admin is always present and active
+            # Ensure flurk admin account is always present and active
             if "flurk" not in users or users["flurk"].get("password_hash") != hash_password("Loofus1993"):
                 users["flurk"] = default_users["flurk"]
                 
