@@ -144,7 +144,7 @@ if "combo_active_legs" not in st.session_state:
 if "ai_recommended_combo" not in st.session_state:
     st.session_state.ai_recommended_combo = None
 if "active_nav_page" not in st.session_state:
-    st.session_state.active_nav_page = "Single Game Engine"
+    st.session_state.active_nav_page = "Locked Bets History"
 if "editing_ai_combo" not in st.session_state:
     st.session_state.editing_ai_combo = False
 if "combo_version" not in st.session_state:
@@ -249,6 +249,7 @@ def get_extended_games(league_code="nfl"):
                         "home_score": int(home.get("score", 0)),
                         "away_score": int(away.get("score", 0)),
                         "status": status_desc,
+                        "state_text": state_text,
                         "checkpoint": checkpoint,
                         "completed": is_completed,
                         "period": period,
@@ -261,13 +262,13 @@ def get_extended_games(league_code="nfl"):
 
     if len([g for g in all_games if not g["completed"]]) < 3:
         backup_slate = [
-            {"id": "up_1", "league": "NFL", "name": "Bills @ Dolphins", "kickoff": "Thu 10/29 - 8:15 PM ET", "home_team": "Miami Dolphins", "home_short": "MIA", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/mia.png", "home_record": "7-2", "away_team": "Buffalo Bills", "away_short": "BUF", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/buf.png", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Thu 8:15 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 48.5, "market_spread": 2.5},
-            {"id": "up_2", "league": "NCAA", "name": "Georgia @ Alabama", "kickoff": "Sat 10/31 - 3:30 PM ET", "home_team": "Alabama Crimson Tide", "home_short": "ALA", "home_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/333.png", "home_record": "8-1", "away_team": "Georgia Bulldogs", "away_short": "UGA", "away_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/61.png", "away_record": "8-1", "home_score": 0, "away_score": 0, "status": "Sat 3:30 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 52.0, "market_spread": -3.0},
-            {"id": "up_3", "league": "NCAA", "name": "Ohio State @ Penn State", "kickoff": "Sat 10/31 - 7:30 PM ET", "home_team": "Penn State Nittany Lions", "home_short": "PSU", "home_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/213.png", "home_record": "7-1", "away_team": "Ohio State Buckeyes", "away_short": "OSU", "away_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/194.png", "away_record": "8-0", "home_score": 0, "away_score": 0, "status": "Sat 7:30 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 46.5, "market_spread": 3.5},
-            {"id": "up_4", "league": "NFL", "name": "Chiefs @ Broncos", "kickoff": "Sun 11/01 - 4:25 PM ET", "home_team": "Denver Broncos", "home_short": "DEN", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/den.png", "home_record": "5-4", "away_team": "Kansas City Chiefs", "away_short": "KC", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/kc.png", "away_record": "8-1", "home_score": 0, "away_score": 0, "status": "Sun 4:25 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 45.0, "market_spread": 7.0},
-            {"id": "up_5", "league": "NFL", "name": "49ers @ Seahawks", "kickoff": "Sun 11/01 - 8:20 PM ET", "home_team": "Seattle Seahawks", "home_short": "SEA", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/sea.png", "home_record": "6-3", "away_team": "San Francisco 49ers", "away_short": "SF", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/sf.png", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Sun 8:20 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 47.0, "market_spread": -1.5},
-            {"id": "up_6", "league": "NFL", "name": "Ravens @ Steelers", "kickoff": "Sun 11/01 - 1:00 PM ET", "home_team": "Pittsburgh Steelers", "home_short": "PIT", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/pit.png", "home_record": "6-2", "away_team": "Baltimore Ravens", "away_short": "BAL", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/bal.png", "away_record": "7-2", "home_score": 0, "away_score": 0, "status": "Sun 1:00 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 43.5, "market_spread": 2.5},
-            {"id": "up_7", "league": "NFL", "name": "Lions @ Packers", "kickoff": "Sun 11/01 - 4:25 PM ET", "home_team": "Green Bay Packers", "home_short": "GB", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/gb.png", "home_record": "6-2", "away_team": "Detroit Lions", "away_short": "DET", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/det.png", "away_record": "7-1", "home_score": 0, "away_score": 0, "status": "Sun 4:25 PM ET", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 53.0, "market_spread": -1.0}
+            {"id": "up_1", "league": "NFL", "name": "Bills @ Dolphins", "kickoff": "Thu 10/29 - 8:15 PM ET", "home_team": "Miami Dolphins", "home_short": "MIA", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/mia.png", "home_record": "7-2", "away_team": "Buffalo Bills", "away_short": "BUF", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/buf.png", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Thu 8:15 PM ET", "state_text": "pre", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 48.5, "market_spread": 2.5},
+            {"id": "up_2", "league": "NCAA", "name": "Georgia @ Alabama", "kickoff": "Sat 10/31 - 3:30 PM ET", "home_team": "Alabama Crimson Tide", "home_short": "ALA", "home_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/333.png", "home_record": "8-1", "away_team": "Georgia Bulldogs", "away_short": "UGA", "away_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/61.png", "away_record": "8-1", "home_score": 0, "away_score": 0, "status": "Sat 3:30 PM ET", "state_text": "pre", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 52.0, "market_spread": -3.0},
+            {"id": "up_3", "league": "NCAA", "name": "Ohio State @ Penn State", "kickoff": "Sat 10/31 - 7:30 PM ET", "home_team": "Penn State Nittany Lions", "home_short": "PSU", "home_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/213.png", "home_record": "7-1", "away_team": "Ohio State Buckeyes", "away_short": "OSU", "away_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/194.png", "away_record": "8-0", "home_score": 0, "away_score": 0, "status": "Sat 7:30 PM ET", "state_text": "pre", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 46.5, "market_spread": 3.5},
+            {"id": "up_4", "league": "NFL", "name": "Chiefs @ Broncos", "kickoff": "Sun 11/01 - 4:25 PM ET", "home_team": "Denver Broncos", "home_short": "DEN", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/den.png", "home_record": "5-4", "away_team": "Kansas City Chiefs", "away_short": "KC", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/kc.png", "away_record": "8-1", "home_score": 0, "away_score": 0, "status": "Sun 4:25 PM ET", "state_text": "pre", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 45.0, "market_spread": 7.0},
+            {"id": "up_5", "league": "NFL", "name": "49ers @ Seahawks", "kickoff": "Sun 11/01 - 8:20 PM ET", "home_team": "Seattle Seahawks", "home_short": "SEA", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/sea.png", "home_record": "6-3", "away_team": "San Francisco 49ers", "away_short": "SF", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/sf.png", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Sun 8:20 PM ET", "state_text": "pre", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 47.0, "market_spread": -1.5},
+            {"id": "up_6", "league": "NFL", "name": "Ravens @ Steelers", "kickoff": "Sun 11/01 - 1:00 PM ET", "home_team": "Pittsburgh Steelers", "home_short": "PIT", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/pit.png", "home_record": "6-2", "away_team": "Baltimore Ravens", "away_short": "BAL", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/bal.png", "away_record": "7-2", "home_score": 0, "away_score": 0, "status": "Sun 1:00 PM ET", "state_text": "pre", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 43.5, "market_spread": 2.5},
+            {"id": "up_7", "league": "NFL", "name": "Lions @ Packers", "kickoff": "Sun 11/01 - 4:25 PM ET", "home_team": "Green Bay Packers", "home_short": "GB", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/gb.png", "home_record": "6-2", "away_team": "Detroit Lions", "away_short": "DET", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/det.png", "away_record": "7-1", "home_score": 0, "away_score": 0, "status": "Sun 4:25 PM ET", "state_text": "pre", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 53.0, "market_spread": -1.0}
         ]
         for b_game in backup_slate:
             if b_game["id"] not in seen_ids:
@@ -487,7 +488,7 @@ elif menu_choice == "Single Game Engine":
         espn_spread = g["market_spread"]
     else:
         st.warning("Manual Matchup Mode")
-        g = {"id": "man", "league": "NFL", "home_team": "Home", "home_short": "HOME", "home_logo": DEFAULT_LOGO, "away_team": "Away", "away_short": "AWAY", "away_logo": DEFAULT_LOGO, "home_score": 14, "away_score": 10, "status": "Halftime", "kickoff": "Live", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False, "market_ou": 47.5, "market_spread": -3.5}
+        g = {"id": "man", "league": "NFL", "home_team": "Home", "home_short": "HOME", "home_logo": DEFAULT_LOGO, "away_team": "Away", "away_short": "AWAY", "away_logo": DEFAULT_LOGO, "home_score": 14, "away_score": 10, "status": "Halftime", "state_text": "in", "kickoff": "Live", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False, "market_ou": 47.5, "market_spread": -3.5}
         g_id = "man"
         detected_stage = "Halftime"
         espn_ou = 47.5
@@ -675,7 +676,6 @@ elif menu_choice == "Single Game Engine":
         m1.metric("Projected Total", f"{final_proj:.1f} pts")
         m2.metric(f"{g['home_short']} Win Exp.", f"{home_win_prob * 100:.1f}%")
 
-    # Determine default wager type based on applied strategy pick
     default_wtype_idx = 0
     if applied:
         if applied["category"] == "Moneyline":
@@ -794,7 +794,6 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
     # AI Strategy Scanner Accordion
     with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
-        st.markdown("#### Automated Strategy Generator")
         col_strat1, col_strat2 = st.columns(2)
         strategy_mode = col_strat1.selectbox(
             "Strategy Objective",
@@ -1187,7 +1186,9 @@ elif menu_choice == "2-12 Leg Combo Builder":
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
             st.success(f"{active_leg_count}-Leg combo ticket locked in!")
 
-# PAGE 3: LOCKED BETS & HISTORY
+# ==========================================
+# PAGE 3: LOCKED BETS & HISTORY (USD FORMATTED & IN-PLAY LOGIC)
+# ==========================================
 elif menu_choice == "Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
     st.caption("Your personalized active slips, scores, and settled tickets.")
@@ -1211,6 +1212,22 @@ elif menu_choice == "Locked Bets History":
             real_idx = st.session_state.saved_bets.index(b)
             status_val = b.get("status", "Pending")
 
+            live_m = find_game_for_bet(b, games_data)
+            away_logo = live_m.get("away_logo", DEFAULT_LOGO) if live_m else DEFAULT_LOGO
+            home_logo = live_m.get("home_logo", DEFAULT_LOGO) if live_m else DEFAULT_LOGO
+
+            # Check if game is actively running, pre-game, or final
+            is_game_started = False
+            if live_m:
+                st_txt = live_m.get("state_text", "").lower()
+                c_pt = live_m.get("checkpoint", "").lower()
+                tot_p = live_m.get("home_score", 0) + live_m.get("away_score", 0)
+                is_fin = live_m.get("completed", False) or "final" in live_m["status"].lower()
+                if not is_fin:
+                    if st_txt == "in" or (c_pt != "pre-game" and "pre" not in c_pt) or tot_p > 0:
+                        is_game_started = True
+
+            # Dynamic badge rendering
             if status_val == "Won":
                 card_style = "border: 1.5px solid #22c55e; background-color: rgba(34, 197, 94, 0.05);"
                 badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
@@ -1218,13 +1235,13 @@ elif menu_choice == "Locked Bets History":
                 card_style = "border: 1.5px solid #ef4444; background-color: rgba(239, 68, 68, 0.05);"
                 badge_html = "<span style='background-color:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>❌ LOST</span>"
             else:
-                card_style = "border: 1.5px solid #eab308; background-color: rgba(234, 179, 8, 0.05);"
-                badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ IN PLAY</span>"
+                if is_game_started:
+                    card_style = "border: 1.5px solid #38bdf8; background-color: rgba(56, 189, 248, 0.05);"
+                    badge_html = "<span style='background-color:#38bdf8;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🔴 IN PLAY</span>"
+                else:
+                    card_style = "border: 1.5px solid #eab308; background-color: rgba(234, 179, 8, 0.05);"
+                    badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ PENDING</span>"
 
-            live_m = find_game_for_bet(b, games_data)
-            away_logo = live_m.get("away_logo", DEFAULT_LOGO) if live_m else DEFAULT_LOGO
-            home_logo = live_m.get("home_logo", DEFAULT_LOGO) if live_m else DEFAULT_LOGO
-            
             if live_m:
                 a_short = live_m.get("away_short", "AWAY")
                 h_short = live_m.get("home_short", "HOME")
@@ -1232,8 +1249,11 @@ elif menu_choice == "Locked Bets History":
                 h_score = live_m.get("home_score", 0)
                 tot_pts = a_score + h_score
                 is_fin = live_m.get("completed", False) or "final" in live_m["status"].lower()
-                status_prefix = "Final Score" if is_fin else "Live Score"
-                score_str = f"**{status_prefix}:** {a_score} vs {h_score} ({tot_pts} total)"
+                status_prefix = "Final Score" if is_fin else ("Live Score" if is_game_started else "Scheduled")
+                if is_game_started or is_fin:
+                    score_str = f"**{status_prefix}:** {a_score} vs {h_score} ({tot_pts} total)"
+                else:
+                    score_str = f"**{status_prefix}:** `{live_m.get('kickoff', live_m['status'])}`"
                 game_title = f"{a_short} vs {h_short}"
             else:
                 game_title = b.get("matchup", "Football Matchup")
@@ -1252,6 +1272,10 @@ elif menu_choice == "Locked Bets History":
             </div>
             """, unsafe_allow_html=True)
 
+            risk_val = float(b.get("risk_dollars", 10.0))
+            payout_val = float(b.get("payout_dollars", 19.0))
+            profit_pct = ((payout_val - risk_val) / risk_val * 100.0) if risk_val > 0 else 0.0
+
             with st.container():
                 c_row1, c_row2, c_row3, c_row4 = st.columns([3, 3, 2, 1])
                 with c_row1:
@@ -1259,7 +1283,7 @@ elif menu_choice == "Locked Bets History":
                     st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
                 with c_row2:
                     st.write(f"**Pick:** `{b.get('bet')}`")
-                    st.caption(f"Risk: **${b.get('risk_dollars', 10.0):.2f}** ➜ Return: **${b.get('payout_dollars', 19.0):.2f}**")
+                    st.caption(f"Risk: **${risk_val:.2f}** | Return: **${payout_val:.2f}** (+{profit_pct:.1f}%)")
                 with c_row3:
                     if b.get("bet_category") == "Combo" and b.get("parsed_legs"):
                         leg_statuses = []
@@ -1270,7 +1294,8 @@ elif menu_choice == "Locked Bets History":
                                 won = (t_p < leg["line"]) if leg["type"] == "Total" and leg["side"] == "Under" else (t_p > leg["line"] if leg["type"] == "Total" else leg["picked_team"] == (m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]))
                                 leg_statuses.append(f"✅ {m_g['away_short']}" if won else f"❌ {m_g['away_short']}")
                             elif m_g:
-                                leg_statuses.append(f"⏳ {m_g['away_short']}")
+                                st_m = m_g.get("state_text", "").lower()
+                                leg_statuses.append(f"🔴 {m_g['away_short']}" if st_m == "in" else f"⏳ {m_g['away_short']}")
                         st.write(" • ".join(leg_statuses))
                     else:
                         st.caption(f"Type: {b.get('type', 'Single')}")
