@@ -1,40 +1,50 @@
 import streamlit as st
 import requests
-import math
-import json
-import os
 import re
 from datetime import datetime, timedelta
+
+# Import our modular engines
+from config import GROUP_PASSCODE, DEFAULT_LOGO, OFFICIAL_ABBR_MAP
+from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
+from database import load_storage, save_all_storage, find_game_for_bet, auto_resolve_bets
 
 st.set_page_config(
     page_title="Flurkstradamus Edge Engine",
     page_icon="🔮",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# App-like mobile styling
+# Responsive Desktop + Mobile styling
 st.markdown("""
 <style>
-    /* Mobile-first compact padding */
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 2rem;
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
+    @media (min-width: 768px) {
+        .block-container {
+            padding-top: 4.5rem !important;
+            padding-bottom: 3rem !important;
+            padding-left: 2.5rem !important;
+            padding-right: 2.5rem !important;
+            max-width: 1200px !important;
+        }
     }
-    /* Smooth card edges */
+    @media (max-width: 767px) {
+        .block-container {
+            padding-top: 3.5rem !important;
+            padding-bottom: 2rem !important;
+            padding-left: 0.8rem !important;
+            padding-right: 0.8rem !important;
+        }
+    }
     [data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.12);
         background-color: rgba(255, 255, 255, 0.02);
+        padding: 0.8rem;
     }
-    /* Better metrics readability on phones */
     [data-testid="stMetricValue"] {
-        font-size: 1.35rem !important;
+        font-size: 1.4rem !important;
         font-weight: 700;
     }
-    /* Touch-friendly buttons */
     .stButton button {
         border-radius: 8px;
         min-height: 2.4rem;
@@ -42,48 +52,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# ==========================================
-# CONFIGURATION & PERSISTENCE ENGINE
-# ==========================================
-GROUP_PASSCODE = "FLURK2026"
-JSONBIN_BIN_ID = "6ade77dbac6210605a51a450"    # Paste your Bin ID here if you have it
-JSONBIN_API_KEY = "$2a$10$K8VFT4hzyxMbtkBLLtlaNu/ZB8WthYSFYlKEutPEE4Qg8hi8lA6Ya"   # Paste your Master Key here if you have it
-
-DB_FILE = "bets_history.json"
-CHAT_FILE = "chat_history.json"
-
-DEFAULT_LOGO = "https://a.espncdn.com/combiner/i?img=/i/teamlogos/default-team-logo-500.png&w=60&h=60"
-
-OFFICIAL_ABBR_MAP = {
-    "North Dakota State Bison": "NDSU",
-    "North Dakota State": "NDSU",
-    "UTEP Miners": "UTEP",
-    "Notre Dame Fighting Irish": "ND",
-    "Navy Midshipmen": "NAVY",
-    "UCLA Bruins": "UCLA",
-    "Nevada Wolf Pack": "NEV",
-    "UNLV Rebels": "UNLV",
-    "Northern Illinois Huskies": "NIU",
-    "James Madison Dukes": "JMU",
-    "Troy Trojans": "TROY",
-    "Alabama Crimson Tide": "ALA",
-    "Georgia Bulldogs": "UGA",
-    "Ohio State Buckeyes": "OSU",
-    "Penn State Nittany Lions": "PSU",
-    "Texas Longhorns": "TEX",
-    "Oklahoma Sooners": "OU",
-    "Michigan Wolverines": "MICH",
-    "Oregon Ducks": "ORE",
-    "USC Trojans": "USC",
-    "LSU Tigers": "LSU",
-    "Clemson Tigers": "CLEM",
-    "Florida State Seminoles": "FSU",
-    "Miami Hurricanes": "MIA",
-    "Tennessee Volunteers": "TENN",
-    "Texas A&M Aggies": "TA&M",
-    "Ole Miss Rebels": "MISS"
-}
 
 def clean_abbr(team_name, espn_abbr):
     if team_name in OFFICIAL_ABBR_MAP:
@@ -105,75 +73,11 @@ def format_espn_kickoff(date_str, fallback_status):
     except Exception:
         return fallback_status
 
-def fetch_cloud_data():
-    if JSONBIN_BIN_ID and JSONBIN_API_KEY:
-        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
-        headers = {"X-Master-Key": JSONBIN_API_KEY}
-        try:
-            r = requests.get(url, headers=headers, timeout=5)
-            if r.status_code == 200:
-                record = r.json().get("record", {})
-                return record.get("bets", []), record.get("messages", [])
-        except Exception:
-            pass
-    return None, None
-
-def push_cloud_data(bets, messages):
-    if JSONBIN_BIN_ID and JSONBIN_API_KEY:
-        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
-        headers = {
-            "Content-Type": "application/json",
-            "X-Master-Key": JSONBIN_API_KEY
-        }
-        try:
-            r = requests.put(url, json={"bets": bets, "messages": messages}, headers=headers, timeout=5)
-            return r.status_code == 200
-        except Exception:
-            pass
-    return False
-
-def load_storage():
-    cloud_bets, cloud_chat = fetch_cloud_data()
-    local_bets = []
-    local_chat = []
-    
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r") as f:
-                local_bets = json.load(f)
-        except Exception:
-            local_bets = []
-            
-    if os.path.exists(CHAT_FILE):
-        try:
-            with open(CHAT_FILE, "r") as f:
-                local_chat = json.load(f)
-        except Exception:
-            local_chat = []
-
-    merged_bets = {b["id"]: b for b in (local_bets + (cloud_bets or []))}
-    bets_list = list(merged_bets.values())
-    bets_list.sort(key=lambda x: str(x.get("date", "")), reverse=True)
-    
-    chat_list = cloud_chat if cloud_chat is not None else local_chat
-    return bets_list, chat_list
-
-def save_all_storage(bets, messages):
-    try:
-        with open(DB_FILE, "w") as f:
-            json.dump(bets, f, indent=4)
-        with open(CHAT_FILE, "w") as f:
-            json.dump(messages, f, indent=4)
-    except Exception:
-        pass
-    push_cloud_data(bets, messages)
-
+# Session Initializations
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
-
 if "selected_bet_id" not in st.session_state:
     st.session_state.selected_bet_id = None
-
 if "combo_active_legs" not in st.session_state:
     st.session_state.combo_active_legs = []
 
@@ -197,50 +101,11 @@ if "saved_bets" not in st.session_state or "chat_messages" not in st.session_sta
     st.session_state.saved_bets = b_data
     st.session_state.chat_messages = c_data
 
-# ==========================================
-# ADVANCED STATISTICAL PROJECTION ENGINES
-# ==========================================
-def calculate_win_prob(target_line, projected_total, std_dev=7.0, is_under=True):
-    if std_dev <= 0.2:
-        return 1.0 if (projected_total < target_line if is_under else projected_total > target_line) else 0.0
-    std_dev = max(std_dev, 0.75)
-    z = (target_line - projected_total) / std_dev
-    under_prob = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
-    return under_prob if is_under else (1.0 - under_prob)
-
-def calculate_spread_prob(projected_margin, target_spread, std_dev=7.0):
-    diff = projected_margin - (-target_spread)
-    z = diff / max(std_dev, 1.0)
-    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
-
-def calculate_moneyline_prob(home_proj, away_proj, home_record_str, away_record_str, is_final=False):
-    if is_final:
-        return 1.0 if home_proj > away_proj else 0.0
-    spread_exp = home_proj - away_proj
-
-    def parse_rec(rec):
-        parts = re.findall(r"\d+", rec)
-        if len(parts) >= 2:
-            w, l = float(parts[0]), float(parts[1])
-            return w / max(w + l, 1.0)
-        return 0.5
-
-    h_pct = parse_rec(home_record_str)
-    a_pct = parse_rec(away_record_str)
-    record_delta = (h_pct - a_pct) * 7.0
-
-    effective_spread = spread_exp + record_delta
-    prob_home_win = 1.0 / (1.0 + math.exp(-effective_spread / 6.5))
-    return max(min(prob_home_win, 0.99), 0.01)
-
-# ==========================================
-# ESPN FEED WITH KICKOFF DATES & LOGOS
-# ==========================================
+# ESPN Multi-League Ingestion
 @st.cache_data(ttl=25)
 def get_extended_games(league_code="nfl"):
     all_games = []
     seen_ids = set()
-
     endpoints = [
         ("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100"),
         ("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=100&groups=80")
@@ -266,20 +131,12 @@ def get_extended_games(league_code="nfl"):
                     status_desc = status_obj["type"]["shortDetail"]
                     period = status_obj.get("period", 1)
 
-                    raw_date = event.get("date", "")
-                    kickoff_formatted = format_espn_kickoff(raw_date, status_desc)
-
+                    kickoff_formatted = format_espn_kickoff(event.get("date", ""), status_desc)
                     home_team_obj = home.get("team", {})
                     away_team_obj = away.get("team", {})
                     
                     home_name = home_team_obj.get("displayName", "Home")
                     away_name = away_team_obj.get("displayName", "Away")
-
-                    home_abbr = clean_abbr(home_name, home_team_obj.get("abbreviation"))
-                    away_abbr = clean_abbr(away_name, away_team_obj.get("abbreviation"))
-
-                    home_logo = home_team_obj.get("logo", DEFAULT_LOGO)
-                    away_logo = away_team_obj.get("logo", DEFAULT_LOGO)
 
                     odds_ou = 47.5
                     odds_spread = -3.5
@@ -295,16 +152,7 @@ def get_extended_games(league_code="nfl"):
                     elif state_text == "pre":
                         checkpoint = "Pre-Game"
                     else:
-                        if period == 1:
-                            checkpoint = "1st Quarter"
-                        elif period == 2 and "half" not in status_desc.lower():
-                            checkpoint = "2nd Quarter"
-                        elif "half" in status_desc.lower():
-                            checkpoint = "Halftime"
-                        elif period == 3:
-                            checkpoint = "3rd Quarter"
-                        else:
-                            checkpoint = "4th Quarter / Late Game"
+                        checkpoint = "Halftime" if "half" in status_desc.lower() else (f"{period}st Quarter" if period == 1 else f"{period}th Quarter")
 
                     all_games.append({
                         "id": ev_id,
@@ -312,12 +160,12 @@ def get_extended_games(league_code="nfl"):
                         "name": event["name"],
                         "kickoff": kickoff_formatted,
                         "home_team": home_name,
-                        "home_short": home_abbr,
-                        "home_logo": home_logo,
+                        "home_short": clean_abbr(home_name, home_team_obj.get("abbreviation")),
+                        "home_logo": home_team_obj.get("logo", DEFAULT_LOGO),
                         "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
                         "away_team": away_name,
-                        "away_short": away_abbr,
-                        "away_logo": away_logo,
+                        "away_short": clean_abbr(away_name, away_team_obj.get("abbreviation")),
+                        "away_logo": away_team_obj.get("logo", DEFAULT_LOGO),
                         "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
                         "home_score": int(home.get("score", 0)),
                         "away_score": int(away.get("score", 0)),
@@ -349,79 +197,6 @@ def get_extended_games(league_code="nfl"):
                 seen_ids.add(b_game["id"])
 
     return all_games
-
-def find_game_for_bet(bet, games):
-    m_text = bet.get("matchup", "").lower()
-    h_team = bet.get("home_team", "").lower()
-    a_team = bet.get("away_team", "").lower()
-    for g_item in games:
-        g_h = g_item["home_team"].lower()
-        g_a = g_item["away_team"].lower()
-        g_h_short = g_item["home_short"].lower()
-        g_a_short = g_item["away_short"].lower()
-        if (h_team and h_team in g_h) or (a_team and a_team in g_a):
-            return g_item
-        if (g_h in m_text or g_h_short in m_text) and (g_a in m_text or g_a_short in m_text):
-            return g_item
-        if g_h in m_text or g_a in m_text:
-            return g_item
-    return None
-
-def auto_resolve_bets(bets, games):
-    changed = False
-    for b in bets:
-        if b.get("status") == "Pending":
-            b_cat = b.get("bet_category", "Total")
-            if b_cat != "Combo":
-                match_game = find_game_for_bet(b, games)
-                if match_game and (match_game.get("completed", False) or "final" in match_game["status"].lower()):
-                    tot = match_game["away_score"] + match_game["home_score"]
-                    h_score = match_game["home_score"]
-                    a_score = match_game["away_score"]
-                    
-                    if b_cat == "Total" and b.get("target_line") is not None:
-                        is_und = (b.get("bet_direction", "Under") == "Under")
-                        b["status"] = "Won" if ((tot < b["target_line"]) if is_und else (tot > b["target_line"])) else "Lost"
-                        changed = True
-                    elif b_cat == "Moneyline" and b.get("picked_team"):
-                        actual_winner = match_game["home_team"] if h_score > a_score else match_game["away_team"]
-                        b["status"] = "Won" if (b["picked_team"] == actual_winner) else "Lost"
-                        changed = True
-                    elif b_cat == "Spread" and b.get("target_line") is not None:
-                        team_picked = b.get("picked_team", match_game["home_team"])
-                        line = b["target_line"]
-                        diff = (h_score - a_score) if team_picked == match_game["home_team"] else (a_score - h_score)
-                        b["status"] = "Won" if (diff + line > 0) else "Lost"
-                        changed = True
-
-            elif b_cat == "Combo" and b.get("parsed_legs"):
-                all_done = True
-                any_lost = False
-                for leg in b["parsed_legs"]:
-                    m_g = find_game_for_bet({"matchup": leg["matchup"]}, games)
-                    if m_g and (m_g.get("completed", False) or "final" in m_g["status"].lower()):
-                        t_pts = m_g["away_score"] + m_g["home_score"]
-                        if leg["type"] == "Total":
-                            is_u = leg["side"] == "Under"
-                            if not ((t_pts < leg["line"]) if is_u else (t_pts > leg["line"])):
-                                any_lost = True
-                        elif leg["type"] == "Moneyline":
-                            act_win = m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]
-                            if leg["picked_team"] != act_win:
-                                any_lost = True
-                    else:
-                        all_done = False
-                
-                if any_lost:
-                    b["status"] = "Lost"
-                    changed = True
-                elif all_done:
-                    b["status"] = "Won"
-                    changed = True
-
-    if changed:
-        save_all_storage(bets, st.session_state.chat_messages)
-    return changed
 
 # ==========================================
 # SIDEBAR NAVIGATION
@@ -462,7 +237,7 @@ if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True):
 # MAIN APPLICATION INTERFACE
 # ==========================================
 games_data = get_extended_games(league_param)
-auto_resolve_bets(st.session_state.saved_bets, games_data)
+auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages)
 
 # DETAIL PAGE: IN-GAME BET WAR ROOM
 if st.session_state.selected_bet_id is not None:
@@ -1070,7 +845,7 @@ elif menu_choice == "Locked Bets History":
     b_col1, b_col2 = st.columns(2)
     user_filter = b_col1.selectbox("Filter Bettor", ["All Bettors"] + sorted(list({b.get("user", "Flurk") for b in st.session_state.saved_bets})))
     if b_col2.button("⚡ Grade Finals", use_container_width=True):
-        if auto_resolve_bets(st.session_state.saved_bets, games_data):
+        if auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages):
             st.success("Updated tickets!")
             st.rerun()
 
@@ -1119,20 +894,15 @@ elif menu_choice == "Locked Bets History":
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
                     st.rerun()
 
-# ==========================================
-# PAGE 4: SQUAD LEADERBOARD (DEDUPLICATED & MOBILE-FIRST)
-# ==========================================
+# PAGE 4: SQUAD LEADERBOARD
 elif menu_choice == "🏆 Squad Leaderboard":
     st.subheader("🏆 Squad Leaderboard")
     st.caption("Consensus standings and betting performance.")
 
-    # Deduplicate and group by user
     user_stats = {}
     for b in st.session_state.saved_bets:
         u_raw = b.get("user", "Flurk")
         u_clean = u_raw.strip() if u_raw.strip() else "Flurk"
-        
-        # Consistent key
         u_key = u_clean.lower()
         if u_key not in user_stats:
             user_stats[u_key] = {
@@ -1164,7 +934,6 @@ elif menu_choice == "🏆 Squad Leaderboard":
         decided = s["Wins"] + s["Losses"]
         win_rate = (s["Wins"] / decided * 100) if decided > 0 else 0.0
         roi = (s["Net_Profit"] / s["Total_Risk"] * 100) if s["Total_Risk"] > 0 else 0.0
-        
         badge = "🎯 Sniper" if win_rate >= 65 and decided >= 3 else ("🔥 On Fire" if s["Wins"] >= 3 and s["Losses"] == 0 else ("⚡ Contender" if decided > 0 else "🌱 Rookie"))
 
         board.append({
@@ -1179,22 +948,18 @@ elif menu_choice == "🏆 Squad Leaderboard":
             "net_profit": s["Net_Profit"]
         })
 
-    # Sort strictly descending by profit
     board.sort(key=lambda x: x["net_profit"], reverse=True)
 
     if not board:
         st.info("No bets recorded yet to rank.")
     else:
-        # Standings overview
         top_c1, top_c2 = st.columns(2)
         top_c1.metric("Total Bettors", f"{len(board)}")
         tot_profit = sum(x['net_profit'] for x in board)
         top_c2.metric("Squad Net P&L", f"${tot_profit:+.2f}", delta=f"{'+' if tot_profit>=0 else ''}{tot_profit:.2f}")
 
-        # Render one mobile card per bettor
         for rank_idx, bettor in enumerate(board):
             medal = "🥇" if rank_idx == 0 else ("🥈" if rank_idx == 1 else ("🥉" if rank_idx == 2 else f"#{rank_idx+1}"))
-            
             with st.container(border=True):
                 r_c1, r_c2 = st.columns([3, 2])
                 with r_c1:
