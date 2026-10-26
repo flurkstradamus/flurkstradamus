@@ -147,6 +147,8 @@ if "active_nav_page" not in st.session_state:
     st.session_state.active_nav_page = "2-12 Leg Combo Builder"
 if "editing_ai_combo" not in st.session_state:
     st.session_state.editing_ai_combo = False
+if "combo_version" not in st.session_state:
+    st.session_state.combo_version = 0
 
 # Access Gatekeeper
 if not st.session_state.authenticated:
@@ -270,7 +272,6 @@ def get_extended_games(league_code="nfl"):
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
 
-# 1. Bettor Handle directly above navigation
 current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
 
 st.sidebar.markdown("---")
@@ -857,6 +858,8 @@ elif menu_choice == "2-12 Leg Combo Builder":
             m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta=f"{len(st.session_state.ai_recommended_combo)} Legs Total")
 
             if m_rec2.button("📥 Apply Recommended Picks into Combo Builder", use_container_width=True):
+                # Bump version to bust Streamlit's cached widget keys below
+                st.session_state.combo_version += 1
                 st.session_state.combo_active_legs = [
                     {
                         "matchup_idx": l_item["matchup_idx"],
@@ -870,6 +873,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 st.rerun()
 
     # SLIP BUILDER CONTROLS
+    ver = st.session_state.combo_version
     ctrl_c1, ctrl_c2 = st.columns([3, 1], vertical_alignment="center")
     with ctrl_c1:
         st.markdown(f"#### Active Slip ({len(st.session_state.combo_active_legs)} Legs)")
@@ -890,7 +894,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
     parsed_legs = []
     compound_prob = 1.0
 
-    # RENDER ACTIVE LEGS WITH OFFICIAL TEAM LOGOS IN THE FORM
+    # RENDER ACTIVE LEGS WITH VERSIONED WIDGET KEYS
     for i, leg_data in enumerate(st.session_state.combo_active_legs):
         with st.container(border=True):
             sel_matchup = st.selectbox(
@@ -898,7 +902,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 range(len(game_choices)),
                 index=min(leg_data["matchup_idx"], len(game_choices) - 1),
                 format_func=lambda x: game_choices[x],
-                key=f"m_sel_{i}"
+                key=f"m_sel_{i}_v{ver}"
             )
             leg_data["matchup_idx"] = sel_matchup
 
@@ -937,14 +941,14 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 ["Game Total", "Straight Up Winner"],
                 horizontal=True,
                 index=0 if leg_data["type"] == "Game Total" else 1,
-                key=f"wtype_{i}"
+                key=f"wtype_{i}_v{ver}"
             )
             leg_data["type"] = wager_cat
 
             if wager_cat == "Game Total":
                 col_b, col_c = st.columns(2)
-                side = col_b.selectbox("Side", ["Under", "Over"], index=0 if leg_data.get("side", "Under") == "Under" else 1, key=f"lside_{i}")
-                strike = col_c.number_input("Line (pts)", value=float(leg_data.get("line", leg_g.get("market_ou", 44.5))), step=0.5, key=f"lstrike_{i}")
+                side = col_b.selectbox("Side", ["Under", "Over"], index=0 if leg_data.get("side", "Under") == "Under" else 1, key=f"lside_{i}_v{ver}")
+                strike = col_c.number_input("Line (pts)", value=float(leg_data.get("line", leg_g.get("market_ou", 44.5))), step=0.5, key=f"lstrike_{i}_v{ver}")
                 leg_data["side"] = side
                 leg_data["line"] = strike
 
@@ -968,7 +972,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                     teams_opt,
                     index=pick_idx,
                     format_func=lambda x: f"{d_h_abbr} ({d_h})" if x == d_h else f"{d_a_abbr} ({d_a})",
-                    key=f"lwinner_{i}"
+                    key=f"lwinner_{i}_v{ver}"
                 )
                 leg_data["picked_team"] = winner
 
