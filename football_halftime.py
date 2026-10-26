@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Responsive Desktop + Mobile styling, clean sidebar tabs, and balanced recommendation rows
+# Responsive Desktop + Mobile styling & Zero-gap alignment
 st.markdown("""
 <style>
     @media (min-width: 768px) {
@@ -35,31 +35,54 @@ st.markdown("""
             padding-right: 0.8rem !important;
         }
     }
-    /* Balanced container margins & equal padding */
-    [data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"] {
+
+    /* ELIMINATE THE TOP GAP IN RECOMMENDATION CARDS */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 8px !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
         background-color: rgba(255, 255, 255, 0.02) !important;
-        padding: 4px 10px !important;
+        padding: 6px 12px !important;
         margin-top: 3px !important;
         margin-bottom: 3px !important;
     }
-    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] {
-        gap: 0rem !important;
+    div[data-testid="stVerticalBlockBorderWrapper"] > div {
+        padding: 0 !important;
+        margin: 0 !important;
+        gap: 0 !important;
     }
-    [data-testid="stMetricValue"] {
-        font-size: 1.35rem !important;
-        font-weight: 700;
+    div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stMarkdownContainer"] p {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1.2 !important;
     }
-    /* Clean flush right delete button */
+
+    /* TIGHT & LEFT-ALIGNED SIDEBAR BUTTONS */
+    section[data-testid="stSidebar"] div[data-testid="stButton"] {
+        margin-bottom: 2px !important;
+        margin-top: 0px !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button {
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding-left: 12px !important;
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+        min-height: 2.1rem !important;
+        height: 2.1rem !important;
+        font-size: 0.92rem !important;
+        font-weight: 600 !important;
+        border-radius: 6px !important;
+    }
+
+    /* FLUSH RIGHT MINI DELETE BUTTON */
     div[data-testid="stColumn"]:last-child div[data-testid="stButton"] button {
         float: right !important;
         padding: 0px !important;
-        min-height: 1.5rem !important;
-        height: 1.5rem !important;
-        width: 1.5rem !important;
+        min-height: 1.45rem !important;
+        height: 1.45rem !important;
+        width: 1.45rem !important;
         font-size: 0.72rem !important;
-        line-height: 1.5rem !important;
+        line-height: 1.45rem !important;
         border: 1px solid rgba(239, 68, 68, 0.35) !important;
         color: #ef4444 !important;
         background-color: transparent !important;
@@ -69,6 +92,7 @@ st.markdown("""
         background-color: rgba(239, 68, 68, 0.15) !important;
         border-color: #ef4444 !important;
     }
+
     .rec-item-row {
         display: flex;
         align-items: center;
@@ -77,12 +101,6 @@ st.markdown("""
         margin: 0 !important;
         padding: 0 !important;
         line-height: 1.2 !important;
-    }
-    /* Modern Nav Button Styling */
-    .nav-btn {
-        width: 100%;
-        text-align: left;
-        margin-bottom: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -236,12 +254,12 @@ def get_extended_games(league_code="nfl"):
     return all_games
 
 # ==========================================
-# SIDEBAR NAVIGATION (APP-STYLE BUTTON TABS)
+# SIDEBAR NAVIGATION (LEFT-ALIGNED, LOW-MARGIN BUTTONS)
 # ==========================================
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
 
-st.sidebar.markdown("<p style='font-size:0.85rem; font-weight:700; color:#94a3b8; margin-bottom:6px;'>NAVIGATION</p>", unsafe_allow_html=True)
+st.sidebar.markdown("<p style='font-size:0.75rem; font-weight:700; color:#94a3b8; margin-bottom:4px; letter-spacing:0.5px;'>NAVIGATION</p>", unsafe_allow_html=True)
 
 nav_items = [
     ("⚡ Single Game Engine", "Single Game Engine"),
@@ -674,7 +692,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                             "picked_team": ml_fav,
                             "prob": ml_p,
                             "desc": f"{fav_abbr} ML",
-                            "detail": f"Win Exp: {ml_p*100:.1f}%",
+                            "detail": f"{ml_p*100:.1f}%",
                             "score_metric": ml_p
                         })
 
@@ -709,7 +727,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         "picked_team": ml_fav,
                         "prob": ml_p,
                         "desc": f"{fav_abbr} ML",
-                        "detail": f"Win Exp: {ml_p*100:.1f}%",
+                        "detail": f"{ml_p*100:.1f}%",
                         "score_metric": ml_p
                     })
 
@@ -749,7 +767,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.session_state.ai_recommended_combo = selected_ai_legs
 
-        # INTEGRATED ULTRA-COMPACT CARDS (CLEAN ROW WITHOUT IN-BETWEEN TYPE TAGS)
+        # INTEGRATED ULTRA-COMPACT CARDS WITHOUT IN-BETWEEN LABELS
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -765,12 +783,12 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 detail_str = l_ai.get("detail", "")
 
                 with st.container(border=True):
-                    c_left, c_mid, c_btn = st.columns([5.3, 4.2, 0.5], vertical_alignment="center")
+                    c_left, c_mid, c_btn = st.columns([5.5, 4.0, 0.5], vertical_alignment="center")
                     
                     with c_left:
                         st.markdown(f"""
                         <div class="rec-item-row">
-                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.72rem; padding: 1px 6px; border-radius: 4px;">
+                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.70rem; padding: 1px 6px; border-radius: 4px;">
                                 LEG {idx_ai+1}
                             </span>
                             <img src="{g_match['away_logo']}" width="18" height="18" style="border-radius: 50%;">
