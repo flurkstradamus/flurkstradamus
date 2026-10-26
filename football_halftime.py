@@ -65,29 +65,34 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
-    /* PURE 1-LINE COMPACT RECOMMENDATION CARD */
+    /* BALANCED, HIGH-VISIBILITY RECOMMENDATION ROW */
     .rec-single-line-card {
-        border-radius: 6px;
+        border-radius: 8px;
         border: 1px solid rgba(255, 255, 255, 0.12);
         background-color: rgba(255, 255, 255, 0.02);
-        padding: 4px 10px;
-        margin-bottom: 4px;
+        padding: 8px 14px;
+        margin-bottom: 6px;
         display: flex;
         align-items: center;
         justify-content: space-between;
         flex-wrap: nowrap;
         white-space: nowrap;
-        line-height: 1.2;
+        line-height: 1.3;
+        transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+    }
+    .rec-single-line-card:hover {
+        background-color: rgba(255, 255, 255, 0.04);
+        border-color: rgba(34, 197, 94, 0.35);
     }
     .rec-left-wrap {
         display: flex;
         align-items: center;
-        gap: 7px;
+        gap: 9px;
     }
     .rec-right-wrap {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
     }
 
     /* EDIT LINK BUTTON */
@@ -98,7 +103,7 @@ st.markdown("""
         min-height: unset !important;
         height: auto !important;
         color: #38bdf8 !important;
-        font-size: 0.78rem !important;
+        font-size: 0.80rem !important;
         font-weight: 600 !important;
         cursor: pointer !important;
         text-decoration: underline !important;
@@ -265,6 +270,7 @@ def get_extended_games(league_code="nfl"):
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
 
+# 1. Bettor Handle directly above navigation
 current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
 
 st.sidebar.markdown("---")
@@ -819,7 +825,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                             st.session_state.editing_ai_combo = False
                             st.rerun()
 
-            # Render each leg on a pure 1-line HTML block with zero distortion
+            # Render each leg on a balanced single-line card
             for idx_ai, l_ai in enumerate(st.session_state.ai_recommended_combo):
                 g_match = games_data[l_ai["matchup_idx"]]
                 detail_str = l_ai.get("detail", "")
@@ -827,20 +833,20 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 st.markdown(f"""
                 <div class="rec-single-line-card">
                     <div class="rec-left-wrap">
-                        <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.70rem; padding: 1px 6px; border-radius: 4px;">
+                        <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px;">
                             LEG {idx_ai+1}
                         </span>
-                        <img src="{g_match['away_logo']}" width="18" height="18" style="border-radius: 50%;">
-                        <strong style="font-size: 0.85rem;">{g_match['away_short']}</strong>
-                        <span style="opacity: 0.4; font-size: 0.85rem;">@</span>
-                        <img src="{g_match['home_logo']}" width="18" height="18" style="border-radius: 50%;">
-                        <strong style="font-size: 0.85rem;">{g_match['home_short']}</strong>
-                        <span style="opacity: 0.55; font-size: 0.75rem;">({g_match.get('kickoff', g_match['status'])})</span>
+                        <img src="{g_match['away_logo']}" width="22" height="22" style="border-radius: 50%;">
+                        <strong style="font-size: 0.92rem;">{g_match['away_short']}</strong>
+                        <span style="opacity: 0.4; font-size: 0.90rem;">@</span>
+                        <img src="{g_match['home_logo']}" width="22" height="22" style="border-radius: 50%;">
+                        <strong style="font-size: 0.92rem;">{g_match['home_short']}</strong>
+                        <span style="opacity: 0.55; font-size: 0.80rem;">({g_match.get('kickoff', g_match['status'])})</span>
                     </div>
                     <div class="rec-right-wrap">
-                        <strong style="color: #4ade80; font-size: 0.85rem;">{l_ai['desc']}</strong>
-                        <span style="opacity: 0.6; font-size: 0.75rem;">({detail_str})</span>
-                        <span style="background-color: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
+                        <strong style="color: #4ade80; font-size: 0.92rem;">{l_ai['desc']}</strong>
+                        <span style="opacity: 0.6; font-size: 0.80rem;">({detail_str})</span>
+                        <span style="background-color: rgba(255, 255, 255, 0.08); padding: 2px 8px; border-radius: 4px; font-size: 0.80rem; font-weight: 600;">
                             {l_ai['prob']*100:.1f}%
                         </span>
                     </div>
