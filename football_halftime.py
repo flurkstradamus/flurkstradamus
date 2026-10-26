@@ -118,32 +118,6 @@ st.markdown("""
         margin-top: 2px !important;
         display: block !important;
     }
-
-    /* TIER BADGES */
-    .tier-badge-best {
-        background-color: #22c55e;
-        color: #000000;
-        font-weight: 800;
-        font-size: 0.75rem;
-        padding: 2px 8px;
-        border-radius: 4px;
-    }
-    .tier-badge-better {
-        background-color: #38bdf8;
-        color: #000000;
-        font-weight: 800;
-        font-size: 0.75rem;
-        padding: 2px 8px;
-        border-radius: 4px;
-    }
-    .tier-badge-good {
-        background-color: #eab308;
-        color: #000000;
-        font-weight: 800;
-        font-size: 0.75rem;
-        padding: 2px 8px;
-        border-radius: 4px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -565,7 +539,7 @@ elif menu_choice == "💬 The Locker Room":
             st.write(m.get('text'))
 
 # ==========================================
-# PAGE 1: SINGLE GAME ENGINE (WITH 2H PROJECTIONS & GOOD/BETTER/BEST)
+# PAGE 1: SINGLE GAME ENGINE (WITH 2H PROJECTIONS, SPREAD PROJECTIONS & GOOD/BETTER/BEST)
 # ==========================================
 elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Engine")
@@ -605,7 +579,7 @@ elif menu_choice == "Single Game Engine":
         b3.image(g.get("home_logo", DEFAULT_LOGO), width=45)
 
     # ----------------------------------------------------
-    # PROJECTION ENGINE: PRE-GAME VS IN-GAME DELTAS & 2ND HALF
+    # PROJECTION ENGINE: TOTALS, 2ND HALF & SPREAD ATS DRIFT
     # ----------------------------------------------------
     h_pts = g["home_score"]
     a_pts = g["away_score"]
@@ -643,7 +617,7 @@ elif menu_choice == "Single Game Engine":
     delta_full = final_proj - pregame_tot
 
     # 2. 2nd Half Total Projection
-    pregame_2h = round(pregame_tot * 0.525, 1)  # 2nd half points typically account for ~52-53% of points
+    pregame_2h = round(pregame_tot * 0.525, 1)
     if is_completed:
         live_2h_proj = float(max(pts_scored - (pregame_tot * 0.475), 0.0))
     elif detected_stage in ["Pre-Game", "1st Quarter"]:
@@ -662,16 +636,48 @@ elif menu_choice == "Single Game Engine":
     live_a_prob = 1.0 - live_h_prob
     ml_swing = (live_h_prob - pregame_h_prob) * 100
 
-    # Projection Dashboard Cards
+    # 4. Point Spread Projections & Live In-Game ATS Drift
+    market_spd = float(espn_spread)  # E.g. -3.5 (Home favored by 3.5)
+    pregame_proj_margin = -market_spd  # Baseline expected home margin
+    current_margin = h_pts - a_pts
+    
+    # Calculate live end-of-game projected point differential (Home - Away)
+    if is_completed:
+        live_proj_margin = float(current_margin)
+    elif detected_stage == "Pre-Game":
+        live_proj_margin = pregame_proj_margin
+    elif detected_stage == "1st Quarter":
+        live_proj_margin = (pregame_proj_margin * 0.70) + (current_margin * 0.30)
+    elif detected_stage == "Halftime":
+        live_proj_margin = (pregame_proj_margin * 0.45) + (current_margin * 0.55)
+    elif detected_stage == "3rd Quarter":
+        live_proj_margin = (pregame_proj_margin * 0.25) + (current_margin * 0.75)
+    else:
+        live_proj_margin = current_margin
+
+    # Drift in margin vs opening spread
+    spread_drift = live_proj_margin - pregame_proj_margin
+    home_cover_exp = calculate_spread_prob(live_proj_margin, market_spd, std_bracket)
+    away_cover_exp = 1.0 - home_cover_exp
+
+    # Projection Dashboard Cards (Now includes Spreads & Margin Drift)
     with st.container(border=True):
         st.markdown("#### 📊 Live Model Drift & Projections")
-        m_col1, m_col2, m_col3 = st.columns(3)
-        m_col1.metric("Full Game Total", f"{final_proj:.1f} pts", delta=f"{delta_full:+.1f} pts vs open ({pregame_tot})")
-        m_col2.metric("2nd Half Total", f"{live_2h_proj:.1f} pts", delta=f"{delta_2h:+.1f} pts vs 2H base ({pregame_2h})")
-        m_col3.metric(f"{g['home_short']} Outright Win %", f"{live_h_prob*100:.1f}%", delta=f"{ml_swing:+.1f}% momentum")
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        m_col1.metric("Full Game Total", f"{final_proj:.1f} pts", delta=f"{delta_full:+.1f} vs open ({pregame_tot})")
+        m_col2.metric("2nd Half Total", f"{live_2h_proj:.1f} pts", delta=f"{delta_2h:+.1f} vs 2H base ({pregame_2h})")
+        m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%", delta=f"{ml_swing:+.1f}% momentum")
+        
+        home_disp_sign = "+" if market_spd > 0 else ""
+        m_col4.metric(
+            f"ATS Margin ({g['home_short']} {home_disp_sign}{market_spd})", 
+            f"{live_proj_margin:+.1f} pts", 
+            delta=f"{spread_drift:+.1f} pts vs line"
+        )
 
     # ----------------------------------------------------
     # TIERED STRATEGY RECOMMENDATIONS (GOOD / BETTER / BEST)
+    # Includes: Spreads, Over/Under, Moneylines, & 2H Totals
     # ----------------------------------------------------
     with st.expander("🤖 AI Single Game Strategy Engine (Tiered Edges)", expanded=True):
         col_scope, col_dummy = st.columns([3, 1])
@@ -685,15 +691,41 @@ elif menu_choice == "Single Game Engine":
             live_pool = [gm for gm in games_data if not gm.get("completed", False)]
             if not live_pool:
                 live_pool = games_data
-            # Find game with largest total drift
             active_game_for_strat = max(live_pool, key=lambda x: abs((x["home_score"] + x["away_score"] + (x.get("market_ou", 47.5)*0.475)) - x.get("market_ou", 47.5)))
 
-        st.caption(f"Analyzing in-game momentum, scoring pace, and 2H regression for **{active_game_for_strat['away_short']} @ {active_game_for_strat['home_short']}**:")
+        st.caption(f"Analyzing spread covers, 2H totals, scoring pace, and outright dominance for **{active_game_for_strat['away_short']} @ {active_game_for_strat['home_short']}**:")
 
         # Generate candidates for Good, Better, Best
         strat_candidates = []
 
-        # 1. 2nd Half Total Bet Edge
+        # 1. Point Spread Recommendation (ATS)
+        if home_cover_exp >= 0.50:
+            spd_pick_team = active_game_for_strat["home_team"]
+            spd_pick_abbr = active_game_for_strat["home_short"]
+            spd_target_val = market_spd
+            spd_prob = home_cover_exp
+            spd_margin_edge = live_proj_margin + market_spd
+        else:
+            spd_pick_team = active_game_for_strat["away_team"]
+            spd_pick_abbr = active_game_for_strat["away_short"]
+            spd_target_val = -market_spd
+            spd_prob = away_cover_exp
+            spd_margin_edge = -live_proj_margin - market_spd
+
+        spd_sign = "+" if spd_target_val > 0 else ""
+        strat_candidates.append({
+            "type": "Point Spread (ATS Cover)",
+            "pick": f"{spd_pick_abbr} {spd_sign}{spd_target_val}",
+            "prob": spd_prob,
+            "category": "Spread",
+            "side": "Spread",
+            "target_line": spd_target_val,
+            "picked_team": spd_pick_team,
+            "drift_info": f"ATS Cover Margin: {spd_margin_edge:+.1f} pts | Spread Drift: {spread_drift:+.1f} pts",
+            "rationale": f"Model projects {spd_pick_abbr} to outperform the market spread with a {spd_prob*100:.1f}% cover confidence."
+        })
+
+        # 2. 2nd Half Total Bet Edge
         cushion_2h = round(live_2h_proj + 3.0) + 0.5
         p_2h_under = calculate_win_prob(cushion_2h, live_2h_proj, 5.0, is_under=True)
         strat_candidates.append({
@@ -708,7 +740,7 @@ elif menu_choice == "Single Game Engine":
             "rationale": f"Second half regression limits scoring volume. Model rates 2H Under {cushion_2h} with high safety floor."
         })
 
-        # 2. Full Game Total Bet Edge
+        # 3. Full Game Total Bet Edge
         if delta_full <= -3.0:
             cush_tot = round(final_proj + 3.5) + 0.5
             p_tot = calculate_win_prob(cush_tot, final_proj, std_bracket, is_under=True)
@@ -738,7 +770,7 @@ elif menu_choice == "Single Game Engine":
                 "rationale": f"Hyper-efficient drive rate. Projected to clear {cush_tot} comfortably."
             })
 
-        # 3. Outright Win Edge
+        # 4. Outright Win Edge
         fav_team = active_game_for_strat["home_team"] if live_h_prob >= 0.5 else active_game_for_strat["away_team"]
         fav_abbr = active_game_for_strat["home_short"] if live_h_prob >= 0.5 else active_game_for_strat["away_short"]
         fav_prob = max(live_h_prob, live_a_prob)
@@ -758,7 +790,7 @@ elif menu_choice == "Single Game Engine":
         strat_candidates.sort(key=lambda x: x["prob"], reverse=True)
         tier_names = ["🥇 BEST (Highest Value)", "🥈 BETTER (Strong Edge)", "🥉 GOOD (Solid Play)"]
 
-        for idx, (tier_label, sc) in enumerate(zip(tier_names, strat_candidates)):
+        for idx, (tier_label, sc) in enumerate(zip(tier_names, strat_candidates[:3])):
             with st.container(border=True):
                 r_c1, r_c2 = st.columns([7, 3], vertical_alignment="center")
                 with r_c1:
@@ -800,6 +832,8 @@ elif menu_choice == "Single Game Engine":
     if applied:
         if applied["category"] == "Moneyline":
             default_wtype_idx = 1
+        elif applied["category"] == "Spread":
+            default_wtype_idx = 2
         elif applied["category"] == "2H Total":
             default_wtype_idx = 3
         elif applied["category"] == "Total":
@@ -827,9 +861,16 @@ elif menu_choice == "Single Game Engine":
             picked_t = None
         elif bet_type == "Point Spread (ATS)":
             f1, f2 = st.columns(2)
-            picked_t = f1.selectbox("Team to Cover", [home_team, away_team], format_func=lambda x: f"{g['home_short']} ({home_team})" if x == home_team else f"{g['away_short']} ({away_team})", key=f"spd_pick_{g_id}_v{form_ver}")
-            spd_val = spread_line if picked_t == home_team else -spread_line
-            strike = f2.number_input("Spread Line", value=float(spd_val), step=0.5, key=f"spd_val_{g_id}_v{form_ver}")
+            default_spd_team_idx = 0
+            if applied and applied.get("picked_team"):
+                default_spd_team_idx = 0 if applied["picked_team"] == home_team else 1
+            picked_t = f1.selectbox("Team to Cover", [home_team, away_team], index=default_spd_team_idx, format_func=lambda x: f"{g['home_short']} ({home_team})" if x == home_team else f"{g['away_short']} ({away_team})", key=f"spd_pick_{g_id}_v{form_ver}")
+            
+            if applied and applied.get("target_line") is not None:
+                default_spd_val = float(applied["target_line"])
+            else:
+                default_spd_val = float(spread_line if picked_t == home_team else -spread_line)
+            strike = f2.number_input("Spread Line", value=default_spd_val, step=0.5, key=f"spd_val_{g_id}_v{form_ver}")
             side = "Spread"
         else:
             side = "Moneyline"
@@ -854,7 +895,7 @@ elif menu_choice == "Single Game Engine":
                 bet_label = f"{side} {strike}" if bet_type == "Game Total" else f"2H {side} {strike}"
                 cat = "2H Total" if bet_type == "2nd Half Total" else "Total"
             elif bet_type == "Point Spread (ATS)":
-                prob_calc = home_cover_prob if picked_t == home_team else (1.0 - home_cover_prob)
+                prob_calc = home_cover_exp if picked_t == home_team else away_cover_exp
                 bet_label = f"{picked_t} {strike:+}"
                 cat = "Spread"
             else:
