@@ -36,12 +36,38 @@ st.markdown("""
         }
     }
 
-    /* BALANCED, TIGHT RECOMMENDATION ROWS */
+    /* STRICTLY LEFT-ALIGNED SIDEBAR NAVIGATION BUTTONS */
+    section[data-testid="stSidebar"] div[data-testid="stButton"] {
+        margin-bottom: 2px !important;
+        margin-top: 0px !important;
+        width: 100% !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button {
+        text-align: left !important;
+        justify-content: flex-start !important;
+        display: flex !important;
+        align-items: center !important;
+        padding-left: 14px !important;
+        padding-top: 5px !important;
+        padding-bottom: 5px !important;
+        min-height: 2.1rem !important;
+        height: 2.1rem !important;
+        font-size: 0.90rem !important;
+        font-weight: 600 !important;
+        border-radius: 6px !important;
+        width: 100% !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button * {
+        text-align: left !important;
+        justify-content: flex-start !important;
+    }
+
+    /* BALANCED, UNIFORM RECOMMENDATION ROWS (NO TOP GAP) */
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 8px !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
         background-color: rgba(255, 255, 255, 0.02) !important;
-        padding: 6px 12px !important;
+        padding: 5px 12px !important;
         margin-top: 3px !important;
         margin-bottom: 3px !important;
         transition: all 0.2s ease-in-out;
@@ -50,7 +76,6 @@ st.markdown("""
         background-color: rgba(255, 255, 255, 0.05) !important;
         border-color: rgba(34, 197, 94, 0.4) !important;
     }
-
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] > div {
         padding: 0 !important;
         margin: 0 !important;
@@ -59,54 +84,46 @@ st.markdown("""
     div.rec-card-container div[data-testid="stMarkdownContainer"] p {
         margin: 0 !important;
         padding: 0 !important;
-        line-height: 1.2 !important;
+        line-height: 1.25 !important;
+        font-size: 0.85rem !important;
     }
 
-    /* HOVER-TO-REVEAL REMOVE BUTTON */
+    /* HOVER REVEAL MINI DELETE BUTTON WITH PROPORTIONAL FONT SIZE */
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stButton"] {
         opacity: 0;
         transition: opacity 0.2s ease-in-out;
+        margin: 0 !important;
+        padding: 0 !important;
     }
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"]:hover div[data-testid="stButton"] {
         opacity: 1 !important;
     }
-
-    /* BUTTON STYLING (FLUSH RIGHT INSIDE CARD) */
     div.rec-card-container div[data-testid="stButton"] button {
         float: right !important;
-        padding: 1px 7px !important;
-        min-height: 1.5rem !important;
-        height: 1.5rem !important;
-        font-size: 0.75rem !important;
-        font-weight: 700 !important;
-        line-height: 1.4 !important;
-        border: 1px solid rgba(239, 68, 68, 0.45) !important;
+        padding: 0px !important;
+        min-height: 1.35rem !important;
+        height: 1.35rem !important;
+        width: 1.35rem !important;
+        font-size: 0.72rem !important;
+        line-height: 1.35rem !important;
+        border: 1px solid rgba(239, 68, 68, 0.4) !important;
         color: #ef4444 !important;
         background-color: rgba(239, 68, 68, 0.08) !important;
         margin: 0 !important;
         border-radius: 4px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    div.rec-card-container div[data-testid="stButton"] button p {
+        font-size: 0.72rem !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
     div.rec-card-container div[data-testid="stButton"] button:hover {
         background-color: rgba(239, 68, 68, 0.25) !important;
         border-color: #ef4444 !important;
-    }
-
-    /* LEFT-ALIGNED SIDEBAR BUTTONS */
-    section[data-testid="stSidebar"] div[data-testid="stButton"] {
-        margin-bottom: 2px !important;
-        margin-top: 0px !important;
-    }
-    section[data-testid="stSidebar"] div[data-testid="stButton"] button {
-        text-align: left !important;
-        justify-content: flex-start !important;
-        padding-left: 12px !important;
-        padding-top: 6px !important;
-        padding-bottom: 6px !important;
-        min-height: 2.1rem !important;
-        height: 2.1rem !important;
-        font-size: 0.92rem !important;
-        font-weight: 600 !important;
-        border-radius: 6px !important;
     }
 
     .rec-item-row {
@@ -116,7 +133,8 @@ st.markdown("""
         flex-wrap: wrap;
         margin: 0 !important;
         padding: 0 !important;
-        line-height: 1.2 !important;
+        line-height: 1.25 !important;
+        font-size: 0.85rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -783,7 +801,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.session_state.ai_recommended_combo = selected_ai_legs
 
-        # INTEGRATED ULTRA-COMPACT CARDS WITHOUT IN-BETWEEN LABELS OR EXTRA TOP GAP
+        # INTEGRATED ULTRA-COMPACT CARDS (CLEAN ROW, EQUALIZED PADDING)
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -792,7 +810,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
 
-            # Dedicated container class for CSS targeting
+            # Dedicated container class for zero-gap targeting
             st.markdown('<div class="rec-card-container">', unsafe_allow_html=True)
             for idx_ai, l_ai in enumerate(list(st.session_state.ai_recommended_combo)):
                 g_match = games_data[l_ai["matchup_idx"]]
