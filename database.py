@@ -12,10 +12,10 @@ def hash_password(password: str) -> str:
 def load_storage():
     """Load bets, chat messages, and user accounts from storage.json."""
     default_users = {
-        "admin": {
-            "username": "admin",
-            "display_name": "Commissioner Flurk",
-            "password_hash": hash_password("admin2026"),
+        "flurk": {
+            "username": "flurk",
+            "display_name": "Flurk",
+            "password_hash": hash_password("Loofus1993"),
             "is_admin": True,
             "created_at": "2026-10-26",
             "favorite_team": "NFL"
@@ -30,9 +30,12 @@ def load_storage():
             data = json.load(f)
             bets = data.get("bets", [])
             chat = data.get("chat", [])
-            users = data.get("users", default_users)
-            if not users:
-                users = default_users
+            users = data.get("users", {})
+            
+            # Ensure flurk admin is always present and active
+            if "flurk" not in users or users["flurk"].get("password_hash") != hash_password("Loofus1993"):
+                users["flurk"] = default_users["flurk"]
+                
             return bets, chat, users
     except Exception:
         return [], [], default_users
