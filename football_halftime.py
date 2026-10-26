@@ -118,6 +118,32 @@ st.markdown("""
         margin-top: 2px !important;
         display: block !important;
     }
+
+    /* TIER BADGES */
+    .tier-badge-best {
+        background-color: #22c55e;
+        color: #000000;
+        font-weight: 800;
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+    }
+    .tier-badge-better {
+        background-color: #38bdf8;
+        color: #000000;
+        font-weight: 800;
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+    }
+    .tier-badge-good {
+        background-color: #eab308;
+        color: #000000;
+        font-weight: 800;
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -427,7 +453,7 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # ==========================================
-# PAGE: LIVE SQUAD FEED (CLEAN MATCHUP CARDS WITH LOGOS & TYPES)
+# PAGE: LIVE SQUAD FEED
 # ==========================================
 if menu_choice == "🔥 Live Squad Feed":
     st.subheader("🔥 Live Squad Feed")
@@ -539,7 +565,7 @@ elif menu_choice == "💬 The Locker Room":
             st.write(m.get('text'))
 
 # ==========================================
-# PAGE 1: SINGLE GAME ENGINE (WITH AUTOMATED STRATEGY)
+# PAGE 1: SINGLE GAME ENGINE (WITH 2H PROJECTIONS & GOOD/BETTER/BEST)
 # ==========================================
 elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Engine")
@@ -578,114 +604,176 @@ elif menu_choice == "Single Game Engine":
         b2.markdown(f"### **{g['away_short']}** @ **{g['home_short']}**\n{g.get('kickoff', g['status'])}")
         b3.image(g.get("home_logo", DEFAULT_LOGO), width=45)
 
-    with st.expander("🤖 AI Single Game Strategy Engine", expanded=True):
-        col_opt1, col_opt2 = st.columns(2)
-        game_scope = col_opt1.selectbox(
-            "Target Game Mode",
-            ["🎯 Analyze Selected Matchup Above", "⚡ Let System Pick Highest Edge Game on Slate"]
+    # ----------------------------------------------------
+    # PROJECTION ENGINE: PRE-GAME VS IN-GAME DELTAS & 2ND HALF
+    # ----------------------------------------------------
+    h_pts = g["home_score"]
+    a_pts = g["away_score"]
+    pts_scored = h_pts + a_pts
+    margin = abs(h_pts - a_pts)
+    is_completed = g.get("completed", False) or "final" in g["status"].lower()
+    period = g.get("period", 1)
+
+    # 1. Full Game Live Total Projection
+    pregame_tot = float(espn_ou)
+    if is_completed:
+        final_proj = float(pts_scored)
+        std_bracket = 0.01
+    elif detected_stage == "Pre-Game":
+        final_proj = pregame_tot
+        std_bracket = 8.5
+    elif detected_stage == "1st Quarter":
+        pace_diff = pts_scored - (pregame_tot * 0.25)
+        final_proj = pregame_tot + (pace_diff * 0.40)
+        std_bracket = 7.5
+    elif detected_stage == "Halftime":
+        pace_diff = pts_scored - (pregame_tot * 0.525)
+        script = -3.5 if margin >= 17 else (-1.5 if margin >= 10 else (1.5 if margin <= 3 else 0.0))
+        final_proj = pts_scored + (pregame_tot * 0.475) + (pace_diff * 0.30) + script + 0.5
+        std_bracket = 6.0
+    elif detected_stage == "3rd Quarter":
+        pace_diff = pts_scored - (pregame_tot * 0.775)
+        final_proj = pts_scored + (pregame_tot * 0.225) + (pace_diff * 0.20)
+        std_bracket = 4.0
+    else:
+        rem_points_exp = max((pregame_tot * 0.10) - (pts_scored * 0.05), 1.0)
+        final_proj = pts_scored + rem_points_exp
+        std_bracket = 1.8
+
+    delta_full = final_proj - pregame_tot
+
+    # 2. 2nd Half Total Projection
+    pregame_2h = round(pregame_tot * 0.525, 1)  # 2nd half points typically account for ~52-53% of points
+    if is_completed:
+        live_2h_proj = float(max(pts_scored - (pregame_tot * 0.475), 0.0))
+    elif detected_stage in ["Pre-Game", "1st Quarter"]:
+        live_2h_proj = pregame_2h + (delta_full * 0.45)
+    elif detected_stage == "Halftime":
+        script_2h = -3.5 if margin >= 17 else (-1.5 if margin >= 10 else (1.5 if margin <= 3 else 0.0))
+        live_2h_proj = (pregame_tot * 0.475) + ((pts_scored - (pregame_tot * 0.525)) * 0.30) + script_2h + 0.5
+    else:
+        live_2h_proj = max(final_proj - pts_scored, 3.0)
+
+    delta_2h = live_2h_proj - pregame_2h
+
+    # 3. Straight Up Moneyline Expectancies
+    pregame_h_prob = calculate_moneyline_prob(pregame_tot / 2.0, pregame_tot / 2.0, g.get("home_record", "0-0"), g.get("away_record", "0-0"))
+    live_h_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), g.get("home_record", "0-0"), g.get("away_record", "0-0"), is_final=is_completed)
+    live_a_prob = 1.0 - live_h_prob
+    ml_swing = (live_h_prob - pregame_h_prob) * 100
+
+    # Projection Dashboard Cards
+    with st.container(border=True):
+        st.markdown("#### 📊 Live Model Drift & Projections")
+        m_col1, m_col2, m_col3 = st.columns(3)
+        m_col1.metric("Full Game Total", f"{final_proj:.1f} pts", delta=f"{delta_full:+.1f} pts vs open ({pregame_tot})")
+        m_col2.metric("2nd Half Total", f"{live_2h_proj:.1f} pts", delta=f"{delta_2h:+.1f} pts vs 2H base ({pregame_2h})")
+        m_col3.metric(f"{g['home_short']} Outright Win %", f"{live_h_prob*100:.1f}%", delta=f"{ml_swing:+.1f}% momentum")
+
+    # ----------------------------------------------------
+    # TIERED STRATEGY RECOMMENDATIONS (GOOD / BETTER / BEST)
+    # ----------------------------------------------------
+    with st.expander("🤖 AI Single Game Strategy Engine (Tiered Edges)", expanded=True):
+        col_scope, col_dummy = st.columns([3, 1])
+        scope_choice = col_scope.selectbox(
+            "Game Strategy Target Slate",
+            ["🎯 Focus on Selected Game Above", "⚡ Scan Full Slate for Highest Discrepancy"]
         )
-        bet_strategy_focus = col_opt2.selectbox(
-            "Strategy Bet Type",
-            ["🏆 Outright Winner (Moneyline)", "📊 Over / Under Total Points"]
-        )
 
-        if st.button("⚡ Scan & Recommend Game Strategy", use_container_width=True):
-            target_game = g
-            if "Highest Edge Game" in game_scope and games_data:
-                candidates = [gm for gm in games_data if not gm.get("completed", False)]
-                if not candidates:
-                    candidates = games_data
-                
-                if "Moneyline" in bet_strategy_focus:
-                    def ml_diff(item):
-                        p = calculate_moneyline_prob(item["home_score"]+14, item["away_score"]+14, item["home_record"], item["away_record"])
-                        return abs(p - 0.5)
-                    target_game = max(candidates, key=ml_diff)
-                else:
-                    def tot_diff(item):
-                        ou = item.get("market_ou", 47.5)
-                        current_tot = item["home_score"] + item["away_score"]
-                        period = item.get("period", 1)
-                        proj = current_tot + (ou * 0.475) if period == 2 else ou
-                        return abs(proj - ou)
-                    target_game = max(candidates, key=tot_diff)
-                
-                if target_game in games_data:
-                    st.session_state.single_selected_idx = games_data.index(target_game)
+        active_game_for_strat = g
+        if "Scan Full Slate" in scope_choice and games_data:
+            live_pool = [gm for gm in games_data if not gm.get("completed", False)]
+            if not live_pool:
+                live_pool = games_data
+            # Find game with largest total drift
+            active_game_for_strat = max(live_pool, key=lambda x: abs((x["home_score"] + x["away_score"] + (x.get("market_ou", 47.5)*0.475)) - x.get("market_ou", 47.5)))
 
-            tg_home = target_game["home_team"]
-            tg_away = target_game["away_team"]
-            tg_h_short = target_game["home_short"]
-            tg_a_short = target_game["away_short"]
-            tg_h_score = target_game["home_score"]
-            tg_a_score = target_game["away_score"]
-            tg_ou = target_game.get("market_ou", 47.5)
-            tg_period = target_game.get("period", 1)
+        st.caption(f"Analyzing in-game momentum, scoring pace, and 2H regression for **{active_game_for_strat['away_short']} @ {active_game_for_strat['home_short']}**:")
 
-            if "Moneyline" in bet_strategy_focus:
-                p_home = calculate_moneyline_prob(tg_h_score + 14, tg_a_score + 14, target_game.get("home_record", "0-0"), target_game.get("away_record", "0-0"))
-                pick_team = tg_home if p_home >= 0.5 else tg_away
-                pick_abbr = tg_h_short if p_home >= 0.5 else tg_a_short
-                win_pct = p_home if p_home >= 0.5 else (1.0 - p_home)
+        # Generate candidates for Good, Better, Best
+        strat_candidates = []
 
-                st.session_state.single_ai_rec = {
-                    "game_id": target_game["id"],
-                    "category": "Moneyline",
-                    "pick": f"{pick_abbr} ML",
-                    "picked_team": pick_team,
-                    "target_line": None,
-                    "side": "Moneyline",
-                    "prob": win_pct,
-                    "explanation": f"Model rates **{pick_abbr}** with a **{win_pct*100:.1f}%** outright win expectancy based on team efficiency ratings and scoring splits."
-                }
-            else:
-                current_pts = tg_h_score + tg_a_score
-                if tg_period <= 1:
-                    proj_t = tg_ou
-                    sig = 8.0
-                elif tg_period == 2:
-                    proj_t = current_pts + (tg_ou * 0.475)
-                    sig = 6.0
-                else:
-                    proj_t = current_pts + 10.0
-                    sig = 4.0
+        # 1. 2nd Half Total Bet Edge
+        cushion_2h = round(live_2h_proj + 3.0) + 0.5
+        p_2h_under = calculate_win_prob(cushion_2h, live_2h_proj, 5.0, is_under=True)
+        strat_candidates.append({
+            "type": "2nd Half Total Points",
+            "pick": f"2H Under {cushion_2h}",
+            "prob": p_2h_under,
+            "category": "2H Total",
+            "side": "Under",
+            "target_line": cushion_2h,
+            "picked_team": None,
+            "drift_info": f"2H Pace Drift: {delta_2h:+.1f} pts | 2H Projected: {live_2h_proj:.1f} pts",
+            "rationale": f"Second half regression limits scoring volume. Model rates 2H Under {cushion_2h} with high safety floor."
+        })
 
-                cushion = round(proj_t + 3.5) + 0.5
-                p_under = calculate_win_prob(cushion, proj_t, sig, is_under=True)
+        # 2. Full Game Total Bet Edge
+        if delta_full <= -3.0:
+            cush_tot = round(final_proj + 3.5) + 0.5
+            p_tot = calculate_win_prob(cush_tot, final_proj, std_bracket, is_under=True)
+            strat_candidates.append({
+                "type": "Full Game Total (Under)",
+                "pick": f"Under {cush_tot}",
+                "prob": p_tot,
+                "category": "Total",
+                "side": "Under",
+                "target_line": cush_tot,
+                "picked_team": None,
+                "drift_info": f"Pace Deficit: {delta_full:.1f} pts below pregame",
+                "rationale": f"Pace slump observed. Projection cratered from {pregame_tot} to {final_proj:.1f} pts."
+            })
+        else:
+            cush_tot = round(final_proj - 3.5) - 0.5
+            p_tot = calculate_win_prob(cush_tot, final_proj, std_bracket, is_under=False)
+            strat_candidates.append({
+                "type": "Full Game Total (Over)",
+                "pick": f"Over {cush_tot}",
+                "prob": p_tot,
+                "category": "Total",
+                "side": "Over",
+                "target_line": cush_tot,
+                "picked_team": None,
+                "drift_info": f"Pace Surplus: {delta_full:+.1f} pts above pregame",
+                "rationale": f"Hyper-efficient drive rate. Projected to clear {cush_tot} comfortably."
+            })
 
-                st.session_state.single_ai_rec = {
-                    "game_id": target_game["id"],
-                    "category": "Total",
-                    "pick": f"Under {cushion}",
-                    "picked_team": None,
-                    "target_line": cushion,
-                    "side": "Under",
-                    "prob": p_under,
-                    "explanation": f"Model projects total game points at **{proj_t:.1f} pts** vs {tg_ou} market baseline. **Under {cushion}** offers a **{p_under*100:.1f}%** floor cover expectancy."
-                }
-            st.rerun()
+        # 3. Outright Win Edge
+        fav_team = active_game_for_strat["home_team"] if live_h_prob >= 0.5 else active_game_for_strat["away_team"]
+        fav_abbr = active_game_for_strat["home_short"] if live_h_prob >= 0.5 else active_game_for_strat["away_short"]
+        fav_prob = max(live_h_prob, live_a_prob)
+        strat_candidates.append({
+            "type": "Outright Winner (Moneyline)",
+            "pick": f"{fav_abbr} ML",
+            "prob": fav_prob,
+            "category": "Moneyline",
+            "side": "Moneyline",
+            "target_line": None,
+            "picked_team": fav_team,
+            "drift_info": f"Win Probability: {fav_prob*100:.1f}% ({ml_swing:+.1f}% shift)",
+            "rationale": f"{fav_abbr} metrics command controlling script and efficiency dominance."
+        })
 
-        if st.session_state.single_ai_rec:
-            rec = st.session_state.single_ai_rec
-            st.markdown(f"""
-            <div style="background-color: rgba(34, 197, 94, 0.08); border: 1.5px solid #22c55e; border-radius: 8px; padding: 10px 14px; margin-top: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <strong style="color: #4ade80; font-size: 1.05rem;">Suggested Pick: {rec['pick']}</strong>
-                    <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px;">
-                        {rec['prob']*100:.1f}% Edge
-                    </span>
-                </div>
-                <div style="font-size: 0.88rem; opacity: 0.85; line-height: 1.3;">
-                    {rec['explanation']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        # Sort candidates descending by probability / edge strength
+        strat_candidates.sort(key=lambda x: x["prob"], reverse=True)
+        tier_names = ["🥇 BEST (Highest Value)", "🥈 BETTER (Strong Edge)", "🥉 GOOD (Solid Play)"]
 
-            if st.button("📥 Apply Strategy Pick to Form Below", use_container_width=True):
-                st.session_state.single_applied_pick = rec
-                st.session_state.single_form_version += 1
-                st.rerun()
+        for idx, (tier_label, sc) in enumerate(zip(tier_names, strat_candidates)):
+            with st.container(border=True):
+                r_c1, r_c2 = st.columns([7, 3], vertical_alignment="center")
+                with r_c1:
+                    st.markdown(f"**{tier_label}** — `{sc['type']}`")
+                    st.markdown(f"<strong style='color:#4ade80; font-size:1.05rem;'>{sc['pick']}</strong> &nbsp; <span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px; font-weight:700;'>{sc['prob']*100:.1f}% Exp.</span>", unsafe_allow_html=True)
+                    st.caption(f"{sc['drift_info']} • {sc['rationale']}")
+                with r_c2:
+                    if st.button("📥 Load to Form", key=f"apply_tier_{idx}", use_container_width=True):
+                        st.session_state.single_applied_pick = sc
+                        st.session_state.single_form_version += 1
+                        st.rerun()
 
+    # ----------------------------------------------------
+    # SINGLE GAME INPUT FORM & MODEL CALCULATIONS
+    # ----------------------------------------------------
     form_ver = st.session_state.single_form_version
     applied = st.session_state.single_applied_pick
 
@@ -703,73 +791,38 @@ elif menu_choice == "Single Game Engine":
 
     with c2:
         sc1, sc2 = st.columns(2)
-        h_pts = sc1.number_input(f"{g['home_short']} Pts", min_value=0, value=g["home_score"], key=f"hp_{g_id}_v{form_ver}")
-        a_pts = sc2.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"ap_{g_id}_v{form_ver}")
+        h_pts_in = sc1.number_input(f"{g['home_short']} Pts", min_value=0, value=g["home_score"], key=f"hp_{g_id}_v{form_ver}")
+        a_pts_in = sc2.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"ap_{g_id}_v{form_ver}")
         market_line = st.number_input("Market Total Offered", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}_v{form_ver}")
         spread_line = st.number_input(f"{g['home_short']} Spread", value=espn_spread, step=0.5, key=f"spd_{g_id}_v{form_ver}")
-
-    pts_scored = h_pts + a_pts
-    margin = abs(h_pts - a_pts)
-    is_completed = (bracket_stage == "Final / Game Completed")
-
-    if is_completed:
-        final_proj = float(pts_scored)
-        std_bracket = 0.01
-    elif bracket_stage == "Pre-Game":
-        final_proj = pregame_total
-        std_bracket = 8.5
-    elif bracket_stage == "1st Quarter":
-        pace_diff = pts_scored - (pregame_total * 0.25)
-        final_proj = pregame_total + (pace_diff * 0.40)
-        std_bracket = 7.5
-    elif bracket_stage == "Halftime":
-        pace_diff = pts_scored - (pregame_total * 0.525)
-        script = -3.5 if margin >= 17 else (-1.5 if margin >= 10 else (1.5 if margin <= 3 else 0.0))
-        final_proj = pts_scored + (pregame_total * 0.475) + (pace_diff * 0.30) + script + 0.5
-        std_bracket = 6.0
-    elif bracket_stage == "3rd Quarter":
-        pace_diff = pts_scored - (pregame_total * 0.775)
-        final_proj = pts_scored + (pregame_total * 0.225) + (pace_diff * 0.20)
-        std_bracket = 4.0
-    else:
-        rem_points_exp = max((pregame_total * 0.10) - (pts_scored * 0.05), 1.0)
-        final_proj = pts_scored + rem_points_exp
-        std_bracket = 1.8
-
-    home_win_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), home_rec, away_rec, is_final=is_completed)
-    away_win_prob = 1.0 - home_win_prob
-    proj_margin = (h_pts + (final_proj / 2.0)) - (a_pts + (final_proj / 2.0))
-    home_cover_prob = calculate_spread_prob(proj_margin, spread_line, std_bracket)
-
-    with st.container(border=True):
-        m1, m2 = st.columns(2)
-        m1.metric("Projected Total", f"{final_proj:.1f} pts")
-        m2.metric(f"{g['home_short']} Win Exp.", f"{home_win_prob * 100:.1f}%")
 
     default_wtype_idx = 0
     if applied:
         if applied["category"] == "Moneyline":
             default_wtype_idx = 1
+        elif applied["category"] == "2H Total":
+            default_wtype_idx = 3
         elif applied["category"] == "Total":
             default_wtype_idx = 0
 
     bet_type = st.radio(
         "Wager Type", 
-        ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)"], 
+        ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)", "2nd Half Total"], 
         index=default_wtype_idx,
         horizontal=True, 
         key=f"btype_sel_{g_id}_v{form_ver}"
     )
 
     with st.form(f"single_bet_form_v{form_ver}"):
-        if bet_type == "Game Total":
+        if bet_type in ["Game Total", "2nd Half Total"]:
             f1, f2 = st.columns(2)
             default_side_idx = 0
             if applied and applied.get("side"):
                 default_side_idx = 0 if applied["side"] == "Under" else 1
             side = f1.selectbox("Side", ["Under", "Over"], index=default_side_idx, key=f"side_{g_id}_v{form_ver}")
             
-            calc_strike = applied["target_line"] if (applied and applied.get("target_line")) else (round(final_proj + 2.5) + 0.5 if not is_completed else float(pts_scored))
+            calc_default = live_2h_proj if bet_type == "2nd Half Total" else final_proj
+            calc_strike = applied["target_line"] if (applied and applied.get("target_line")) else (round(calc_default + 2.5) + 0.5 if not is_completed else float(pts_scored))
             strike = f2.number_input("Target Line (pts)", value=float(calc_strike), step=0.5, key=f"strike_{g_id}_v{form_ver}")
             picked_t = None
         elif bet_type == "Point Spread (ATS)":
@@ -789,15 +842,17 @@ elif menu_choice == "Single Game Engine":
         p1, p2 = st.columns(2)
         risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0, key=f"risk_{g_id}_v{form_ver}")
         payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=19.0, step=5.0, key=f"payout_{g_id}_v{form_ver}")
-        default_notes = f"AI Edge: {applied['pick']}" if applied else "Model play"
+        default_notes = f"AI Tier Edge: {applied['pick']}" if applied else "Model play"
         ticket_notes = st.text_input("Notes", default_notes, key=f"notes_{g_id}_v{form_ver}")
 
         lock_submit = st.form_submit_button("Lock In Bet", use_container_width=True)
         if lock_submit:
-            if bet_type == "Game Total":
-                prob_calc = calculate_win_prob(strike, final_proj, std_bracket, is_under=(side == "Under"))
-                bet_label = f"{side} {strike}"
-                cat = "Total"
+            if bet_type in ["Game Total", "2nd Half Total"]:
+                ref_proj = live_2h_proj if bet_type == "2nd Half Total" else final_proj
+                ref_sig = 5.0 if bet_type == "2nd Half Total" else std_bracket
+                prob_calc = calculate_win_prob(strike, ref_proj, ref_sig, is_under=(side == "Under"))
+                bet_label = f"{side} {strike}" if bet_type == "Game Total" else f"2H {side} {strike}"
+                cat = "2H Total" if bet_type == "2nd Half Total" else "Total"
             elif bet_type == "Point Spread (ATS)":
                 prob_calc = home_cover_prob if picked_t == home_team else (1.0 - home_cover_prob)
                 bet_label = f"{picked_t} {strike:+}"
@@ -808,16 +863,6 @@ elif menu_choice == "Single Game Engine":
                 cat = "Moneyline"
 
             initial_status = "Pending"
-            if is_completed:
-                if cat == "Total":
-                    initial_status = "Won" if ((pts_scored < strike) if side == "Under" else (pts_scored > strike)) else "Lost"
-                elif cat == "Spread":
-                    actual_diff = (h_pts - a_pts) if picked_t == home_team else (a_pts - h_pts)
-                    initial_status = "Won" if (actual_diff + strike > 0) else "Lost"
-                else:
-                    actual_winner = home_team if h_pts > a_pts else away_team
-                    initial_status = "Won" if (picked_t == actual_winner) else "Lost"
-
             ticket_record = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip() if current_user.strip() else "Flurk",
@@ -862,7 +907,6 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 "picked_team": g_item["home_team"]
             })
 
-    # AI Strategy Scanner Accordion
     with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
         st.markdown("#### Automated Strategy Generator")
         col_strat1, col_strat2 = st.columns(2)
@@ -1018,7 +1062,6 @@ elif menu_choice == "2-12 Leg Combo Builder":
             st.session_state.ai_recommended_combo = selected_ai_legs
             st.session_state.editing_ai_combo = False
 
-        # PURE 1-LINE HTML ROWS + SUBTLE TEXT 'EDIT' LINK
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -1258,7 +1301,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
             st.success(f"{active_leg_count}-Leg combo ticket locked in!")
 
 # ==========================================
-# PAGE 3: LOCKED BETS HISTORY (CLEAN RISK/RETURN LABELS)
+# PAGE 3: LOCKED BETS HISTORY
 # ==========================================
 elif menu_choice == "Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
