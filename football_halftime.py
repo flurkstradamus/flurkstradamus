@@ -65,7 +65,7 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
-    /* TIGHT, EVEN PADDING IN RECOMMENDATION ROWS */
+    /* TIGHT RECOMMENDATION ROWS */
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 8px !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
@@ -97,46 +97,32 @@ st.markdown("""
         gap: 0.25rem !important;
     }
 
-    /* BUTTON HEIGHT MATCHED DIRECTLY TO PROBABILITY PILL */
-    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stButton"] {
-        opacity: 0;
-        transition: opacity 0.2s ease-in-out;
-        margin: 0 !important;
-        padding: 0 !important;
-        height: 1.15rem !important;
-        min-height: 1.15rem !important;
-        display: flex !important;
-        align-items: center !important;
-    }
-    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"]:hover div[data-testid="stButton"] {
-        opacity: 1 !important;
-    }
+    /* PLAIN INLINE 'X' TEXT BUTTON (NO BOX, SAME SIZE AS TEXT) */
     div.rec-card-container div[data-testid="stButton"] button {
         float: right !important;
-        padding: 0px 4px !important;
-        min-height: 1.15rem !important;
-        height: 1.15rem !important;
-        width: 1.15rem !important;
-        font-size: 0.60rem !important;
+        padding: 0px !important;
+        min-height: unset !important;
+        height: auto !important;
+        width: auto !important;
+        font-size: 0.88rem !important;
         line-height: 1 !important;
-        border: 1px solid rgba(239, 68, 68, 0.4) !important;
-        color: #ef4444 !important;
-        background-color: rgba(239, 68, 68, 0.08) !important;
+        border: none !important;
+        background: transparent !important;
+        color: rgba(255, 255, 255, 0.4) !important;
+        cursor: pointer !important;
         margin: 0 !important;
-        border-radius: 4px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        box-shadow: none !important;
     }
     div.rec-card-container div[data-testid="stButton"] button p {
-        font-size: 0.60rem !important;
+        font-size: 0.88rem !important;
         line-height: 1 !important;
         margin: 0 !important;
         padding: 0 !important;
     }
     div.rec-card-container div[data-testid="stButton"] button:hover {
-        background-color: rgba(239, 68, 68, 0.25) !important;
-        border-color: #ef4444 !important;
+        color: #ef4444 !important;
+        background: transparent !important;
+        border: none !important;
     }
 
     .rec-item-row {
@@ -301,10 +287,15 @@ def get_extended_games(league_code="nfl"):
     return all_games
 
 # ==========================================
-# SIDEBAR NAVIGATION (LEFT-ALIGNED, LOW-MARGIN BUTTONS)
+# SIDEBAR NAVIGATION (BETTOR HANDLE ON TOP, LEFT-ALIGNED TABS)
 # ==========================================
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
+
+# 1. Bettor Handle moved above the Navigation Menu
+current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
+
+st.sidebar.markdown("---")
 
 nav_items = [
     ("⚡ Single Game Engine", "Single Game Engine"),
@@ -326,7 +317,6 @@ for label, page_key in nav_items:
 menu_choice = st.session_state.active_nav_page
 
 st.sidebar.markdown("---")
-current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
 league = st.sidebar.radio("Primary League", ["NFL", "NCAA Football"])
 league_param = "nfl" if league == "NFL" else "college-football"
 
@@ -829,7 +819,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 detail_str = l_ai.get("detail", "")
 
                 with st.container(border=True):
-                    c_left, c_mid, c_btn = st.columns([5.7, 3.9, 0.4], vertical_alignment="center")
+                    c_left, c_mid, c_btn = st.columns([5.8, 3.9, 0.3], vertical_alignment="center")
                     
                     with c_left:
                         st.markdown(f"""
@@ -858,6 +848,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         """, unsafe_allow_html=True)
                     
                     with c_btn:
+                        # Plain '✕' link button matching the height and size of the text
                         if st.button("✕", key=f"btn_remove_{leg_key}", help=f"Remove Leg {idx_ai+1}"):
                             st.session_state.ai_recommended_combo = [item for item in st.session_state.ai_recommended_combo if item.get("leg_id") != l_ai.get("leg_id")]
                             st.rerun()
