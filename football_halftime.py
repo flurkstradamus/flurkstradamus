@@ -207,15 +207,19 @@ current_user_profile = st.session_state.logged_in_user
 current_user = current_user_profile.get("display_name", current_user_profile.get("username", "Flurk"))
 is_user_admin = current_user_profile.get("is_admin", False)
 
-# ESPN Scoreboard Data
+# ==========================================
+# ESPN SCOREBOARD DATA (WITH DYNAMIC FILTER)
+# ==========================================
 @st.cache_data(ttl=25)
-def get_extended_games(league_code="nfl"):
+def get_extended_games(selected_league="All Games"):
     all_games = []
     seen_ids = set()
-    endpoints = [
-        ("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100"),
-        ("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=100&groups=80")
-    ]
+    
+    endpoints = []
+    if selected_league in ["NFL", "All Games"]:
+        endpoints.append(("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100"))
+    if selected_league in ["NCAA Football", "All Games"]:
+        endpoints.append(("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=100&groups=80"))
 
     for l_label, url in endpoints:
         try:
@@ -328,8 +332,7 @@ for label, page_key in nav_items:
 menu_choice = st.session_state.active_nav_page
 
 st.sidebar.markdown("---")
-league = st.sidebar.radio("Primary League", ["NFL", "NCAA Football"])
-league_param = "nfl" if league == "NFL" else "college-football"
+league = st.sidebar.radio("Primary League", ["NFL", "NCAA Football", "All Games"])
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⏱️ Live Updates")
@@ -343,7 +346,8 @@ if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True):
     st.session_state.user_accounts = u_data
     st.rerun()
 
-games_data = get_extended_games(league_param)
+# Ingest games for the active league
+games_data = get_extended_games(league)
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages)
 
 # ==========================================
@@ -832,7 +836,7 @@ elif menu_choice == "Single Game Engine":
         espn_ou = g["market_ou"]
         espn_spread = g["market_spread"]
     else:
-        st.warning("Manual Matchup Mode")
+        st.warning(f"No games currently active for {league}.")
         g = {"id": "man", "league": "NFL", "home_team": "Home", "home_short": "HOME", "home_logo": DEFAULT_LOGO, "away_team": "Away", "away_short": "AWAY", "away_logo": DEFAULT_LOGO, "home_score": 14, "away_score": 10, "status": "Halftime", "kickoff": "Live", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False, "market_ou": 47.5, "market_spread": -3.5}
         g_id = "man"
         detected_stage = "Halftime"
