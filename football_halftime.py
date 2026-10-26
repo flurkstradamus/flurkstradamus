@@ -6,7 +6,7 @@ import string
 from datetime import datetime, timedelta
 
 # Import modular engines
-from config import GROUP_PASSCODE, DEFAULT_LOGO, OFFICIAL_ABBR_MAP
+from config import DEFAULT_LOGO, OFFICIAL_ABBR_MAP
 from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
 from database import load_storage, save_all_storage, find_game_for_bet, auto_resolve_bets, hash_password
 
@@ -156,8 +156,6 @@ def format_espn_kickoff(date_str, fallback_status):
         return fallback_status
 
 # Session Initializations
-if "passcode_authenticated" not in st.session_state:
-    st.session_state.passcode_authenticated = False
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 if "selected_bet_id" not in st.session_state:
@@ -195,27 +193,7 @@ if "banned_emails" not in st.session_state:
     st.session_state.banned_emails = banned_emails_data
 
 # ==========================================
-# STAGE 1: GROUP PASSCODE GATEKEEPER
-# ==========================================
-if not st.session_state.passcode_authenticated:
-    st.title("🔮 Flurkstradamus")
-    st.caption("Private Edge & Consensus Terminal")
-    with st.container(border=True):
-        st.markdown("### 🔑 Private Beta Access")
-        st.write("Please enter the community invite passcode to proceed:")
-        with st.form("pin_login"):
-            pin_entry = st.text_input("Group Passcode", type="password", placeholder="Enter passcode...")
-            login_btn = st.form_submit_button("Access Terminal", use_container_width=True)
-            if login_btn:
-                if pin_entry == GROUP_PASSCODE:
-                    st.session_state.passcode_authenticated = True
-                    st.rerun()
-                else:
-                    st.error("Invalid group passcode.")
-    st.stop()
-
-# ==========================================
-# STAGE 2: USER LOGIN, SIGNUP & FORGOT PASSWORD
+# USER LOGIN, SIGNUP & FORGOT PASSWORD (DIRECT ACCESS)
 # ==========================================
 if st.session_state.logged_in_user is None:
     st.title("🔮 Flurkstradamus")
@@ -727,7 +705,6 @@ elif menu_choice == "💬 The Locker Room":
     st.subheader("💬 The Locker Room")
     st.caption("Squad banter, threaded replies, reactions, and editable posts.")
 
-    # Top Post Box
     with st.form("send_msg_form", clear_on_submit=True):
         user_msg = st.text_input("Send a message", placeholder="Talk trash, call your shot, or share your angle...")
         send_btn = st.form_submit_button("Post Message", use_container_width=True)
@@ -745,7 +722,6 @@ elif menu_choice == "💬 The Locker Room":
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
             st.rerun()
 
-    # Feed loop
     for m_idx, m in enumerate(list(st.session_state.chat_messages[:40])):
         m_id = m.get("id", str(m_idx))
         if "reactions" not in m:
@@ -760,7 +736,6 @@ elif menu_choice == "💬 The Locker Room":
             with top_col1:
                 st.markdown(f"**{m.get('user')}** &nbsp; <span style='opacity:0.55;font-size:0.8rem;'>{m.get('time')}</span>", unsafe_allow_html=True)
             with top_col2:
-                # Author controls: Edit & Delete
                 if is_author:
                     btn_c1, btn_c2 = st.columns(2)
                     with btn_c1:
@@ -773,7 +748,6 @@ elif menu_choice == "💬 The Locker Room":
                             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
                             st.rerun()
 
-            # Inline Edit Form
             if st.session_state.editing_msg_id == m_id:
                 with st.form(f"inline_edit_form_{m_id}"):
                     edited_text = st.text_input("Edit message", value=m.get("text", ""))
@@ -794,13 +768,11 @@ elif menu_choice == "💬 The Locker Room":
             else:
                 st.write(m.get("text"))
 
-            # Display active reactions
             if m["reactions"]:
                 rx_badges = [f"{emoji} {count}" for emoji, count in m["reactions"].items() if count > 0]
                 if rx_badges:
                     st.markdown(" ".join([f"<span style='background-color:rgba(255,255,255,0.08);padding:2px 8px;border-radius:12px;font-size:0.8rem;margin-right:4px;'>{b}</span>" for b in rx_badges]), unsafe_allow_html=True)
 
-            # Reactions Row
             col_rx, col_rep_btn = st.columns([6, 4], vertical_alignment="center")
             with col_rx:
                 rx_cols = st.columns(5)
@@ -811,7 +783,6 @@ elif menu_choice == "💬 The Locker Room":
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
                         st.rerun()
 
-            # Threaded Replies Expander
             with st.expander(f"💬 Replies ({len(m['replies'])})", expanded=False):
                 for rep in m["replies"]:
                     st.markdown(f"""
