@@ -282,7 +282,7 @@ def get_extended_games(league_code="nfl"):
     return all_games
 
 # ==========================================
-# SIDEBAR NAVIGATION
+# SIDEBAR NAVIGATION (UPDATED ORDER)
 # ==========================================
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
@@ -296,10 +296,10 @@ nav_items = [
     ("🔗 2-12 Leg Combo Builder", "2-12 Leg Combo Builder"),
     ("🔥 Live Squad Feed", "🔥 Live Squad Feed"),
     ("💬 The Locker Room", "💬 The Locker Room"),
-    ("📜 Locked Bets History", "Locked Bets History"),
     ("🏆 Squad Leaderboard", "🏆 Squad Leaderboard"),
-    ("📖 Model Methodology & Math", "📖 Model Methodology & Math"),
-    ("💡 How It Works", "💡 How It Works")
+    ("📜 Locked Bets History", "Locked Bets History"),
+    ("💡 How It Works", "💡 How It Works"),
+    ("📖 Model Methodology & Math", "📖 Model Methodology & Math")
 ]
 
 for label, page_key in nav_items:
@@ -538,7 +538,7 @@ elif menu_choice == "💬 The Locker Room":
             st.write(m.get('text'))
 
 # ==========================================
-# PAGE 1: SINGLE GAME ENGINE (WITH PERMANENT SYNC FIX)
+# PAGE 1: SINGLE GAME ENGINE
 # ==========================================
 elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Engine")
@@ -551,7 +551,6 @@ elif menu_choice == "Single Game Engine":
         if st.session_state.single_selected_idx >= len(game_options):
             st.session_state.single_selected_idx = 0
             
-        # Dynamically versioned key allows Load to Form to force update this dropdown
         selected_idx = st.selectbox(
             "Select Matchup", 
             range(len(game_options)), 
@@ -1496,7 +1495,91 @@ elif menu_choice == "2-12 Leg Combo Builder":
             st.success(f"{active_leg_count}-Leg combo ticket locked in!")
 
 # ==========================================
-# PAGE 3: LOCKED BETS HISTORY
+# PAGE 4: SQUAD LEADERBOARD
+# ==========================================
+elif menu_choice == "🏆 Squad Leaderboard":
+    st.subheader("🏆 Squad Leaderboard")
+    st.caption("Consensus standings and betting performance.")
+
+    user_stats = {}
+    for b in st.session_state.saved_bets:
+        u_raw = b.get("user", "Flurk")
+        u_clean = u_raw.strip() if u_raw.strip() else "Flurk"
+        u_key = u_clean.lower()
+        if u_key not in user_stats:
+            user_stats[u_key] = {
+                "display_name": u_clean,
+                "Wins": 0,
+                "Losses": 0,
+                "Pending": 0,
+                "Total_Risk": 0.0,
+                "Net_Profit": 0.0
+            }
+
+        risk = float(b.get("risk_dollars", 10.0))
+        payout = float(b.get("payout_dollars", 19.0))
+        stat = b.get("status", "Pending")
+
+        if stat == "Won":
+            user_stats[u_key]["Wins"] += 1
+            user_stats[u_key]["Total_Risk"] += risk
+            user_stats[u_key]["Net_Profit"] += (payout - risk)
+        elif stat == "Lost":
+            user_stats[u_key]["Losses"] += 1
+            user_stats[u_key]["Total_Risk"] += risk
+            user_stats[u_key]["Net_Profit"] -= risk
+        else:
+            user_stats[u_key]["Pending"] += 1
+
+    board = []
+    for u_k, s in user_stats.items():
+        decided = s["Wins"] + s["Losses"]
+        win_rate = (s["Wins"] / decided * 100) if decided > 0 else 0.0
+        roi = (s["Net_Profit"] / s["Total_Risk"] * 100) if s["Total_Risk"] > 0 else 0.0
+        badge = "🎯 Sniper" if win_rate >= 65 and decided >= 3 else ("🔥 On Fire" if s["Wins"] >= 3 and s["Losses"] == 0 else ("⚡ Contender" if decided > 0 else "🌱 Rookie"))
+
+        board.append({
+            "name": s["display_name"],
+            "badge": badge,
+            "wins": s["Wins"],
+            "losses": s["Losses"],
+            "pending": s["Pending"],
+            "win_rate": win_rate,
+            "roi": roi,
+            "decided": decided,
+            "net_profit": s["Net_Profit"]
+        })
+
+    board.sort(key=lambda x: x["net_profit"], reverse=True)
+
+    if not board:
+        st.info("No bets recorded yet to rank.")
+    else:
+        top_c1, top_c2 = st.columns(2)
+        top_c1.metric("Total Bettors", f"{len(board)}")
+        tot_profit = sum(x['net_profit'] for x in board)
+        top_c2.metric("Squad Net P&L", f"${tot_profit:+.2f}", delta=f"{'+' if tot_profit>=0 else ''}{tot_profit:.2f}")
+
+        for rank_idx, bettor in enumerate(board):
+            medal = "🥇" if rank_idx == 0 else ("🥈" if rank_idx == 1 else ("🥉" if rank_idx == 2 else f"#{rank_idx+1}"))
+            with st.container(border=True):
+                r_c1, r_c2 = st.columns([3, 2])
+                with r_c1:
+                    st.markdown(f"### {medal} **{bettor['name']}**")
+                    st.caption(f"{bettor['badge']} • {bettor['wins']}W - {bettor['losses']}L - {bettor['pending']}P")
+                with r_c2:
+                    p_color = "#4ade80" if bettor['net_profit'] >= 0 else "#f87171"
+                    p_text = f"+${bettor['net_profit']:.2f}" if bettor['net_profit'] >= 0 else f"-${abs(bettor['net_profit']):.2f}"
+                    st.markdown(f"<div style='text-align:right;'><span style='color:{p_color};font-size:1.4rem;font-weight:700;'>{p_text}</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align:right;opacity:0.6;font-size:0.85rem;'>ROI: {bettor['roi']:+.1f}%</div>", unsafe_allow_html=True)
+
+                s1, s2, s3 = st.columns(3)
+                s1.metric("Win Rate", f"{bettor['win_rate']:.1f}%")
+                s2.metric("Decided", f"{bettor['decided']}")
+                s3.metric("Pending", f"{bettor['pending']}")
+
+# ==========================================
+# PAGE 5: LOCKED BETS HISTORY
 # ==========================================
 elif menu_choice == "Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
@@ -1608,139 +1691,18 @@ elif menu_choice == "Locked Bets History":
 
             st.markdown("<hr style='margin: 8px 0 16px 0; opacity: 0.15;'>", unsafe_allow_html=True)
 
-# PAGE 4: SQUAD LEADERBOARD
-elif menu_choice == "🏆 Squad Leaderboard":
-    st.subheader("🏆 Squad Leaderboard")
-    st.caption("Consensus standings and betting performance.")
-
-    user_stats = {}
-    for b in st.session_state.saved_bets:
-        u_raw = b.get("user", "Flurk")
-        u_clean = u_raw.strip() if u_raw.strip() else "Flurk"
-        u_key = u_clean.lower()
-        if u_key not in user_stats:
-            user_stats[u_key] = {
-                "display_name": u_clean,
-                "Wins": 0,
-                "Losses": 0,
-                "Pending": 0,
-                "Total_Risk": 0.0,
-                "Net_Profit": 0.0
-            }
-
-        risk = float(b.get("risk_dollars", 10.0))
-        payout = float(b.get("payout_dollars", 19.0))
-        stat = b.get("status", "Pending")
-
-        if stat == "Won":
-            user_stats[u_key]["Wins"] += 1
-            user_stats[u_key]["Total_Risk"] += risk
-            user_stats[u_key]["Net_Profit"] += (payout - risk)
-        elif stat == "Lost":
-            user_stats[u_key]["Losses"] += 1
-            user_stats[u_key]["Total_Risk"] += risk
-            user_stats[u_key]["Net_Profit"] -= risk
-        else:
-            user_stats[u_key]["Pending"] += 1
-
-    board = []
-    for u_k, s in user_stats.items():
-        decided = s["Wins"] + s["Losses"]
-        win_rate = (s["Wins"] / decided * 100) if decided > 0 else 0.0
-        roi = (s["Net_Profit"] / s["Total_Risk"] * 100) if s["Total_Risk"] > 0 else 0.0
-        badge = "🎯 Sniper" if win_rate >= 65 and decided >= 3 else ("🔥 On Fire" if s["Wins"] >= 3 and s["Losses"] == 0 else ("⚡ Contender" if decided > 0 else "🌱 Rookie"))
-
-        board.append({
-            "name": s["display_name"],
-            "badge": badge,
-            "wins": s["Wins"],
-            "losses": s["Losses"],
-            "pending": s["Pending"],
-            "win_rate": win_rate,
-            "roi": roi,
-            "decided": decided,
-            "net_profit": s["Net_Profit"]
-        })
-
-    board.sort(key=lambda x: x["net_profit"], reverse=True)
-
-    if not board:
-        st.info("No bets recorded yet to rank.")
-    else:
-        top_c1, top_c2 = st.columns(2)
-        top_c1.metric("Total Bettors", f"{len(board)}")
-        tot_profit = sum(x['net_profit'] for x in board)
-        top_c2.metric("Squad Net P&L", f"${tot_profit:+.2f}", delta=f"{'+' if tot_profit>=0 else ''}{tot_profit:.2f}")
-
-        for rank_idx, bettor in enumerate(board):
-            medal = "🥇" if rank_idx == 0 else ("🥈" if rank_idx == 1 else ("🥉" if rank_idx == 2 else f"#{rank_idx+1}"))
-            with st.container(border=True):
-                r_c1, r_c2 = st.columns([3, 2])
-                with r_c1:
-                    st.markdown(f"### {medal} **{bettor['name']}**")
-                    st.caption(f"{bettor['badge']} • {bettor['wins']}W - {bettor['losses']}L - {bettor['pending']}P")
-                with r_c2:
-                    p_color = "#4ade80" if bettor['net_profit'] >= 0 else "#f87171"
-                    p_text = f"+${bettor['net_profit']:.2f}" if bettor['net_profit'] >= 0 else f"-${abs(bettor['net_profit']):.2f}"
-                    st.markdown(f"<div style='text-align:right;'><span style='color:{p_color};font-size:1.4rem;font-weight:700;'>{p_text}</span></div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='text-align:right;opacity:0.6;font-size:0.85rem;'>ROI: {bettor['roi']:+.1f}%</div>", unsafe_allow_html=True)
-
-                s1, s2, s3 = st.columns(3)
-                s1.metric("Win Rate", f"{bettor['win_rate']:.1f}%")
-                s2.metric("Decided", f"{bettor['decided']}")
-                s3.metric("Pending", f"{bettor['pending']}")
-
-# PAGE 5: MODEL METHODOLOGY & MATH BREAKDOWN
-elif menu_choice == "📖 Model Methodology & Math":
-    st.subheader("📖 Model Architecture & Math")
-    st.caption("How edge, variance, and straight-up win rates are calculated.")
-
-    with st.container(border=True):
-        st.markdown("### 1. In-Game Pace & Drift Modeling")
-        st.write(
-            "Sportsbooks typically project points using static half-time divisions. "
-            "Flurkstradamus continuously recalculates variance and drift across 6 distinct states:"
-        )
-        st.markdown(
-            """
-            * **Pre-Game:** Baseline = Open Total, $\sigma = 8.5$.
-            * **1st Quarter:** Evaluates scoring pace relative to a 25% game duration baseline:
-              $$Pace\ Delta = Points\ Scored - (Pregame \times 0.25)$$
-              Adjusts the final projection by 40% of the early deviation ($\sigma = 7.5$).
-            * **Halftime:** Factor in point margins and game script:
-              $$Projected\ 2H = (Pregame \times 0.475) + (Pace\ Delta \times 0.30) + Game\ Script\ Modifier$$
-              * *Blowout ($\ge 17$ pt margin):* $-3.5$ pts (clock bleed).
-              * *Decisive ($10-16$ pt margin):* $-1.5$ pts.
-              * *Close ($0-3$ pt margin):* $+1.5$ pts (stopping clock, hurry-up drives).
-            * **3rd Quarter:** Locks 75% of actual scoring ($\sigma = 4.0$).
-            * **4th Quarter / Late Game:** Closes remaining scoring volume to actual game pace hazards ($\sigma = 1.8$).
-            * **Final / Completed:** All remaining variance decays to zero ($\sigma \to 0$); probabilities resolve to 100% or 0%.
-            """
-        )
-
-    with st.container(border=True):
-        st.markdown("### 2. Normal CDF & Win Probability Calculation")
-        st.write("Target line comparison uses the cumulative normal distribution function:")
-        st.latex(r"Z = \frac{L - \mu}{\sigma}")
-        st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
-
-    with st.container(border=True):
-        st.markdown("### 3. Straight-Up Moneyline & Spread Engines")
-        st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
-        st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
-
 # ==========================================
-# PAGE 6: HOW IT WORKS (USER GUIDE)
+# PAGE 6: HOW IT WORKS (COMPLETE USER GUIDE)
 # ==========================================
 elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The Flurkstradamus User Guide")
-    st.caption("Mastering the Edge Engine, Combo Builder, and Squad Tracker.")
+    st.caption("Mastering the Edge Engine, Strategy Scanner, and Squad Tracker.")
 
     with st.container(border=True):
-        st.markdown("### ⚡ 1. Single Game Engine & AI Strategy Builder")
+        st.markdown("### ⚡ 1. Single Game Engine")
         st.write(
-            "The **Single Game Engine** connects live to ESPN scoreboard endpoints to track "
-            "every game from pregame opening through the final whistle."
+            "The **Single Game Engine** connects in real-time to ESPN scoreboard endpoints "
+            "to calculate line drift, pace shifts, and second-half regression."
         )
         st.markdown("""
         * **Live Line Drift Tracking:** The top 4 cards compare opening sportsbook lines against real-time scoring to compute live **Full Game Totals**, **2nd Half Totals**, and **Spread ATS Margins**.
@@ -1783,3 +1745,44 @@ elif menu_choice == "💡 How It Works":
         * **Badges:** Earn badges like `🎯 Sniper` or `🔥 On Fire` based on consistency and profit margins.
         * **The Locker Room:** Real-time squad chat feed for game chatter, alerts, and banter.
         """)
+
+# ==========================================
+# PAGE 7: MODEL METHODOLOGY & MATH BREAKDOWN
+# ==========================================
+elif menu_choice == "📖 Model Methodology & Math":
+    st.subheader("📖 Model Architecture & Math")
+    st.caption("How edge, variance, and straight-up win rates are calculated.")
+
+    with st.container(border=True):
+        st.markdown("### 1. In-Game Pace & Drift Modeling")
+        st.write(
+            "Sportsbooks typically project points using static half-time divisions. "
+            "Flurkstradamus continuously recalculates variance and drift across 6 distinct states:"
+        )
+        st.markdown(
+            """
+            * **Pre-Game:** Baseline = Open Total, $\sigma = 8.5$.
+            * **1st Quarter:** Evaluates scoring pace relative to a 25% game duration baseline:
+              $$Pace\ Delta = Points\ Scored - (Pregame \times 0.25)$$
+              Adjusts the final projection by 40% of the early deviation ($\sigma = 7.5$).
+            * **Halftime:** Factor in point margins and game script:
+              $$Projected\ 2H = (Pregame \times 0.475) + (Pace\ Delta \times 0.30) + Game\ Script\ Modifier$$
+              * *Blowout ($\ge 17$ pt margin):* $-3.5$ pts (clock bleed).
+              * *Decisive ($10-16$ pt margin):* $-1.5$ pts.
+              * *Close ($0-3$ pt margin):* $+1.5$ pts (stopping clock, hurry-up drives).
+            * **3rd Quarter:** Locks 75% of actual scoring ($\sigma = 4.0$).
+            * **4th Quarter / Late Game:** Closes remaining scoring volume to actual game pace hazards ($\sigma = 1.8$).
+            * **Final / Completed:** All remaining variance decays to zero ($\sigma \to 0$); probabilities resolve to 100% or 0%.
+            """
+        )
+
+    with st.container(border=True):
+        st.markdown("### 2. Normal CDF & Win Probability Calculation")
+        st.write("Target line comparison uses the cumulative normal distribution function:")
+        st.latex(r"Z = \frac{L - \mu}{\sigma}")
+        st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
+
+    with st.container(border=True):
+        st.markdown("### 3. Straight-Up Moneyline & Spread Engines")
+        st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
+        st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
