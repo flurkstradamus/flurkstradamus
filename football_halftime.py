@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import re
+import random
+import string
 from datetime import datetime, timedelta
 
 # Import modular engines
@@ -15,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Responsive styling & STRICT LEFT-ALIGNMENT FOR SIDEBAR BUTTONS
+# Responsive Desktop + Mobile styling & STRICT LEFT ALIGNMENT FOR NAVIGATION
 st.markdown("""
 <style>
     @media (min-width: 768px) {
@@ -127,13 +129,15 @@ if "single_form_version" not in st.session_state:
     st.session_state.single_form_version = 0
 
 # Load Database
-b_data, c_data, u_data = load_storage()
+b_data, c_data, u_data, banned_emails_data = load_storage()
 if "saved_bets" not in st.session_state:
     st.session_state.saved_bets = b_data
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = c_data
 if "user_accounts" not in st.session_state:
     st.session_state.user_accounts = u_data
+if "banned_emails" not in st.session_state:
+    st.session_state.banned_emails = banned_emails_data
 
 # ==========================================
 # STAGE 1: GROUP PASSCODE GATEKEEPER
@@ -156,32 +160,44 @@ if not st.session_state.passcode_authenticated:
     st.stop()
 
 # ==========================================
-# STAGE 2: USER LOGIN & REGISTRATION
+# STAGE 2: USER LOGIN, SIGNUP & FORGOT PASSWORD
 # ==========================================
 if st.session_state.logged_in_user is None:
     st.title("🔮 Flurkstradamus")
-    st.caption("Sign in or create your betting handle to save slips, track P&L, and join the leaderboard.")
+    st.caption("Sign in, create an account, or recover your password.")
     
-    tab_login, tab_signup = st.tabs(["🔐 Sign In", "📝 Create Account"])
+    tab_login, tab_signup, tab_forgot = st.tabs(["🔐 Sign In", "📝 Create Account", "🔑 Forgot Password"])
     
     with tab_login:
         with st.form("user_login_form"):
-            uname = st.text_input("Username", placeholder="e.g. sharpbettor").strip().lower()
+            uname = st.text_input("Username or Email", placeholder="e.g. sharpbettor or email@domain.com").strip().lower()
             pword = st.text_input("Password", type="password", placeholder="••••••••")
             submit_login = st.form_submit_button("Sign In to Flurkstradamus", use_container_width=True)
             
             if submit_login:
-                user_record = st.session_state.user_accounts.get(uname)
-                if user_record and user_record.get("password_hash") == hash_password(pword):
-                    st.session_state.logged_in_user = user_record
-                    st.success(f"Welcome back, {user_record.get('display_name', uname)}!")
-                    st.rerun()
+                # Support login via username OR email
+                matched_user = None
+                for u_k, u_v in st.session_state.user_accounts.items():
+                    if u_k.lower() == uname or u_v.get("email", "").lower() == uname:
+                        matched_user = u_v
+                        break
+
+                if matched_user:
+                    if matched_user.get("is_banned", False):
+                        st.error("This account has been banned by the administrator.")
+                    elif matched_user.get("password_hash") == hash_password(pword):
+                        st.session_state.logged_in_user = matched_user
+                        st.success(f"Welcome back, {matched_user.get('display_name')}!")
+                        st.rerun()
+                    else:
+                        st.error("Incorrect password.")
                 else:
-                    st.error("Incorrect username or password.")
+                    st.error("Account not found.")
                     
     with tab_signup:
         with st.form("user_signup_form"):
             new_uname = st.text_input("Choose Username (Login ID)", placeholder="e.g. gridiron_guru").strip().lower()
+            new_email = st.text_input("Email Address (For Account Recovery)", placeholder="e.g. bettor@example.com").strip().lower()
             new_dname = st.text_input("Display Name / Bettor Handle", placeholder="e.g. Gridiron Guru")
             new_pword = st.text_input("Choose Password", type="password", placeholder="••••••••")
             new_pword_confirm = st.text_input("Confirm Password", type="password", placeholder="••••••••")
@@ -189,31 +205,93 @@ if st.session_state.logged_in_user is None:
             submit_signup = st.form_submit_button("Create My Account", use_container_width=True)
             
             if submit_signup:
-                if not new_uname or not new_pword or not new_dname:
-                    st.error("Username, display name, and password are required.")
+                if not new_uname or not new_email or not new_pword or not new_dname:
+                    st.error("Username, email, display name, and password are all required.")
+                elif "@" not in new_email or "." not in new_email:
+                    st.error("Please provide a valid email address.")
+                elif new_email in st.session_state.banned_emails:
+                    st.error("This email address has been banned from registering.")
                 elif len(new_uname) < 3:
                     st.error("Username must be at least 3 characters.")
                 elif new_pword != new_pword_confirm:
                     st.error("Passwords do not match.")
                 elif new_uname in st.session_state.user_accounts:
-                    st.error("This username is already taken. Please pick another.")
+                    st.error("This username is already taken. Please choose another.")
+                elif any(u.get("email", "").lower() == new_email for u in st.session_state.user_accounts.values()):
+                    st.error("An account with this email address already exists.")
                 else:
                     new_user = {
                         "username": new_uname,
+                        "email": new_email,
                         "display_name": new_dname.strip(),
                         "password_hash": hash_password(new_pword),
                         "is_admin": False,
+                        "is_banned": False,
                         "created_at": datetime.now().strftime("%Y-%m-%d"),
-                        "favorite_team": fav_team.strip() if fav_team else "NFL"
+                        "favorite_team": fav_team.strip() if fav_team else "NFL",
+                        "reset_token": None
                     }
                     st.session_state.user_accounts[new_uname] = new_user
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts)
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
                     st.session_state.logged_in_user = new_user
                     st.success("Account created successfully!")
                     st.rerun()
+
+    with tab_forgot:
+        st.markdown("#### 🔑 Password Recovery")
+        st.write("Enter your registered email address to generate an on-screen password reset authorization code.")
+        
+        with st.form("request_reset_form"):
+            recover_email = st.text_input("Registered Email Address", placeholder="e.g. user@example.com").strip().lower()
+            send_code_btn = st.form_submit_button("Request Reset Code", use_container_width=True)
+            
+            if send_code_btn:
+                target_user = None
+                for u in st.session_state.user_accounts.values():
+                    if u.get("email", "").lower() == recover_email:
+                        target_user = u
+                        break
+                        
+                if target_user:
+                    token = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+                    target_user["reset_token"] = token
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
+                    st.success(f"✅ Recovery Code Generated: **`{token}`** (Enter this code below to set your new password)")
+                else:
+                    st.error("No account found with that email address.")
+
+        with st.form("complete_reset_form"):
+            st.markdown("##### Complete Password Change")
+            c_email = st.text_input("Confirm Your Email", placeholder="user@example.com").strip().lower()
+            code_input = st.text_input("6-Character Reset Code", placeholder="e.g. AB12CD").strip().upper()
+            new_pass1 = st.text_input("New Password", type="password", placeholder="••••••••")
+            new_pass2 = st.text_input("Confirm New Password", type="password", placeholder="••••••••")
+            submit_new_pass = st.form_submit_button("Update Password", use_container_width=True)
+            
+            if submit_new_pass:
+                target_user = None
+                for u in st.session_state.user_accounts.values():
+                    if u.get("email", "").lower() == c_email:
+                        target_user = u
+                        break
+                        
+                if not target_user:
+                    st.error("User not found.")
+                elif not target_user.get("reset_token") or target_user.get("reset_token") != code_input:
+                    st.error("Invalid or expired reset code.")
+                elif new_pass1 != new_pass2:
+                    st.error("New passwords do not match.")
+                elif len(new_pass1) < 4:
+                    st.error("Password must be at least 4 characters.")
+                else:
+                    target_user["password_hash"] = hash_password(new_pass1)
+                    target_user["reset_token"] = None
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
+                    st.success("🎉 Password updated successfully! Please switch to the 'Sign In' tab.")
+
     st.stop()
 
-# ACTIVE USER IDENTITY
+# ACTIVE USER IDENTITY (RECOVERS "FLURK" HISTORY AUTOMATICALLY)
 current_user_profile = st.session_state.logged_in_user
 active_uname = current_user_profile.get("username", "").strip().lower()
 
@@ -357,10 +435,11 @@ auto_refresh = st.sidebar.toggle("Auto-Refresh Live Scores", value=True)
 refresh_interval = st.sidebar.slider("Interval (seconds)", min_value=10, max_value=60, value=15, step=5)
 if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True):
     st.cache_data.clear()
-    b_data, c_data, u_data = load_storage()
+    b_data, c_data, u_data, b_e_data = load_storage()
     st.session_state.saved_bets = b_data
     st.session_state.chat_messages = c_data
     st.session_state.user_accounts = u_data
+    st.session_state.banned_emails = b_e_data
     st.rerun()
 
 games_data = get_extended_games(league)
@@ -406,29 +485,92 @@ if st.session_state.selected_bet_id is not None:
             st.markdown(f"**{live_game_info['home_short']}**\n# **{curr_home}**")
     st.stop()
 
-# 2. ADMIN USER CONTROL
+# 2. ENHANCED ADMIN USER CONTROL (FULL MULTI-USER MANAGEMENT)
 elif menu_choice == "🛡️ Admin User Control" and is_user_admin:
-    st.subheader("🛡️ Admin Console & User Management")
-    st.caption("Manage registered beta testers, toggle admin rights, and reset passwords.")
+    st.subheader("🛡️ Commissioner Admin Console & User Control")
+    st.caption("Inspect user accounts, audit locked bets, ban bad actors, and reset credentials.")
     
     users = st.session_state.user_accounts
-    st.write(f"Total Registered Users: **{len(users)}**")
-    
+    banned_emails = st.session_state.banned_emails
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Registered Users", len(users))
+    m2.metric("Total Bets Locked In", len(st.session_state.saved_bets))
+    m3.metric("Banned Email Blacklist", len(banned_emails))
+
+    with st.expander("🚫 Manage Banned Email Blacklist", expanded=False):
+        b_col1, b_col2 = st.columns([3, 1])
+        with b_col1:
+            email_to_ban = st.text_input("Add Email to Blacklist", placeholder="e.g. spammer@domain.com").strip().lower()
+        with b_col2:
+            if st.button("Add to Blacklist", use_container_width=True):
+                if email_to_ban and email_to_ban not in banned_emails:
+                    banned_emails.append(email_to_ban)
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, users, banned_emails)
+                    st.success(f"Blacklisted {email_to_ban}")
+                    st.rerun()
+        if banned_emails:
+            st.write("Active Blacklist:")
+            for b_e in banned_emails:
+                st.code(b_e)
+
+    st.markdown("---")
+    st.markdown("### 👥 Member Directory")
+
     for u_key, u_info in list(users.items()):
+        is_u_banned = u_info.get("is_banned", False)
+        is_u_adm = u_info.get("is_admin", False)
+        u_email = u_info.get("email", "No email provided")
+        u_display = u_info.get("display_name", u_key)
+
+        # Count bets for this user
+        u_bets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() == u_key.lower() or b.get("user", "").strip().lower() == u_display.lower()]
+
         with st.container(border=True):
-            a_col1, a_col2, a_col3 = st.columns([3, 3, 2])
-            with a_col1:
-                st.markdown(f"**{u_info.get('display_name')}** (`@{u_key}`)")
-                st.caption(f"Joined: {u_info.get('created_at', 'N/A')} | Fav Team: {u_info.get('favorite_team', 'None')}")
-            with a_col2:
-                is_adm = u_info.get("is_admin", False)
-                status_txt = "👑 Administrator" if is_adm else "👤 Member"
-                st.markdown(f"**Role:** `{status_txt}`")
-            with a_col3:
-                if u_key != "flurk" and u_key != current_user_profile.get("username"):
-                    if st.button("🗑️ Delete", key=f"del_u_{u_key}", use_container_width=True):
+            r1, r2 = st.columns([6, 4])
+            with r1:
+                badge = "👑 Admin" if is_u_adm else ("🚫 BANNED" if is_u_banned else "👤 Active Member")
+                st.markdown(f"#### **{u_display}** (`@{u_key}`) &nbsp; <span style='font-size:0.8rem; background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px;'>{badge}</span>", unsafe_allow_html=True)
+                st.caption(f"📧 **Email:** `{u_email}` | 🏈 **Fav Team:** `{u_info.get('favorite_team', 'NFL')}` | 🗓️ **Joined:** `{u_info.get('created_at', 'N/A')}`")
+            with r2:
+                st.metric("Total Bets Placed", len(u_bets))
+
+            # Inspect Bets for User
+            with st.expander(f"🔍 View {u_display}'s Locked Tickets ({len(u_bets)})"):
+                if not u_bets:
+                    st.info("No tickets placed yet.")
+                else:
+                    for ub in u_bets:
+                        st.markdown(f"• **{ub.get('date')}** — `{ub.get('matchup')}`: **{ub.get('bet')}** | Risk: ${ub.get('risk_dollars', 10):.2f} | Status: `{ub.get('status')}`")
+
+            # Commissioner Actions for this User
+            if u_key != "flurk":
+                c_act1, c_act2, c_act3 = st.columns(3)
+                with c_act1:
+                    ban_label = "✅ Unban User" if is_u_banned else "🚫 Ban User"
+                    if st.button(ban_label, key=f"ban_toggle_{u_key}", use_container_width=True):
+                        u_info["is_banned"] = not is_u_banned
+                        # Also sync email to blacklist if banned
+                        if u_info["is_banned"] and u_email not in banned_emails and "@" in u_email:
+                            banned_emails.append(u_email)
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, users, banned_emails)
+                        st.rerun()
+
+                with c_act2:
+                    with st.popover("🔑 Reset Password"):
+                        new_p_input = st.text_input("New Password", type="password", key=f"adm_p_{u_key}")
+                        if st.button("Set New Password", key=f"adm_p_btn_{u_key}"):
+                            if len(new_p_input) >= 4:
+                                u_info["password_hash"] = hash_password(new_p_input)
+                                save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, users, banned_emails)
+                                st.success("Password updated!")
+                            else:
+                                st.error("Must be at least 4 chars.")
+
+                with c_act3:
+                    if st.button("🗑️ Delete Account", key=f"del_user_{u_key}", use_container_width=True):
                         users.pop(u_key)
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, users)
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, users, banned_emails)
                         st.rerun()
 
 # 3. LIVE SQUAD FEED
@@ -528,7 +670,7 @@ elif menu_choice == "💬 The Locker Room":
                 "text": user_msg.strip()
             }
             st.session_state.chat_messages.insert(0, new_msg)
-            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts)
+            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
             st.rerun()
 
     for m in st.session_state.chat_messages[:30]:
@@ -615,7 +757,7 @@ elif menu_choice == "🏆 Squad Leaderboard":
                     st.markdown(f"<div style='text-align:right;'><span style='color:{p_color};font-size:1.4rem;font-weight:700;'>{p_text}</span></div>", unsafe_allow_html=True)
                     st.markdown(f"<div style='text-align:right;opacity:0.6;font-size:0.85rem;'>ROI: {bettor['roi']:+.1f}%</div>", unsafe_allow_html=True)
 
-# 6. LOCKED BETS HISTORY (ROBUST SEARCH & RESTORATION)
+# 6. LOCKED BETS HISTORY (FULL NORMALIZATION & SHOW ALL TOGGLE)
 elif menu_choice == "Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
     st.caption("Your personalized active slips, scores, and settled tickets.")
@@ -629,7 +771,7 @@ elif menu_choice == "Locked Bets History":
     if show_all_history:
         my_tickets = st.session_state.saved_bets
     else:
-        # Match case-insensitively across Flurk, flurk, admin, and current handle
+        # Matches tickets whether they were logged as "Flurk", "flurk", or under your handle
         my_tickets = [
             b for b in st.session_state.saved_bets 
             if b.get("user", "").strip().lower() == curr_user_clean 
@@ -722,7 +864,7 @@ elif menu_choice == "Locked Bets History":
                 with c_row4:
                     if st.button("🗑️", key=f"del_slip_{b['id']}", help="Delete this ticket", use_container_width=True):
                         st.session_state.saved_bets.pop(real_idx)
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts)
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
                         st.rerun()
 
 # 7. HOW IT WORKS
@@ -866,7 +1008,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 "notes": "Combo Play"
             }
             st.session_state.saved_bets.insert(0, combo_record)
-            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts)
+            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
             st.success("Combo ticket locked in!")
 
 # 10. SINGLE GAME ENGINE
@@ -1126,7 +1268,7 @@ elif menu_choice == "Single Game Engine":
 
     with st.form(f"single_bet_form_v{form_ver}"):
         st.markdown(f"""
-        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
             <div style="display: flex; align-items: center; gap: 8px;">
                 <img src="{g.get('away_logo', DEFAULT_LOGO)}" width="28" height="28" style="border-radius: 50%;">
                 <strong>{g['away_short']}</strong> @
@@ -1184,6 +1326,6 @@ elif menu_choice == "Single Game Engine":
                 "notes": ticket_notes
             }
             st.session_state.saved_bets.insert(0, ticket_record)
-            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts)
+            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
             st.session_state.single_applied_pick = None
             st.success("Ticket saved to history!")
