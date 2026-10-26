@@ -815,9 +815,7 @@ elif menu_choice == "🏆 Squad Leaderboard":
                     st.markdown(f"<div style='text-align:right;'><span style='color:{p_color};font-size:1.4rem;font-weight:700;'>{p_text}</span></div>", unsafe_allow_html=True)
                     st.markdown(f"<div style='text-align:right;opacity:0.6;font-size:0.85rem;'>ROI: {bettor['roi']:+.1f}%</div>", unsafe_allow_html=True)
 
-# =========================================================================
 # 6. LOCKED BETS HISTORY (LIVE SCORES, LIVE PROBABILITY & MULTI-TEAM COMBOS)
-# =========================================================================
 elif menu_choice == "Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
     st.caption("Active slips, live scoreboard updates, current win probabilities, and settled tickets.")
@@ -852,11 +850,9 @@ elif menu_choice == "Locked Bets History":
             status_val = b.get("status", "Pending")
             is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
 
-            # Calculate Live Winning Probability
             live_win_prob_str = b.get("win_prob", "50.0%")
             live_m = find_game_for_bet(b, games_data)
 
-            # Evaluate Live Game State & In-Game Probabilities
             game_has_started = False
             if live_m and not is_combo:
                 chk = live_m.get("checkpoint", "")
@@ -864,7 +860,6 @@ elif menu_choice == "Locked Bets History":
                 game_has_started = ("pre" not in chk.lower()) and ("pm" not in stt and "am" not in stt)
                 is_fin = live_m.get("completed", False) or "final" in live_m["status"].lower()
 
-                # Dynamic In-Game Probability Evaluation
                 if is_fin:
                     live_win_prob_str = "100.0%" if status_val == "Won" else "0.0%"
                 elif game_has_started:
@@ -887,7 +882,6 @@ elif menu_choice == "Locked Bets History":
                         sp_prob = calculate_spread_prob(proj_diff, t_line, std_dev=5.0)
                         live_win_prob_str = f"{sp_prob * 100:.1f}%"
 
-            # Status Badging
             if status_val == "Won":
                 card_style = "border: 1.5px solid #22c55e; background-color: rgba(34, 197, 94, 0.05);"
                 badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
@@ -902,7 +896,6 @@ elif menu_choice == "Locked Bets History":
                     card_style = "border: 1.5px solid rgba(255, 255, 255, 0.2); background-color: rgba(255, 255, 255, 0.03);"
                     badge_html = "<span style='background-color:rgba(255, 255, 255, 0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ PENDING</span>"
 
-            # Render Ticket Card Header
             if is_combo:
                 legs = b.get("parsed_legs", [])
                 leg_count = len(legs) if legs else "Multi"
@@ -943,7 +936,6 @@ elif menu_choice == "Locked Bets History":
             </div>
             """, unsafe_allow_html=True)
 
-            # Ticket Details Body
             with st.container():
                 c_row1, c_row2, c_row3, c_row4 = st.columns([3.5, 3.5, 2.0, 1.0])
                 
@@ -973,7 +965,6 @@ elif menu_choice == "Locked Bets History":
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails)
                         st.rerun()
 
-                # Detailed Breakdown for Combo Parlays
                 if is_combo:
                     with st.expander("📋 View All Teams, Live Scores & Leg Breakdown", expanded=True):
                         parsed = b.get("parsed_legs", [])
@@ -989,7 +980,6 @@ elif menu_choice == "Locked Bets History":
                                     fin = m_g.get("completed", False) or "final" in m_g.get("status", "").lower()
                                     is_started = ("pre" not in m_g.get("checkpoint", "").lower()) and ("pm" not in m_g.get("status", "").lower() and "am" not in m_g.get("status", "").lower())
 
-                                    # Leg win evaluation
                                     if fin:
                                         if leg.get("type") == "Total":
                                             won = (t_sc < leg["line"]) if leg.get("side") == "Under" else (t_sc > leg["line"])
@@ -1090,10 +1080,16 @@ elif menu_choice == "📖 Model Methodology & Math":
         st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
         st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
 
-# 9. 2-12 LEG COMBO BUILDER
+# 9. 2-12 LEG COMBO BUILDER (WITH SAFE INDEX BOUNDS-CHECKING)
 elif menu_choice == "2-12 Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
     game_choices = [f"[{gm['league']}] {gm['away_short']} @ {gm['home_short']} ({gm.get('kickoff', gm['status'])})" for gm in games_data]
+
+    # Bounds-check active legs if games_data shrank
+    if st.session_state.combo_active_legs and games_data:
+        for leg in st.session_state.combo_active_legs:
+            if leg.get("matchup_idx", 0) >= len(games_data):
+                leg["matchup_idx"] = 0
 
     if not st.session_state.combo_active_legs and games_data:
         init_count = min(3, len(games_data))
@@ -1239,6 +1235,12 @@ elif menu_choice == "2-12 Leg Combo Builder":
             st.session_state.ai_recommended_combo = selected_ai_legs
             st.session_state.editing_ai_combo = False
 
+        # SAFE BOUNDS-CHECKED RENDERING FOR AI RECOMMENDED COMBO
+        if st.session_state.ai_recommended_combo and games_data:
+            # Drop any stale legs from a previously larger slate
+            valid_legs = [l for l in st.session_state.ai_recommended_combo if 0 <= l.get("matchup_idx", -1) < len(games_data)]
+            st.session_state.ai_recommended_combo = valid_legs
+
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -1259,7 +1261,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
             if st.session_state.editing_ai_combo:
                 with st.container(border=True):
                     leg_options = [
-                        f"Leg {k+1}: {item['desc']} ({games_data[item['matchup_idx']]['away_short']}@{games_data[item['matchup_idx']]['home_short']})"
+                        f"Leg {k+1}: {item['desc']} ({games_data[min(item['matchup_idx'], len(games_data)-1)]['away_short']}@{games_data[min(item['matchup_idx'], len(games_data)-1)]['home_short']})"
                         for k, item in enumerate(st.session_state.ai_recommended_combo)
                     ]
                     selected_leg_idx = st.radio(
@@ -1281,7 +1283,8 @@ elif menu_choice == "2-12 Leg Combo Builder":
                             st.rerun()
 
             for idx_ai, l_ai in enumerate(st.session_state.ai_recommended_combo):
-                g_match = games_data[l_ai["matchup_idx"]]
+                m_idx = min(max(l_ai.get("matchup_idx", 0), 0), len(games_data) - 1)
+                g_match = games_data[m_idx]
                 detail_str = l_ai.get("detail", "")
 
                 st.markdown(f"""
@@ -1314,11 +1317,11 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 st.session_state.combo_version += 1
                 st.session_state.combo_active_legs = [
                     {
-                        "matchup_idx": l_item["matchup_idx"],
+                        "matchup_idx": min(l_item["matchup_idx"], len(games_data)-1),
                         "type": l_item["type"],
                         "side": l_item.get("side", "Under"),
                         "line": float(l_item.get("line", 47.5)),
-                        "picked_team": l_item.get("picked_team", games_data[l_item["matchup_idx"]]["home_team"])
+                        "picked_team": l_item.get("picked_team", games_data[min(l_item["matchup_idx"], len(games_data)-1)]["home_team"])
                     }
                     for l_item in st.session_state.ai_recommended_combo
                 ]
@@ -1330,7 +1333,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
     with ctrl_c1:
         st.markdown(f"#### Active Slip ({len(st.session_state.combo_active_legs)} Legs)")
     with ctrl_c2:
-        if st.button("➕ Add Leg", use_container_width=True, disabled=(len(st.session_state.combo_active_legs) >= 12)):
+        if st.button("➕ Add Leg", use_container_width=True, disabled=(len(st.session_state.combo_active_legs) >= 12 or not games_data)):
             next_idx = min(len(st.session_state.combo_active_legs), len(games_data) - 1)
             g_next = games_data[next_idx]
             st.session_state.combo_active_legs.append({
@@ -1347,16 +1350,17 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
     for i, leg_data in enumerate(st.session_state.combo_active_legs):
         with st.container(border=True):
+            safe_m_idx = min(max(leg_data.get("matchup_idx", 0), 0), len(game_choices) - 1) if game_choices else 0
             sel_matchup = st.selectbox(
                 f"Leg {i+1} Matchup",
                 range(len(game_choices)),
-                index=min(leg_data["matchup_idx"], len(game_choices) - 1),
+                index=safe_m_idx,
                 format_func=lambda x: game_choices[x],
                 key=f"m_sel_{i}_v{ver}"
             )
             leg_data["matchup_idx"] = sel_matchup
 
-            leg_g = games_data[leg_data["matchup_idx"]]
+            leg_g = games_data[sel_matchup]
             d_h, d_a = leg_g["home_team"], leg_g["away_team"]
             d_h_abbr, d_a_abbr = leg_g["home_short"], leg_g["away_short"]
             d_kickoff = leg_g.get("kickoff", leg_g["status"])
@@ -1438,10 +1442,10 @@ elif menu_choice == "2-12 Leg Combo Builder":
         if save_c_btn:
             legs_str = " | ".join([cl["desc"] for cl in combo_legs])
             
-            # Save comprehensive leg details for live scoring and team tracking
             parsed_legs = []
             for item in st.session_state.combo_active_legs:
-                mg = games_data[item["matchup_idx"]]
+                s_idx = min(item["matchup_idx"], len(games_data) - 1)
+                mg = games_data[s_idx]
                 parsed_legs.append({
                     "matchup": f"{mg['away_short']} @ {mg['home_short']}",
                     "type": item["type"],
