@@ -4,7 +4,7 @@ import math
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 st.set_page_config(
     page_title="Flurkstradamus Edge Engine",
@@ -72,7 +72,6 @@ def load_storage():
     merged_bets = {b["id"]: b for b in (local_bets + (cloud_bets or []))}
     bets_list = list(merged_bets.values())
     bets_list.sort(key=lambda x: str(x.get("date", "")), reverse=True)
-    
     chat_list = cloud_chat if cloud_chat is not None else local_chat
     return bets_list, chat_list
 
@@ -149,75 +148,92 @@ def calculate_moneyline_prob(home_proj, away_proj, home_record_str, away_record_
     return max(min(prob_home_win, 0.99), 0.01)
 
 # ==========================================
-# ESPN LIVE SCOREBOARD & ODDS FEED
+# MULTI-DAY ESPN SCOREBOARD DATA FEED
 # ==========================================
-@st.cache_data(ttl=10)
-def get_live_games(league_code="nfl"):
-    url = f"https://site.api.espn.com/apis/site/v2/sports/football/{league_code}/scoreboard"
-    try:
-        res = requests.get(url, timeout=5)
-        data = res.json()
-        games = []
-        for event in data.get("events", []):
-            comp = event["competitions"][0]
-            competitors = comp["competitors"]
-            home = next(c for c in competitors if c["homeAway"] == "home")
-            away = next(c for c in competitors if c["homeAway"] == "away")
-            status_obj = comp["status"]
-            state_text = status_obj["type"]["state"]
-            status_desc = status_obj["type"]["shortDetail"]
-            period = status_obj.get("period", 1)
+@st.cache_data(ttl=15)
+def get_extended_games(league_code="nfl", include_college=True):
+    leagues = [league_code]
+    if include_college and league_code != "college-football":
+        leagues.append("college-football")
 
-            odds_overunder = 47.5
-            odds_spread = -3.5
-            if comp.get("odds"):
-                odds_data = comp["odds"][0]
-                odds_overunder = float(odds_data.get("overUnder", 47.5))
-                odds_spread = float(odds_data.get("spread", -3.5))
+    all_games = []
+    seen_ids = set()
 
-            if state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower():
-                checkpoint = "Final / Game Completed"
-                is_completed = True
-            elif state_text == "pre":
-                checkpoint = "Pre-Game"
-                is_completed = False
-            else:
-                is_completed = False
-                if period == 1:
-                    checkpoint = "1st Quarter"
-                elif period == 2 and "half" not in status_desc.lower():
-                    checkpoint = "2nd Quarter"
-                elif "half" in status_desc.lower():
-                    checkpoint = "Halftime"
-                elif period == 3:
-                    checkpoint = "3rd Quarter"
-                elif period >= 4:
-                    checkpoint = "4th Quarter / Late Game"
+    # Pull games across current week (today + 6 days ahead)
+    now = datetime.now()
+    d_start = now.strftime("%Y%m%d")
+    d_end = (now + timedelta(days=6)).strftime("%Y%m%d")
+    dates_param = f"{d_start}-{d_end}"
+
+    for l_slug in leagues:
+        url = f"https://site.api.espn.com/apis/site/v2/sports/football/{l_slug}/scoreboard?dates={dates_param}"
+        try:
+            res = requests.get(url, timeout=5)
+            data = res.json()
+            for event in data.get("events", []):
+                ev_id = str(event.get("id", ""))
+                if ev_id in seen_ids:
+                    continue
+                seen_ids.add(ev_id)
+
+                comp = event["competitions"][0]
+                competitors = comp["competitors"]
+                home = next(c for c in competitors if c["homeAway"] == "home")
+                away = next(c for c in competitors if c["homeAway"] == "away")
+                status_obj = comp["status"]
+                state_text = status_obj["type"]["state"]
+                status_desc = status_obj["type"]["shortDetail"]
+                period = status_obj.get("period", 1)
+
+                odds_ou = 47.5
+                odds_spread = -3.5
+                if comp.get("odds"):
+                    odds_data = comp["odds"][0]
+                    odds_ou = float(odds_data.get("overUnder", 47.5))
+                    odds_spread = float(odds_data.get("spread", -3.5))
+
+                is_completed = (state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower())
+
+                if is_completed:
+                    checkpoint = "Final / Game Completed"
+                elif state_text == "pre":
+                    checkpoint = "Pre-Game"
                 else:
-                    checkpoint = "Halftime"
+                    if period == 1:
+                        checkpoint = "1st Quarter"
+                    elif period == 2 and "half" not in status_desc.lower():
+                        checkpoint = "2nd Quarter"
+                    elif "half" in status_desc.lower():
+                        checkpoint = "Halftime"
+                    elif period == 3:
+                        checkpoint = "3rd Quarter"
+                    else:
+                        checkpoint = "4th Quarter / Late Game"
 
-            games.append({
-                "id": str(event.get("id", "")),
-                "name": event["name"],
-                "home_team": home["team"]["displayName"],
-                "home_short": home["team"].get("shortDisplayName", home["team"]["displayName"]),
-                "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
-                "away_team": away["team"]["displayName"],
-                "away_short": away["team"].get("shortDisplayName", away["team"]["displayName"]),
-                "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
-                "home_score": int(home.get("score", 0)),
-                "away_score": int(away.get("score", 0)),
-                "status": status_desc,
-                "checkpoint": checkpoint,
-                "completed": is_completed,
-                "period": period,
-                "displayClock": status_obj.get("displayClock", "0:00"),
-                "market_ou": odds_overunder,
-                "market_spread": odds_spread
-            })
-        return games
-    except Exception:
-        return []
+                all_games.append({
+                    "id": ev_id,
+                    "league": "NFL" if l_slug == "nfl" else "NCAA",
+                    "name": event["name"],
+                    "home_team": home["team"]["displayName"],
+                    "home_short": home["team"].get("shortDisplayName", home["team"]["displayName"]),
+                    "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
+                    "away_team": away["team"]["displayName"],
+                    "away_short": away["team"].get("shortDisplayName", away["team"]["displayName"]),
+                    "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
+                    "home_score": int(home.get("score", 0)),
+                    "away_score": int(away.get("score", 0)),
+                    "status": status_desc,
+                    "checkpoint": checkpoint,
+                    "completed": is_completed,
+                    "period": period,
+                    "displayClock": status_obj.get("displayClock", "0:00"),
+                    "market_ou": odds_ou,
+                    "market_spread": odds_spread
+                })
+        except Exception:
+            pass
+
+    return all_games
 
 def find_game_for_bet(bet, games):
     m_text = bet.get("matchup", "").lower()
@@ -313,7 +329,7 @@ menu_choice = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
-league = st.sidebar.radio("Active League", ["NFL", "NCAA Football"])
+league = st.sidebar.radio("Primary League", ["NFL", "NCAA Football"])
 league_param = "nfl" if league == "NFL" else "college-football"
 
 st.sidebar.markdown("---")
@@ -332,7 +348,8 @@ if st.sidebar.button("🔄 Manual Scoreboard Sync"):
 # ==========================================
 @st.fragment(run_every=refresh_interval if auto_refresh else None)
 def render_main_engine():
-    games_data = get_live_games(league_param)
+    # Extended multi-day query spanning active and upcoming games
+    games_data = get_extended_games(league_param, include_college=True)
     auto_resolve_bets(st.session_state.saved_bets, games_data)
 
     # ------------------------------------------
@@ -429,7 +446,7 @@ def render_main_engine():
         return
 
     # ------------------------------------------
-    # PAGE: LIVE SQUAD FEED (RECENT BETS & TAILING)
+    # PAGE: LIVE SQUAD FEED
     # ------------------------------------------
     if menu_choice == "🔥 Live Squad Feed":
         st.subheader("🔥 Live Squad Feed")
@@ -456,7 +473,7 @@ def render_main_engine():
                     st.markdown("---")
 
     # ------------------------------------------
-    # PAGE: THE LOCKER ROOM (CHAT / BANTER)
+    # PAGE: THE LOCKER ROOM
     # ------------------------------------------
     elif menu_choice == "💬 The Locker Room":
         st.subheader("💬 The Locker Room")
@@ -489,7 +506,7 @@ def render_main_engine():
         st.subheader("⚡ Single Game Consensus & Edge Terminal")
 
         if games_data:
-            game_options = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
+            game_options = [f"[{g['league']}] {g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
             selected_idx = st.selectbox("Select Active Matchup", range(len(game_options)), format_func=lambda x: game_options[x])
             g = games_data[selected_idx]
             g_id = g.get("id", str(selected_idx))
@@ -498,7 +515,7 @@ def render_main_engine():
             espn_spread = g["market_spread"]
         else:
             st.warning("Manual Matchup Mode")
-            g = {"id": "man", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False, "market_ou": 47.5, "market_spread": -3.5}
+            g = {"id": "man", "league": "NFL", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False, "market_ou": 47.5, "market_spread": -3.5}
             g_id = "man"
             detected_stage = "Halftime"
             espn_ou = 47.5
@@ -641,11 +658,11 @@ def render_main_engine():
                 st.success("Ticket saved to history!")
 
     # ------------------------------------------
-    # PAGE 2: 2 TO 10 LEG COMBO BUILDER & AI STRATEGY ENGINE
+    # PAGE 2: 2 TO 10 LEG COMBO BUILDER
     # ------------------------------------------
     elif menu_choice == "2-10 Leg Combo Builder":
         st.subheader("🔗 Multi-Leg Combo Builder (Up to 10 Legs)")
-        st.caption("Construct multi-game parlays manually or deploy the algorithmic scanner to find optimal combinations.")
+        st.caption("Construct multi-game parlays manually or deploy the algorithmic scanner to find optimal combinations across all active & upcoming football games.")
 
         # --- AI STRATEGY COMBO OPTIMIZER ---
         with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
@@ -660,7 +677,17 @@ def render_main_engine():
                     "🛡️ Defensive Under Lock (Pace Slump)"
                 ]
             )
-            suggest_legs_count = col_strat2.number_input("Target Legs", min_value=2, max_value=min(10, max(2, len(games_data))), value=min(3, max(2, len(games_data))))
+
+            # Available active/upcoming non-completed games
+            active_candidate_games = [g for g in games_data if not g.get("completed", False)]
+            max_possible_legs = min(10, max(2, len(active_candidate_games)))
+
+            suggest_legs_count = col_strat2.number_input(
+                "Target Legs",
+                min_value=2,
+                max_value=max(2, max_possible_legs),
+                value=min(3, max(2, max_possible_legs))
+            )
             generate_clicked = col_strat3.button("⚡ Scan & Recommend")
 
             if "ai_recommended_combo" not in st.session_state:
@@ -668,19 +695,14 @@ def render_main_engine():
 
             if generate_clicked and games_data:
                 candidate_legs = []
-                for g_c in games_data:
+                for g_c in active_candidate_games:
                     c_h, c_a = g_c["home_team"], g_c["away_team"]
                     c_h_pts, c_a_pts = g_c["home_score"], g_c["away_score"]
                     c_tot_pts = c_h_pts + c_a_pts
                     c_h_rec, c_a_rec = g_c.get("home_record", "0-0"), g_c.get("away_record", "0-0")
                     c_ou = g_c.get("market_ou", 47.5)
                     c_period = g_c.get("period", 1)
-                    c_completed = g_c.get("completed", False)
 
-                    if c_completed:
-                        continue
-
-                    # Model Projections
                     if c_period <= 1:
                         proj_tot = c_ou
                         sigma = 8.0
@@ -696,9 +718,7 @@ def render_main_engine():
 
                     h_prob = calculate_moneyline_prob(c_h_pts + 14, c_a_pts + 14, c_h_rec, c_a_rec, is_final=False)
 
-                    # Tiers per strategy
                     if "Maximum Win Probability" in strategy_mode:
-                        # Large cushion under
                         cushion_line = round(proj_tot + (sigma * 1.5)) + 0.5
                         p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
                         candidate_legs.append({
@@ -707,19 +727,18 @@ def render_main_engine():
                             "side": "Under",
                             "line": cushion_line,
                             "prob": p,
-                            "desc": f"{c_a} @ {c_h}: Under {cushion_line}",
+                            "desc": f"[{g_c['league']}] {c_a} @ {c_h}: Under {cushion_line}",
                             "score_metric": p
                         })
-                        # Favored Moneyline
                         ml_fav = c_h if h_prob >= 0.5 else c_a
                         ml_p = max(h_prob, 1.0 - h_prob)
-                        if ml_p >= 0.65:
+                        if ml_p >= 0.60:
                             candidate_legs.append({
                                 "matchup_idx": games_data.index(g_c),
                                 "type": "Straight Up Winner",
                                 "winner": ml_fav,
                                 "prob": ml_p,
-                                "desc": f"{c_a} @ {c_h}: {ml_fav} ML",
+                                "desc": f"[{g_c['league']}] {c_a} @ {c_h}: {ml_fav} ML",
                                 "score_metric": ml_p
                             })
 
@@ -734,7 +753,7 @@ def render_main_engine():
                             "side": "Under" if is_u else "Over",
                             "line": tgt_line,
                             "prob": p,
-                            "desc": f"{c_a} @ {c_h}: {'Under' if is_u else 'Over'} {tgt_line} (Edge: {edge:.1f} pts)",
+                            "desc": f"[{g_c['league']}] {c_a} @ {c_h}: {'Under' if is_u else 'Over'} {tgt_line} (Edge: {edge:.1f} pts)",
                             "score_metric": edge * p
                         })
 
@@ -746,11 +765,11 @@ def render_main_engine():
                             "type": "Straight Up Winner",
                             "winner": ml_fav,
                             "prob": ml_p,
-                            "desc": f"{c_a} @ {c_h}: {ml_fav} ML ({ml_p*100:.1f}%)",
+                            "desc": f"[{g_c['league']}] {c_a} @ {c_h}: {ml_fav} ML ({ml_p*100:.1f}%)",
                             "score_metric": ml_p
                         })
 
-                    else: # Defensive Under Lock
+                    else:
                         cushion_line = round(proj_tot + 4.5) + 0.5
                         p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
                         candidate_legs.append({
@@ -759,20 +778,28 @@ def render_main_engine():
                             "side": "Under",
                             "line": cushion_line,
                             "prob": p,
-                            "desc": f"{c_a} @ {c_h}: Under {cushion_line}",
+                            "desc": f"[{g_c['league']}] {c_a} @ {c_h}: Under {cushion_line}",
                             "score_metric": p
                         })
 
-                # Sort by strategy metric and eliminate same-game duplicate legs
                 candidate_legs.sort(key=lambda x: x["score_metric"], reverse=True)
                 selected_ai_legs = []
                 used_games = set()
+
                 for cand in candidate_legs:
                     if cand["matchup_idx"] not in used_games:
                         selected_ai_legs.append(cand)
                         used_games.add(cand["matchup_idx"])
                     if len(selected_ai_legs) == suggest_legs_count:
                         break
+
+                # If only 1 game exists on the active slate, allow Same-Game-Parlay components
+                if len(selected_ai_legs) < suggest_legs_count and candidate_legs:
+                    for cand in candidate_legs:
+                        if cand not in selected_ai_legs:
+                            selected_ai_legs.append(cand)
+                        if len(selected_ai_legs) == suggest_legs_count:
+                            break
 
                 st.session_state.ai_recommended_combo = selected_ai_legs
 
@@ -797,14 +824,13 @@ def render_main_engine():
         combo_legs = []
         parsed_legs = []
         compound_prob = 1.0
-        game_choices = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data] if games_data else ["Manual Matchup"]
+        game_choices = [f"[{g['league']}] {g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data] if games_data else ["Manual Matchup"]
 
         applied_ai = getattr(st.session_state, "applied_ai_combo", None)
 
         for i in range(legs_count):
             st.markdown(f"#### Leg {i+1}")
             
-            # Check for AI applied presets
             preset_game_idx = min(i, len(game_choices) - 1)
             preset_type = "Game Total"
             preset_side = "Under"
@@ -883,13 +909,11 @@ def render_main_engine():
             combo_legs.append({"desc": leg_desc, "prob": leg_prob})
             st.markdown("---")
 
-        st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%", help="Multiplied model probability across all legs.")
+        st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%")
 
         with st.form("save_combo_form"):
             c_r1, c_r2, c_r3 = st.columns(3)
             c_risk = c_r1.number_input("Ticket Risk ($)", min_value=1.0, value=10.0, step=5.0)
-            
-            # Expected fair multiplier
             est_payout = round(c_risk / max(compound_prob, 0.005), 2)
             c_payout = c_r2.number_input("Total Potential Return ($)", min_value=1.0, value=float(min(est_payout, 50000.0)), step=25.0)
             c_notes = c_r3.text_input("Notes", f"{legs_count}-Leg Parlay")
