@@ -65,7 +65,7 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
-    /* TIGHT RECOMMENDATION ROWS WITH RED HOVER BORDER & "REMOVE LEG" TEXT */
+    /* TIGHT RECOMMENDATION ROWS */
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 8px !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
@@ -75,13 +75,6 @@ st.markdown("""
         margin-bottom: 2px !important;
         min-height: unset !important;
         height: auto !important;
-        cursor: pointer !important;
-        position: relative !important;
-        transition: border 0.15s ease-in-out, background-color 0.15s ease-in-out !important;
-    }
-    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-        border: 1px solid #ef4444 !important;
-        background-color: rgba(239, 68, 68, 0.08) !important;
     }
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] > div {
         padding: 0 !important;
@@ -99,44 +92,41 @@ st.markdown("""
         gap: 0.25rem !important;
     }
 
-    /* "REMOVE LEG" HOVER TEXT OVERLAY */
-    .remove-hover-text {
-        display: none;
-        color: #ffffff !important;
-        font-weight: 700 !important;
-        font-size: 0.80rem !important;
-        background-color: rgba(239, 68, 68, 0.85) !important;
-        padding: 2px 8px !important;
-        border-radius: 4px !important;
-        letter-spacing: 0.3px !important;
-    }
-    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"]:hover .remove-hover-text {
-        display: inline-block !important;
-    }
-    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"]:hover .normal-stat-text {
-        display: none !important;
-    }
-
-    /* HIDDEN FULL-CARD CLICK TRIGGER BUTTON */
+    /* PLAIN [remove] TEXT BUTTON MATCHING PROBABILITY FONT SIZE */
     div.rec-card-container div[data-testid="stButton"] {
-        position: absolute !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        opacity: 0 !important;
-        z-index: 10 !important;
         margin: 0 !important;
         padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
     }
     div.rec-card-container div[data-testid="stButton"] button {
-        width: 100% !important;
-        height: 100% !important;
+        float: right !important;
+        padding: 0px !important;
+        min-height: unset !important;
+        height: auto !important;
+        width: auto !important;
+        font-size: 0.75rem !important;
+        line-height: 1 !important;
         border: none !important;
         background: transparent !important;
+        color: rgba(239, 68, 68, 0.7) !important;
         cursor: pointer !important;
         margin: 0 !important;
+        box-shadow: none !important;
+    }
+    div.rec-card-container div[data-testid="stButton"] button p {
+        font-size: 0.75rem !important;
+        line-height: 1 !important;
+        margin: 0 !important;
         padding: 0 !important;
+        font-weight: 500 !important;
+    }
+    div.rec-card-container div[data-testid="stButton"] button:hover {
+        color: #ef4444 !important;
+        background: transparent !important;
+        border: none !important;
+        text-decoration: underline !important;
     }
 
     .rec-item-row {
@@ -816,7 +806,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.session_state.ai_recommended_combo = selected_ai_legs
 
-        # INTEGRATED ULTRA-COMPACT CARDS (WHOLE ROW CLICKABLE WITH RED HOVER BORDER & "REMOVE LEG" TEXT)
+        # INTEGRATED ULTRA-COMPACT CARDS ([remove] TEXT AT THE END OF ROW)
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -833,12 +823,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 detail_str = l_ai.get("detail", "")
 
                 with st.container(border=True):
-                    # Hidden full-row click button to trigger the removal
-                    if st.button("remove_trigger", key=f"btn_remove_{leg_key}"):
-                        st.session_state.ai_recommended_combo = [item for item in st.session_state.ai_recommended_combo if item.get("leg_id") != l_ai.get("leg_id")]
-                        st.rerun()
-
-                    c_left, c_right = st.columns([6.0, 4.0], vertical_alignment="center")
+                    c_left, c_mid, c_rem = st.columns([5.6, 3.8, 0.6], vertical_alignment="center")
                     
                     with c_left:
                         st.markdown(f"""
@@ -855,19 +840,21 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    with c_right:
+                    with c_mid:
                         st.markdown(f"""
-                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 0; padding: 0;">
-                            <span class="normal-stat-text" style="display: flex; align-items: center; gap: 6px;">
-                                <strong style="color: #4ade80; font-size: 0.88rem;">{l_ai['desc']}</strong>
-                                <span style="opacity: 0.6; font-size: 0.75rem;">({detail_str})</span>
-                                <span style="background-color: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
-                                    {l_ai['prob']*100:.1f}%
-                                </span>
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0;">
+                            <strong style="color: #4ade80; font-size: 0.88rem;">{l_ai['desc']}</strong>
+                            <span style="opacity: 0.6; font-size: 0.75rem;">({detail_str})</span>
+                            <span style="background-color: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
+                                {l_ai['prob']*100:.1f}%
                             </span>
-                            <span class="remove-hover-text">Remove Leg ✕</span>
                         </div>
                         """, unsafe_allow_html=True)
+
+                    with c_rem:
+                        if st.button("[remove]", key=f"btn_remove_{leg_key}", help=f"Remove Leg {idx_ai+1}"):
+                            st.session_state.ai_recommended_combo = [item for item in st.session_state.ai_recommended_combo if item.get("leg_id") != l_ai.get("leg_id")]
+                            st.rerun()
 
             st.markdown('</div>', unsafe_allow_html=True)
 
