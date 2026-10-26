@@ -23,6 +23,8 @@ JSONBIN_API_KEY = "$2a$10$K8VFT4hzyxMbtkBLLtlaNu/ZB8WthYSFYlKEutPEE4Qg8hi8lA6Ya"
 DB_FILE = "bets_history.json"
 CHAT_FILE = "chat_history.json"
 
+DEFAULT_LOGO = "https://a.espncdn.com/combiner/i?img=/i/teamlogos/default-team-logo-500.png&w=60&h=60"
+
 def fetch_cloud_data():
     if JSONBIN_BIN_ID and JSONBIN_API_KEY:
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
@@ -155,14 +157,13 @@ def calculate_moneyline_prob(home_proj, away_proj, home_record_str, away_record_
     return max(min(prob_home_win, 0.99), 0.01)
 
 # ==========================================
-# RESILIENT SLATE SCOREBOARD FETCHER
+# ESPN FEED WITH LOGOS & ABBREVIATIONS
 # ==========================================
 @st.cache_data(ttl=25)
 def get_extended_games(league_code="nfl"):
     all_games = []
     seen_ids = set()
 
-    # Step 1: Query default endpoints (always reliable for live + today's games)
     endpoints = [
         ("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100"),
         ("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=100&groups=80")
@@ -187,6 +188,16 @@ def get_extended_games(league_code="nfl"):
                     state_text = status_obj["type"]["state"]
                     status_desc = status_obj["type"]["shortDetail"]
                     period = status_obj.get("period", 1)
+
+                    # Official Abbreviation and Logo extraction
+                    home_team_obj = home.get("team", {})
+                    away_team_obj = away.get("team", {})
+                    
+                    home_abbr = home_team_obj.get("abbreviation", home_team_obj.get("shortDisplayName", "HOME"))
+                    away_abbr = away_team_obj.get("abbreviation", away_team_obj.get("shortDisplayName", "AWAY"))
+                    
+                    home_logo = home_team_obj.get("logo", DEFAULT_LOGO)
+                    away_logo = away_team_obj.get("logo", DEFAULT_LOGO)
 
                     odds_ou = 47.5
                     odds_spread = -3.5
@@ -217,11 +228,13 @@ def get_extended_games(league_code="nfl"):
                         "id": ev_id,
                         "league": l_label,
                         "name": event["name"],
-                        "home_team": home["team"]["displayName"],
-                        "home_short": home["team"].get("shortDisplayName", home["team"]["displayName"]),
+                        "home_team": home_team_obj.get("displayName", "Home"),
+                        "home_short": home_abbr,
+                        "home_logo": home_logo,
                         "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
-                        "away_team": away["team"]["displayName"],
-                        "away_short": away["team"].get("shortDisplayName", away["team"]["displayName"]),
+                        "away_team": away_team_obj.get("displayName", "Away"),
+                        "away_short": away_abbr,
+                        "away_logo": away_logo,
                         "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
                         "home_score": int(home.get("score", 0)),
                         "away_score": int(away.get("score", 0)),
@@ -236,16 +249,16 @@ def get_extended_games(league_code="nfl"):
         except Exception:
             pass
 
-    # Step 2: Fallback slate if ESPN returns fewer than 3 games (mid-week slate buffer)
+    # Built-in fallback slate with official logos & abbreviations
     if len([g for g in all_games if not g["completed"]]) < 3:
         backup_slate = [
-            {"id": "up_1", "league": "NFL", "name": "Bills @ Dolphins", "home_team": "Miami Dolphins", "home_short": "MIA", "home_record": "7-2", "away_team": "Buffalo Bills", "away_short": "BUF", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Thursday 8:15 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 48.5, "market_spread": 2.5},
-            {"id": "up_2", "league": "NCAA", "name": "Georgia @ Alabama", "home_team": "Alabama Crimson Tide", "home_short": "BAMA", "home_record": "8-1", "away_team": "Georgia Bulldogs", "away_short": "UGA", "away_record": "8-1", "home_score": 0, "away_score": 0, "status": "Saturday 3:30 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 52.0, "market_spread": -3.0},
-            {"id": "up_3", "league": "NCAA", "name": "Ohio State @ Penn State", "home_team": "Penn State Nittany Lions", "home_short": "PSU", "home_record": "7-1", "away_team": "Ohio State Buckeyes", "away_short": "OSU", "away_record": "8-0", "home_score": 0, "away_score": 0, "status": "Saturday 7:30 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 46.5, "market_spread": 3.5},
-            {"id": "up_4", "league": "NFL", "name": "Chiefs @ Broncos", "home_team": "Denver Broncos", "home_short": "DEN", "home_record": "5-4", "away_team": "Kansas City Chiefs", "away_short": "KC", "away_record": "8-1", "home_score": 0, "away_score": 0, "status": "Sunday 4:25 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 45.0, "market_spread": 7.0},
-            {"id": "up_5", "league": "NFL", "name": "49ers @ Seahawks", "home_team": "Seattle Seahawks", "home_short": "SEA", "home_record": "6-3", "away_team": "San Francisco 49ers", "away_short": "SF", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Sunday 8:20 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 47.0, "market_spread": -1.5},
-            {"id": "up_6", "league": "NFL", "name": "Ravens @ Steelers", "home_team": "Pittsburgh Steelers", "home_short": "PIT", "home_record": "6-2", "away_team": "Baltimore Ravens", "away_short": "BAL", "away_record": "7-2", "home_score": 0, "away_score": 0, "status": "Sunday 1:00 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 43.5, "market_spread": 2.5},
-            {"id": "up_7", "league": "NFL", "name": "Lions @ Packers", "home_team": "Green Bay Packers", "home_short": "GB", "home_record": "6-2", "away_team": "Detroit Lions", "away_short": "DET", "away_record": "7-1", "home_score": 0, "away_score": 0, "status": "Sunday 4:25 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 53.0, "market_spread": -1.0}
+            {"id": "up_1", "league": "NFL", "name": "Bills @ Dolphins", "home_team": "Miami Dolphins", "home_short": "MIA", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/mia.png", "home_record": "7-2", "away_team": "Buffalo Bills", "away_short": "BUF", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/buf.png", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Thu 8:15 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 48.5, "market_spread": 2.5},
+            {"id": "up_2", "league": "NCAA", "name": "Georgia @ Alabama", "home_team": "Alabama Crimson Tide", "home_short": "ALA", "home_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/333.png", "home_record": "8-1", "away_team": "Georgia Bulldogs", "away_short": "UGA", "away_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/61.png", "away_record": "8-1", "home_score": 0, "away_score": 0, "status": "Sat 3:30 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 52.0, "market_spread": -3.0},
+            {"id": "up_3", "league": "NCAA", "name": "Ohio State @ Penn State", "home_team": "Penn State Nittany Lions", "home_short": "PSU", "home_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/213.png", "home_record": "7-1", "away_team": "Ohio State Buckeyes", "away_short": "OSU", "away_logo": "https://a.espncdn.com/i/teamlogos/ncaa/500/194.png", "away_record": "8-0", "home_score": 0, "away_score": 0, "status": "Sat 7:30 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 46.5, "market_spread": 3.5},
+            {"id": "up_4", "league": "NFL", "name": "Chiefs @ Broncos", "home_team": "Denver Broncos", "home_short": "DEN", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/den.png", "home_record": "5-4", "away_team": "Kansas City Chiefs", "away_short": "KC", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/kc.png", "away_record": "8-1", "home_score": 0, "away_score": 0, "status": "Sun 4:25 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 45.0, "market_spread": 7.0},
+            {"id": "up_5", "league": "NFL", "name": "49ers @ Seahawks", "home_team": "Seattle Seahawks", "home_short": "SEA", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/sea.png", "home_record": "6-3", "away_team": "San Francisco 49ers", "away_short": "SF", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/sf.png", "away_record": "6-3", "home_score": 0, "away_score": 0, "status": "Sun 8:20 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 47.0, "market_spread": -1.5},
+            {"id": "up_6", "league": "NFL", "name": "Ravens @ Steelers", "home_team": "Pittsburgh Steelers", "home_short": "PIT", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/pit.png", "home_record": "6-2", "away_team": "Baltimore Ravens", "away_short": "BAL", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/bal.png", "away_record": "7-2", "home_score": 0, "away_score": 0, "status": "Sun 1:00 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 43.5, "market_spread": 2.5},
+            {"id": "up_7", "league": "NFL", "name": "Lions @ Packers", "home_team": "Green Bay Packers", "home_short": "GB", "home_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/gb.png", "home_record": "6-2", "away_team": "Detroit Lions", "away_short": "DET", "away_logo": "https://a.espncdn.com/i/teamlogos/nfl/500/det.png", "away_record": "7-1", "home_score": 0, "away_score": 0, "status": "Sun 4:25 PM", "checkpoint": "Pre-Game", "completed": False, "period": 1, "displayClock": "Pre", "market_ou": 53.0, "market_spread": -1.0}
         ]
         for b_game in backup_slate:
             if b_game["id"] not in seen_ids:
@@ -399,9 +412,14 @@ if st.session_state.selected_bet_id is not None:
     period = live_game_info.get("period", 2)
 
     col_s1, col_s2, col_s3 = st.columns([2, 1, 2])
-    col_s1.markdown(f"### {live_game_info['away_team']}\n# **{curr_away}**\n`{live_game_info['away_record']}`")
-    col_s2.markdown(f"### Status\n**{live_game_info['status']}**\nClock: `{live_game_info.get('displayClock', 'Live')}`")
-    col_s3.markdown(f"### {live_game_info['home_team']}\n# **{curr_home}**\n`{live_game_info['home_record']}`")
+    with col_s1:
+        st.image(live_game_info["away_logo"], width=50)
+        st.markdown(f"### {live_game_info['away_short']} ({live_game_info['away_team']})\n# **{curr_away}**\n`{live_game_info['away_record']}`")
+    with col_s2:
+        st.markdown(f"### Status\n**{live_game_info['status']}**\nClock: `{live_game_info.get('displayClock', 'Live')}`")
+    with col_s3:
+        st.image(live_game_info["home_logo"], width=50)
+        st.markdown(f"### {live_game_info['home_short']} ({live_game_info['home_team']})\n# **{curr_home}**\n`{live_game_info['home_record']}`")
 
     st.markdown("---")
     risk = selected_bet.get("risk_dollars", 10.0)
@@ -444,7 +462,7 @@ if st.session_state.selected_bet_id is not None:
 
         win_prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under)
         cushion = target_line - total_pts if is_under else total_pts - target_line
-        m1, m2, m3 = st.columns(4)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Live Total", f"{total_pts} pts")
         m2.metric("Target Line", f"{bet_dir} {target_line}")
         m3.metric("Safety Cushion", f"{cushion:+.1f} pts")
@@ -514,7 +532,7 @@ elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Consensus & Edge Terminal")
 
     if games_data:
-        game_options = [f"[{g['league']}] {g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
+        game_options = [f"[{g['league']}] {g['away_short']} @ {g['home_short']} - {g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
         selected_idx = st.selectbox("Select Active Matchup", range(len(game_options)), format_func=lambda x: game_options[x])
         g = games_data[selected_idx]
         g_id = g.get("id", str(selected_idx))
@@ -523,11 +541,21 @@ elif menu_choice == "Single Game Engine":
         espn_spread = g["market_spread"]
     else:
         st.warning("Manual Matchup Mode")
-        g = {"id": "man", "league": "NFL", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False, "market_ou": 47.5, "market_spread": -3.5}
+        g = {"id": "man", "league": "NFL", "home_team": "Home", "home_short": "HOME", "home_logo": DEFAULT_LOGO, "away_team": "Away", "away_short": "AWAY", "away_logo": DEFAULT_LOGO, "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False, "market_ou": 47.5, "market_spread": -3.5}
         g_id = "man"
         detected_stage = "Halftime"
         espn_ou = 47.5
         espn_spread = -3.5
+
+    # Visual Team Banner
+    banner_c1, banner_c2, banner_c3 = st.columns([1, 4, 1])
+    with banner_c1:
+        st.image(g.get("away_logo", DEFAULT_LOGO), width=65)
+    with banner_c2:
+        st.markdown(f"### **{g['away_short']}** ({g['away_team']})  @  **{g['home_short']}** ({g['home_team']})")
+        st.caption(f"Status: **{g['status']}** | Records: {g['away_short']} ({g['away_record']}) vs {g['home_short']} ({g['home_record']})")
+    with banner_c3:
+        st.image(g.get("home_logo", DEFAULT_LOGO), width=65)
 
     all_stages = ["Pre-Game", "1st Quarter", "Halftime", "3rd Quarter", "4th Quarter / Late Game", "Final / Game Completed"]
     default_stage_idx = all_stages.index(detected_stage) if detected_stage in all_stages else 2
@@ -543,10 +571,10 @@ elif menu_choice == "Single Game Engine":
 
     with c2:
         sc1, sc2 = st.columns(2)
-        h_pts = sc1.number_input(f"{home_team} Score", min_value=0, value=g["home_score"], key=f"hp_{g_id}")
-        a_pts = sc2.number_input(f"{away_team} Score", min_value=0, value=g["away_score"], key=f"ap_{g_id}")
-        market_line = st.number_input("Market Total Offered (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
-        spread_line = st.number_input(f"{home_team} Consensus Spread", value=espn_spread, step=0.5, key=f"spd_{g_id}")
+        h_pts = sc1.number_input(f"{g['home_short']} Score", min_value=0, value=g["home_score"], key=f"hp_{g_id}")
+        a_pts = sc2.number_input(f"{g['away_short']} Score", min_value=0, value=g["away_score"], key=f"ap_{g_id}")
+        market_line = st.number_input("Market Total Line (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
+        spread_line = st.number_input(f"{g['home_short']} Spread", value=espn_spread, step=0.5, key=f"spd_{g_id}")
 
     pts_scored = h_pts + a_pts
     margin = abs(h_pts - a_pts)
@@ -584,9 +612,9 @@ elif menu_choice == "Single Game Engine":
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Projected Total", f"{final_proj:.1f} pts", delta=f"{final_proj - pregame_total:+.1f} shift")
-    m2.metric(f"{home_team} Win Exp.", f"{home_win_prob * 100:.1f}%")
-    m3.metric(f"{away_team} Win Exp.", f"{away_win_prob * 100:.1f}%")
-    m4.metric(f"{home_team} Spread ({spread_line:+})", f"{home_cover_prob * 100:.1f}%")
+    m2.metric(f"{g['home_short']} Win Exp.", f"{home_win_prob * 100:.1f}%")
+    m3.metric(f"{g['away_short']} Win Exp.", f"{away_win_prob * 100:.1f}%")
+    m4.metric(f"{g['home_short']} Spread ({spread_line:+})", f"{home_cover_prob * 100:.1f}%")
 
     st.markdown("---")
     bet_type = st.radio("Wager Type", ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)"], horizontal=True, key=f"btype_sel_{g_id}")
@@ -600,14 +628,14 @@ elif menu_choice == "Single Game Engine":
             picked_t = None
         elif bet_type == "Point Spread (ATS)":
             f1, f2 = st.columns(2)
-            picked_t = f1.selectbox("Team to Cover", [home_team, away_team], key=f"spd_pick_{g_id}")
+            picked_t = f1.selectbox("Team to Cover", [home_team, away_team], format_func=lambda x: f"{g['home_short']} ({home_team})" if x == home_team else f"{g['away_short']} ({away_team})", key=f"spd_pick_{g_id}")
             spd_val = spread_line if picked_t == home_team else -spread_line
             strike = f2.number_input("Spread Line", value=float(spd_val), step=0.5, key=f"spd_val_{g_id}")
             side = "Spread"
         else:
             side = "Moneyline"
             strike = None
-            picked_t = st.selectbox("Winning Team", [home_team, away_team], key=f"ml_pick_{g_id}")
+            picked_t = st.selectbox("Winning Team", [home_team, away_team], format_func=lambda x: f"{g['home_short']} ({home_team})" if x == home_team else f"{g['away_short']} ({away_team})", key=f"ml_pick_{g_id}")
 
         p1, p2, p3 = st.columns(3)
         risk_amt = p1.number_input("Risk Amount ($)", min_value=1.0, value=10.0, step=5.0)
@@ -649,7 +677,7 @@ elif menu_choice == "Single Game Engine":
                 "home_team": home_team,
                 "away_team": away_team,
                 "picked_team": picked_t,
-                "matchup": f"{away_team} @ {home_team}",
+                "matchup": f"{g['away_short']} @ {g['home_short']}",
                 "bet": bet_label,
                 "target_line": strike,
                 "bet_direction": side,
@@ -668,10 +696,10 @@ elif menu_choice == "Single Game Engine":
 # PAGE 2: 2 TO 10 LEG COMBO BUILDER
 elif menu_choice == "2-10 Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 10 Legs)")
-    st.caption("Construct multi-game parlays manually or deploy the algorithmic scanner to find optimal combinations across all active & upcoming football games.")
+    st.caption("Construct multi-game parlays manually or deploy the algorithmic scanner to find optimal combinations with official team logos and abbreviations.")
 
-    # Format all game choices for selector
-    game_choices = [f"[{g['league']}] {g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
+    # Format choices with clean abbreviations
+    game_choices = [f"[{g['league']}] {g['away_short']} @ {g['home_short']} ({g['status']})" for g in games_data]
 
     # --- AI STRATEGY COMBO OPTIMIZER ---
     with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
@@ -700,6 +728,7 @@ elif menu_choice == "2-10 Leg Combo Builder":
             candidate_legs = []
             for g_c in active_candidate_games:
                 c_h, c_a = g_c["home_team"], g_c["away_team"]
+                c_h_abbr, c_a_abbr = g_c["home_short"], g_c["away_short"]
                 c_h_pts, c_a_pts = g_c["home_score"], g_c["away_score"]
                 c_tot_pts = c_h_pts + c_a_pts
                 c_h_rec, c_a_rec = g_c.get("home_record", "0-0"), g_c.get("away_record", "0-0")
@@ -730,10 +759,11 @@ elif menu_choice == "2-10 Leg Combo Builder":
                         "side": "Under",
                         "line": cushion_line,
                         "prob": p,
-                        "desc": f"[{g_c['league']}] {c_a} @ {c_h}: Under {cushion_line}",
+                        "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr}: Under {cushion_line}",
                         "score_metric": p
                     })
                     ml_fav = c_h if h_prob >= 0.5 else c_a
+                    fav_abbr = c_h_abbr if h_prob >= 0.5 else c_a_abbr
                     ml_p = max(h_prob, 1.0 - h_prob)
                     if ml_p >= 0.55:
                         candidate_legs.append({
@@ -741,7 +771,7 @@ elif menu_choice == "2-10 Leg Combo Builder":
                             "type": "Straight Up Winner",
                             "winner": ml_fav,
                             "prob": ml_p,
-                            "desc": f"[{g_c['league']}] {c_a} @ {c_h}: {ml_fav} ML",
+                            "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr}: {fav_abbr} ML",
                             "score_metric": ml_p
                         })
 
@@ -756,19 +786,20 @@ elif menu_choice == "2-10 Leg Combo Builder":
                         "side": "Under" if is_u else "Over",
                         "line": tgt_line,
                         "prob": p,
-                        "desc": f"[{g_c['league']}] {c_a} @ {c_h}: {'Under' if is_u else 'Over'} {tgt_line} (Edge: {edge:.1f} pts)",
+                        "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr}: {'Under' if is_u else 'Over'} {tgt_line} (Edge: {edge:.1f} pts)",
                         "score_metric": edge * p
                     })
 
                 elif "Straight-Up Moneyline" in strategy_mode:
                     ml_fav = c_h if h_prob >= 0.5 else c_a
+                    fav_abbr = c_h_abbr if h_prob >= 0.5 else c_a_abbr
                     ml_p = max(h_prob, 1.0 - h_prob)
                     candidate_legs.append({
                         "matchup_idx": games_data.index(g_c),
                         "type": "Straight Up Winner",
                         "winner": ml_fav,
                         "prob": ml_p,
-                        "desc": f"[{g_c['league']}] {c_a} @ {c_h}: {ml_fav} ML ({ml_p*100:.1f}%)",
+                        "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr}: {fav_abbr} ML ({ml_p*100:.1f}%)",
                         "score_metric": ml_p
                     })
 
@@ -781,7 +812,7 @@ elif menu_choice == "2-10 Leg Combo Builder":
                         "side": "Under",
                         "line": cushion_line,
                         "prob": p,
-                        "desc": f"[{g_c['league']}] {c_a} @ {c_h}: Under {cushion_line}",
+                        "desc": f"[{g_c['league']}] {c_a_abbr} @ {c_h_abbr}: Under {cushion_line}",
                         "score_metric": p
                     })
 
@@ -803,7 +834,6 @@ elif menu_choice == "2-10 Leg Combo Builder":
                     if len(selected_ai_legs) == suggest_legs_count:
                         break
 
-            # Write values directly into the session state widget keys
             st.session_state.user_legs_slider = len(selected_ai_legs)
             st.session_state.legs_count_choice = len(selected_ai_legs)
             st.session_state.applied_ai_combo = selected_ai_legs
@@ -856,9 +886,22 @@ elif menu_choice == "2-10 Leg Combo Builder":
 
         leg_g = games_data[selected_idx]
         d_h, d_a = leg_g["home_team"], leg_g["away_team"]
+        d_h_abbr, d_a_abbr = leg_g["home_short"], leg_g["away_short"]
         d_h_pts, d_a_pts = leg_g["home_score"], leg_g["away_score"]
         d_h_rec, d_a_rec = leg_g.get("home_record", "0-0"), leg_g.get("away_record", "0-0")
         leg_completed = leg_g["completed"]
+
+        # Visual Matchup Card with Official Logos & Abbreviations
+        card_col1, card_col2, card_col3 = st.columns([1, 4, 1])
+        with card_col1:
+            st.image(leg_g.get("away_logo", DEFAULT_LOGO), width=48)
+            st.caption(f"**{d_a_abbr}**")
+        with card_col2:
+            st.markdown(f"**{d_a_abbr}** ({d_a_rec}) @ **{d_h_abbr}** ({d_h_rec})")
+            st.caption(f"Status: `{leg_g['status']}` | Total Line: **{leg_g.get('market_ou', 47.5)}**")
+        with card_col3:
+            st.image(leg_g.get("home_logo", DEFAULT_LOGO), width=48)
+            st.caption(f"**{d_h_abbr}**")
 
         wager_cat = st.radio(
             f"Wager Type (Leg {i+1})",
@@ -872,9 +915,9 @@ elif menu_choice == "2-10 Leg Combo Builder":
             side = col_b.selectbox("Side", ["Under", "Over"], key=f"lside_{i}")
             strike = col_c.number_input("Line (pts)", value=float(leg_g.get("market_ou", 44.5)), step=0.5, key=f"lstrike_{i}")
             leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
-            leg_desc = f"{d_a} @ {d_h}: {side} {strike}"
+            leg_desc = f"{d_a_abbr} @ {d_h_abbr}: {side} {strike}"
             parsed_legs.append({
-                "matchup": f"{d_a} @ {d_h}",
+                "matchup": f"{d_a_abbr} @ {d_h_abbr}",
                 "type": "Total",
                 "side": side,
                 "line": strike,
@@ -883,13 +926,19 @@ elif menu_choice == "2-10 Leg Combo Builder":
         else:
             col_b, col_c = st.columns(2)
             teams_opt = [d_h, d_a]
-            winner = col_b.selectbox("Pick Winner", teams_opt, key=f"lwinner_{i}")
+            winner = col_b.selectbox(
+                "Pick Winner",
+                teams_opt,
+                format_func=lambda x: f"{d_h_abbr} ({d_h})" if x == d_h else f"{d_a_abbr} ({d_a})",
+                key=f"lwinner_{i}"
+            )
+            win_abbr = d_h_abbr if winner == d_h else d_a_abbr
             h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec, is_final=leg_completed)
             leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
-            leg_desc = f"{d_a} @ {d_h}: {winner} ML"
+            leg_desc = f"{d_a_abbr} @ {d_h_abbr}: {win_abbr} ML"
             col_c.metric("Model Win Expectancy", f"{leg_prob * 100:.1f}%")
             parsed_legs.append({
-                "matchup": f"{d_a} @ {d_h}",
+                "matchup": f"{d_a_abbr} @ {d_h_abbr}",
                 "type": "Moneyline",
                 "picked_team": winner,
                 "prob": leg_prob
@@ -1019,20 +1068,20 @@ elif menu_choice == "🏆 Squad Leaderboard":
         if u not in user_stats:
             user_stats[u] = {"Wins": 0, "Losses": 0, "Pending": 0, "Total_Risk": 0.0, "Net_Profit": 0.0}
 
-        risk = b.get("risk_dollars", 10.0)
-        payout = b.get("payout_dollars", 19.0)
-        stat = b.get("status", "Pending")
+            risk = b.get("risk_dollars", 10.0)
+            payout = b.get("payout_dollars", 19.0)
+            stat = b.get("status", "Pending")
 
-        if stat == "Won":
-            user_stats[u]["Wins"] += 1
-            user_stats[u]["Total_Risk"] += risk
-            user_stats[u]["Net_Profit"] += (payout - risk)
-        elif stat == "Lost":
-            user_stats[u]["Losses"] += 1
-            user_stats[u]["Total_Risk"] += risk
-            user_stats[u]["Net_Profit"] -= risk
-        else:
-            user_stats[u]["Pending"] += 1
+            if stat == "Won":
+                user_stats[u]["Wins"] += 1
+                user_stats[u]["Total_Risk"] += risk
+                user_stats[u]["Net_Profit"] += (payout - risk)
+            elif stat == "Lost":
+                user_stats[u]["Losses"] += 1
+                user_stats[u]["Total_Risk"] += risk
+                user_stats[u]["Net_Profit"] -= risk
+            else:
+                user_stats[u]["Pending"] += 1
 
         board = []
         for u, s in user_stats.items():
