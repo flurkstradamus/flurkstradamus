@@ -36,7 +36,7 @@ st.markdown("""
         }
     }
 
-    /* FIX 1: REMOVE GAP BETWEEN SIDEBAR BUTTONS */
+    /* REMOVE GAP BETWEEN SIDEBAR BUTTONS */
     section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
         gap: 0.2rem !important;
     }
@@ -65,7 +65,7 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
-    /* FIX 2: TIGHT, EVEN PADDING IN RECOMMENDATION ROWS */
+    /* TIGHT, EVEN PADDING IN RECOMMENDATION ROWS */
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 8px !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
@@ -97,26 +97,28 @@ st.markdown("""
         gap: 0.25rem !important;
     }
 
-    /* FIX 3: SMALL, FLUSH ✕ BUTTON MATCHING TEXT HEIGHT */
+    /* BUTTON HEIGHT MATCHED DIRECTLY TO PROBABILITY PILL */
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stButton"] {
         opacity: 0;
         transition: opacity 0.2s ease-in-out;
         margin: 0 !important;
         padding: 0 !important;
-        height: 1.25rem !important;
-        min-height: 1.25rem !important;
+        height: 1.15rem !important;
+        min-height: 1.15rem !important;
+        display: flex !important;
+        align-items: center !important;
     }
     div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"]:hover div[data-testid="stButton"] {
         opacity: 1 !important;
     }
     div.rec-card-container div[data-testid="stButton"] button {
         float: right !important;
-        padding: 0px !important;
-        min-height: 1.25rem !important;
-        height: 1.25rem !important;
-        width: 1.25rem !important;
-        font-size: 0.65rem !important;
-        line-height: 1.25rem !important;
+        padding: 0px 4px !important;
+        min-height: 1.15rem !important;
+        height: 1.15rem !important;
+        width: 1.15rem !important;
+        font-size: 0.60rem !important;
+        line-height: 1 !important;
         border: 1px solid rgba(239, 68, 68, 0.4) !important;
         color: #ef4444 !important;
         background-color: rgba(239, 68, 68, 0.08) !important;
@@ -127,7 +129,7 @@ st.markdown("""
         justify-content: center !important;
     }
     div.rec-card-container div[data-testid="stButton"] button p {
-        font-size: 0.65rem !important;
+        font-size: 0.60rem !important;
         line-height: 1 !important;
         margin: 0 !important;
         padding: 0 !important;
@@ -303,8 +305,6 @@ def get_extended_games(league_code="nfl"):
 # ==========================================
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
-
-st.sidebar.markdown("<p style='font-size:0.75rem; font-weight:700; color:#94a3b8; margin-bottom:4px; letter-spacing:0.5px;'>NAVIGATION</p>", unsafe_allow_html=True)
 
 nav_items = [
     ("⚡ Single Game Engine", "Single Game Engine"),
@@ -829,7 +829,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
                 detail_str = l_ai.get("detail", "")
 
                 with st.container(border=True):
-                    c_left, c_mid, c_btn = st.columns([5.6, 4.0, 0.4], vertical_alignment="center")
+                    c_left, c_mid, c_btn = st.columns([5.7, 3.9, 0.4], vertical_alignment="center")
                     
                     with c_left:
                         st.markdown(f"""
