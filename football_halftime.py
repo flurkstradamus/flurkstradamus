@@ -38,7 +38,7 @@ def fetch_cloud_data():
 
 def push_cloud_data(bets, messages):
     if JSONBIN_BIN_ID and JSONBIN_API_KEY:
-        url = f"https://api.jsonBIN.io/v3/b/{JSONBIN_BIN_ID}"
+        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
         headers = {
             "Content-Type": "application/json",
             "X-Master-Key": JSONBIN_API_KEY
@@ -302,7 +302,7 @@ menu_choice = st.sidebar.radio(
     "Navigation Menu",
     [
         "Single Game Engine",
-        "2-5 Leg Combo Builder",
+        "2-10 Leg Combo Builder",
         "🔥 Live Squad Feed",
         "💬 The Locker Room",
         "Locked Bets History",
@@ -641,21 +641,193 @@ def render_main_engine():
                 st.success("Ticket saved to history!")
 
     # ------------------------------------------
-    # PAGE 2: 2 TO 5 LEG COMBO BUILDER
+    # PAGE 2: 2 TO 10 LEG COMBO BUILDER & AI STRATEGY ENGINE
     # ------------------------------------------
-    elif menu_choice == "2-5 Leg Combo Builder":
-        st.subheader("🔗 Multi-Leg Combo Builder (2 to 5 Legs)")
-        legs_count = st.radio("Select Number of Legs", [2, 3, 4, 5], horizontal=True)
+    elif menu_choice == "2-10 Leg Combo Builder":
+        st.subheader("🔗 Multi-Leg Combo Builder (Up to 10 Legs)")
+        st.caption("Construct multi-game parlays manually or deploy the algorithmic scanner to find optimal combinations.")
+
+        # --- AI STRATEGY COMBO OPTIMIZER ---
+        with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
+            st.markdown("#### Automated Strategy Generator")
+            col_strat1, col_strat2, col_strat3 = st.columns([2, 1, 1])
+            strategy_mode = col_strat1.selectbox(
+                "Optimization Objective",
+                [
+                    "🎯 Maximum Win Probability (Safest Floor)",
+                    "🔥 High Expected Value (+EV Total Edge)",
+                    "🏆 Straight-Up Moneyline Dominance",
+                    "🛡️ Defensive Under Lock (Pace Slump)"
+                ]
+            )
+            suggest_legs_count = col_strat2.number_input("Target Legs", min_value=2, max_value=min(10, max(2, len(games_data))), value=min(3, max(2, len(games_data))))
+            generate_clicked = col_strat3.button("⚡ Scan & Recommend")
+
+            if "ai_recommended_combo" not in st.session_state:
+                st.session_state.ai_recommended_combo = None
+
+            if generate_clicked and games_data:
+                candidate_legs = []
+                for g_c in games_data:
+                    c_h, c_a = g_c["home_team"], g_c["away_team"]
+                    c_h_pts, c_a_pts = g_c["home_score"], g_c["away_score"]
+                    c_tot_pts = c_h_pts + c_a_pts
+                    c_h_rec, c_a_rec = g_c.get("home_record", "0-0"), g_c.get("away_record", "0-0")
+                    c_ou = g_c.get("market_ou", 47.5)
+                    c_period = g_c.get("period", 1)
+                    c_completed = g_c.get("completed", False)
+
+                    if c_completed:
+                        continue
+
+                    # Model Projections
+                    if c_period <= 1:
+                        proj_tot = c_ou
+                        sigma = 8.0
+                    elif c_period == 2:
+                        proj_tot = c_tot_pts + (c_ou * 0.475)
+                        sigma = 6.0
+                    elif c_period == 3:
+                        proj_tot = c_tot_pts + 11.0
+                        sigma = 4.0
+                    else:
+                        proj_tot = c_tot_pts + 4.0
+                        sigma = 2.0
+
+                    h_prob = calculate_moneyline_prob(c_h_pts + 14, c_a_pts + 14, c_h_rec, c_a_rec, is_final=False)
+
+                    # Tiers per strategy
+                    if "Maximum Win Probability" in strategy_mode:
+                        # Large cushion under
+                        cushion_line = round(proj_tot + (sigma * 1.5)) + 0.5
+                        p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
+                        candidate_legs.append({
+                            "matchup_idx": games_data.index(g_c),
+                            "type": "Game Total",
+                            "side": "Under",
+                            "line": cushion_line,
+                            "prob": p,
+                            "desc": f"{c_a} @ {c_h}: Under {cushion_line}",
+                            "score_metric": p
+                        })
+                        # Favored Moneyline
+                        ml_fav = c_h if h_prob >= 0.5 else c_a
+                        ml_p = max(h_prob, 1.0 - h_prob)
+                        if ml_p >= 0.65:
+                            candidate_legs.append({
+                                "matchup_idx": games_data.index(g_c),
+                                "type": "Straight Up Winner",
+                                "winner": ml_fav,
+                                "prob": ml_p,
+                                "desc": f"{c_a} @ {c_h}: {ml_fav} ML",
+                                "score_metric": ml_p
+                            })
+
+                    elif "High Expected Value" in strategy_mode:
+                        edge = abs(proj_tot - c_ou)
+                        is_u = proj_tot < c_ou
+                        tgt_line = c_ou
+                        p = calculate_win_prob(tgt_line, proj_tot, sigma, is_under=is_u)
+                        candidate_legs.append({
+                            "matchup_idx": games_data.index(g_c),
+                            "type": "Game Total",
+                            "side": "Under" if is_u else "Over",
+                            "line": tgt_line,
+                            "prob": p,
+                            "desc": f"{c_a} @ {c_h}: {'Under' if is_u else 'Over'} {tgt_line} (Edge: {edge:.1f} pts)",
+                            "score_metric": edge * p
+                        })
+
+                    elif "Straight-Up Moneyline" in strategy_mode:
+                        ml_fav = c_h if h_prob >= 0.5 else c_a
+                        ml_p = max(h_prob, 1.0 - h_prob)
+                        candidate_legs.append({
+                            "matchup_idx": games_data.index(g_c),
+                            "type": "Straight Up Winner",
+                            "winner": ml_fav,
+                            "prob": ml_p,
+                            "desc": f"{c_a} @ {c_h}: {ml_fav} ML ({ml_p*100:.1f}%)",
+                            "score_metric": ml_p
+                        })
+
+                    else: # Defensive Under Lock
+                        cushion_line = round(proj_tot + 4.5) + 0.5
+                        p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
+                        candidate_legs.append({
+                            "matchup_idx": games_data.index(g_c),
+                            "type": "Game Total",
+                            "side": "Under",
+                            "line": cushion_line,
+                            "prob": p,
+                            "desc": f"{c_a} @ {c_h}: Under {cushion_line}",
+                            "score_metric": p
+                        })
+
+                # Sort by strategy metric and eliminate same-game duplicate legs
+                candidate_legs.sort(key=lambda x: x["score_metric"], reverse=True)
+                selected_ai_legs = []
+                used_games = set()
+                for cand in candidate_legs:
+                    if cand["matchup_idx"] not in used_games:
+                        selected_ai_legs.append(cand)
+                        used_games.add(cand["matchup_idx"])
+                    if len(selected_ai_legs) == suggest_legs_count:
+                        break
+
+                st.session_state.ai_recommended_combo = selected_ai_legs
+
+            if st.session_state.ai_recommended_combo:
+                st.success(f"Algorithm Recommended {len(st.session_state.ai_recommended_combo)}-Leg Ticket:")
+                comp_p = 1.0
+                for idx_ai, l_ai in enumerate(st.session_state.ai_recommended_combo):
+                    st.write(f"• **Leg {idx_ai+1}:** `{l_ai['desc']}` — Model Probability: **{l_ai['prob']*100:.1f}%**")
+                    comp_p *= l_ai["prob"]
+                st.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta="Highest Ranked Slate")
+
+                if st.button("📥 Apply Recommended Picks into Combo Builder"):
+                    st.session_state.applied_ai_combo = st.session_state.ai_recommended_combo
+                    st.session_state.legs_count_choice = len(st.session_state.ai_recommended_combo)
+                    st.rerun()
+
+        # --- MANUAL & ACTIVE COMBO BUILDER ---
+        st.markdown("---")
+        default_leg_count = getattr(st.session_state, "legs_count_choice", 3)
+        legs_count = st.slider("Select Number of Legs (2 to 10)", min_value=2, max_value=10, value=default_leg_count)
 
         combo_legs = []
         parsed_legs = []
         compound_prob = 1.0
         game_choices = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data] if games_data else ["Manual Matchup"]
 
+        applied_ai = getattr(st.session_state, "applied_ai_combo", None)
+
         for i in range(legs_count):
             st.markdown(f"#### Leg {i+1}")
-            def_idx = min(i, len(game_choices) - 1)
-            selected_idx = st.selectbox(f"Matchup for Leg {i+1}", range(len(game_choices)), index=def_idx, format_func=lambda x: game_choices[x], key=f"leg_sel_{i}")
+            
+            # Check for AI applied presets
+            preset_game_idx = min(i, len(game_choices) - 1)
+            preset_type = "Game Total"
+            preset_side = "Under"
+            preset_line = 44.5
+            preset_winner = None
+
+            if applied_ai and i < len(applied_ai):
+                ai_leg = applied_ai[i]
+                preset_game_idx = min(ai_leg["matchup_idx"], len(game_choices) - 1)
+                preset_type = ai_leg["type"]
+                if preset_type == "Game Total":
+                    preset_side = ai_leg.get("side", "Under")
+                    preset_line = float(ai_leg.get("line", 44.5))
+                else:
+                    preset_winner = ai_leg.get("winner")
+
+            selected_idx = st.selectbox(
+                f"Matchup for Leg {i+1}",
+                range(len(game_choices)),
+                index=preset_game_idx,
+                format_func=lambda x: game_choices[x],
+                key=f"leg_sel_{i}"
+            )
 
             if games_data:
                 leg_g = games_data[selected_idx]
@@ -669,34 +841,57 @@ def render_main_engine():
                 d_h_rec, d_a_rec = "5-2", "4-3"
                 leg_completed = False
 
-            wager_cat = st.radio(f"Wager Type (Leg {i+1})", ["Game Total", "Straight Up Winner"], horizontal=True, key=f"wtype_{i}")
+            wager_cat = st.radio(
+                f"Wager Type (Leg {i+1})",
+                ["Game Total", "Straight Up Winner"],
+                horizontal=True,
+                index=0 if preset_type == "Game Total" else 1,
+                key=f"wtype_{i}"
+            )
 
             if wager_cat == "Game Total":
                 col_b, col_c = st.columns(2)
-                side = col_b.selectbox("Side", ["Under", "Over"], key=f"lside_{i}")
-                strike = col_c.number_input("Line (pts)", value=44.5, step=0.5, key=f"lstrike_{i}")
+                side_idx = 0 if preset_side == "Under" else 1
+                side = col_b.selectbox("Side", ["Under", "Over"], index=side_idx, key=f"lside_{i}")
+                strike = col_c.number_input("Line (pts)", value=preset_line, step=0.5, key=f"lstrike_{i}")
                 leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
                 leg_desc = f"{d_a} @ {d_h}: {side} {strike}"
-                parsed_legs.append({"matchup": f"{d_a} @ {d_h}", "type": "Total", "side": side, "line": strike, "prob": leg_prob})
+                parsed_legs.append({
+                    "matchup": f"{d_a} @ {d_h}",
+                    "type": "Total",
+                    "side": side,
+                    "line": strike,
+                    "prob": leg_prob
+                })
             else:
                 col_b, col_c = st.columns(2)
-                winner = col_b.selectbox("Pick Winner", [d_h, d_a], key=f"lwinner_{i}")
+                teams_opt = [d_h, d_a]
+                win_idx = teams_opt.index(preset_winner) if preset_winner in teams_opt else 0
+                winner = col_b.selectbox("Pick Winner", teams_opt, index=win_idx, key=f"lwinner_{i}")
                 h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec, is_final=leg_completed)
                 leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
                 leg_desc = f"{d_a} @ {d_h}: {winner} ML"
                 col_c.metric("Model Win Expectancy", f"{leg_prob * 100:.1f}%")
-                parsed_legs.append({"matchup": f"{d_a} @ {d_h}", "type": "Moneyline", "picked_team": winner, "prob": leg_prob})
+                parsed_legs.append({
+                    "matchup": f"{d_a} @ {d_h}",
+                    "type": "Moneyline",
+                    "picked_team": winner,
+                    "prob": leg_prob
+                })
 
             compound_prob *= leg_prob
             combo_legs.append({"desc": leg_desc, "prob": leg_prob})
             st.markdown("---")
 
-        st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%")
+        st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%", help="Multiplied model probability across all legs.")
 
         with st.form("save_combo_form"):
             c_r1, c_r2, c_r3 = st.columns(3)
             c_risk = c_r1.number_input("Ticket Risk ($)", min_value=1.0, value=10.0, step=5.0)
-            c_payout = c_r2.number_input("Total Potential Return ($)", min_value=1.0, value=round(10.0 / max(compound_prob, 0.05), 2), step=10.0)
+            
+            # Expected fair multiplier
+            est_payout = round(c_risk / max(compound_prob, 0.005), 2)
+            c_payout = c_r2.number_input("Total Potential Return ($)", min_value=1.0, value=float(min(est_payout, 50000.0)), step=25.0)
             c_notes = c_r3.text_input("Notes", f"{legs_count}-Leg Parlay")
 
             save_c_btn = st.form_submit_button("Lock In Combo Ticket")
@@ -721,7 +916,7 @@ def render_main_engine():
                 }
                 st.session_state.saved_bets.insert(0, combo_record)
                 save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
-                st.success("Combo ticket locked in!")
+                st.success(f"{legs_count}-Leg combo ticket locked in!")
 
     # ------------------------------------------
     # PAGE 3: LOCKED BETS & HISTORY
@@ -897,6 +1092,14 @@ def render_main_engine():
         st.markdown("### 3. Straight-Up Moneyline & Spread Engines")
         st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
         st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
+
+        st.markdown("---")
+        st.markdown("### 4. Multi-Leg Combo Optimization")
+        st.write(
+            "Parlays multiply individual probabilities: $P(\\text{Combo}) = \\prod_{i=1}^n P(\\text{Leg}_i)$. "
+            "The AI Scanner ranks legs using expected edge $EV = P(\\text{Model}) - P(\\text{Market Implied})$ "
+            "and pairs independent slates to maximize compound probability without same-game cross-correlation."
+        )
 
 # Launch the live engine
 render_main_engine()
