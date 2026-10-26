@@ -838,61 +838,105 @@ elif menu_choice == "2-12 Leg Combo Builder":
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
             st.success(f"{active_leg_count}-Leg combo ticket locked in!")
 
-# PAGE 3: LOCKED BETS & HISTORY
+# ==========================================
+# PAGE 3: LOCKED BETS & HISTORY (IMPROVED PERSONAL SLIPS)
+# ==========================================
 elif menu_choice == "Locked Bets History":
-    st.subheader("📜 Bet Tracker & Slips")
+    st.subheader(f"📜 {current_user}'s Locked Bets")
+    st.caption("Your personalized active slips, scores, and settled tickets.")
 
-    b_col1, b_col2 = st.columns(2)
-    user_filter = b_col1.selectbox("Filter Bettor", ["All Bettors"] + sorted(list({b.get("user", "Flurk") for b in st.session_state.saved_bets})))
-    if b_col2.button("⚡ Grade Finals", use_container_width=True):
-        if auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages):
-            st.success("Updated tickets!")
-            st.rerun()
+    # Filter strictly to the current active user
+    curr_user_clean = current_user.strip().lower() if current_user.strip() else "flurk"
+    my_tickets = [b for b in st.session_state.saved_bets if b.get("user", "Flurk").strip().lower() == curr_user_clean]
 
-    active_tickets = [b for b in st.session_state.saved_bets if user_filter == "All Bettors" or b.get("user", "Flurk") == user_filter]
+    h_top1, h_top2 = st.columns([3, 1])
+    with h_top1:
+        st.write(f"Showing **{len(my_tickets)}** ticket(s) placed by **{current_user}**.")
+    with h_top2:
+        if st.button("⚡ Grade Finals", use_container_width=True):
+            if auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages):
+                st.success("Updated tickets!")
+                st.rerun()
 
-    if not active_tickets:
-        st.info("No recorded tickets found.")
+    if not my_tickets:
+        st.info(f"You don't have any locked bets yet under handle '{current_user}'. Lock in a pick in the Single Game or Combo Engine!")
     else:
-        for b in active_tickets:
+        for b in my_tickets:
             real_idx = st.session_state.saved_bets.index(b)
-            with st.container(border=True):
-                top_row1, top_row2 = st.columns([3, 1])
-                top_row1.markdown(f"**{b.get('user', 'Flurk')}** • <span style='opacity:0.6;font-size:0.8rem;'>{b['date']}</span>", unsafe_allow_html=True)
-                top_row2.caption(f"{b['type']}")
+            status_val = b.get("status", "Pending")
 
-                st.markdown(f"**Pick:** `{b['bet']}`")
-                st.caption(f"Risk: **${b.get('risk_dollars', 10.0):.2f}** ➜ Payout: **${b.get('payout_dollars', 19.0):.2f}**")
+            # Border highlight style based on status
+            if status_val == "Won":
+                card_style = "border: 1.5px solid #22c55e; background-color: rgba(34, 197, 94, 0.05);"
+                badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
+            elif status_val == "Lost":
+                card_style = "border: 1.5px solid #ef4444; background-color: rgba(239, 68, 68, 0.05);"
+                badge_html = "<span style='background-color:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>❌ LOST</span>"
+            else:
+                card_style = "border: 1.5px solid #eab308; background-color: rgba(234, 179, 8, 0.05);"
+                badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ IN PLAY</span>"
 
-                if b.get("bet_category") == "Combo" and b.get("parsed_legs"):
-                    leg_statuses = []
-                    for leg in b["parsed_legs"]:
-                        m_g = find_game_for_bet({"matchup": leg["matchup"]}, games_data)
-                        if m_g and m_g["completed"]:
-                            t_p = m_g["away_score"] + m_g["home_score"]
-                            won = (t_p < leg["line"]) if leg["type"] == "Total" and leg["side"] == "Under" else (t_p > leg["line"] if leg["type"] == "Total" else leg["picked_team"] == (m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]))
-                            leg_statuses.append(f"✅ {m_g['away_short']}@{m_g['home_short']}" if won else f"❌ {m_g['away_short']}@{m_g['home_short']}")
-                        elif m_g:
-                            leg_statuses.append(f"⏳ {m_g['away_short']}@{m_g['home_short']}")
-                    st.markdown("**Parlay Progress:** " + " • ".join(leg_statuses))
-                else:
-                    live_m = find_game_for_bet(b, games_data)
-                    if live_m:
-                        st.caption(f"Score: **{live_m['away_short']} {live_m['away_score']} - {live_m['home_score']} {live_m['home_short']}** ({live_m['status']})")
+            # Parse Matchup Details & Live Score
+            live_m = find_game_for_bet(b, games_data)
+            away_logo = live_m.get("away_logo", DEFAULT_LOGO) if live_m else DEFAULT_LOGO
+            home_logo = live_m.get("home_logo", DEFAULT_LOGO) if live_m else DEFAULT_LOGO
+            
+            if live_m:
+                a_short = live_m.get("away_short", "AWAY")
+                h_short = live_m.get("home_short", "HOME")
+                a_score = live_m.get("away_score", 0)
+                h_score = live_m.get("home_score", 0)
+                tot_pts = a_score + h_score
+                is_fin = live_m.get("completed", False) or "final" in live_m["status"].lower()
+                status_prefix = "Final Score" if is_fin else "Live Score"
+                score_str = f"**{status_prefix}:** {a_score} vs {h_score} ({tot_pts} total)"
+                game_title = f"{a_short} vs {h_short}"
+            else:
+                game_title = b.get("matchup", "Football Matchup")
+                score_str = "Score: *Pre-Game / Scheduled*"
 
-                b_act1, b_act2 = st.columns([3, 1])
-                status_list = ["Pending", "Won", "Lost"]
-                cur_stat_idx = status_list.index(b["status"]) if b["status"] in status_list else 0
-                new_stat = b_act1.selectbox("Status", status_list, index=cur_stat_idx, key=f"stat_{b['id']}")
-                if new_stat != b["status"]:
-                    st.session_state.saved_bets[real_idx]["status"] = new_stat
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
-                    st.rerun()
+            st.markdown(f"""
+            <div style="{card_style} border-radius: 12px; padding: 12px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <img src="{away_logo}" width="26" height="26" style="border-radius: 50%;">
+                        <strong style="font-size: 1.05rem;">{game_title}</strong>
+                        <img src="{home_logo}" width="26" height="26" style="border-radius: 50%;">
+                    </div>
+                    <div>{badge_html}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-                if b_act2.button("🗑️", key=f"dl_{b['id']}", use_container_width=True):
-                    st.session_state.saved_bets.pop(real_idx)
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
-                    st.rerun()
+            with st.container():
+                c_row1, c_row2, c_row3, c_row4 = st.columns([3, 3, 2, 1])
+                with c_row1:
+                    st.write(score_str)
+                    st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
+                with c_row2:
+                    st.write(f"**Pick:** `{b.get('bet')}`")
+                    st.caption(f"Risk: **${b.get('risk_dollars', 10.0):.2f}** ➜ Return: **${b.get('payout_dollars', 19.0):.2f}**")
+                with c_row3:
+                    if b.get("bet_category") == "Combo" and b.get("parsed_legs"):
+                        leg_statuses = []
+                        for leg in b["parsed_legs"]:
+                            m_g = find_game_for_bet({"matchup": leg["matchup"]}, games_data)
+                            if m_g and m_g["completed"]:
+                                t_p = m_g["away_score"] + m_g["home_score"]
+                                won = (t_p < leg["line"]) if leg["type"] == "Total" and leg["side"] == "Under" else (t_p > leg["line"] if leg["type"] == "Total" else leg["picked_team"] == (m_g["home_team"] if m_g["home_score"] > m_g["away_score"] else m_g["away_team"]))
+                                leg_statuses.append(f"✅ {m_g['away_short']}" if won else f"❌ {m_g['away_short']}")
+                            elif m_g:
+                                leg_statuses.append(f"⏳ {m_g['away_short']}")
+                        st.write(" • ".join(leg_statuses))
+                    else:
+                        st.caption(f"Type: {b.get('type', 'Single')}")
+                with c_row4:
+                    if st.button("🗑️", key=f"del_slip_{b['id']}", help="Delete this ticket", use_container_width=True):
+                        st.session_state.saved_bets.pop(real_idx)
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
+                        st.rerun()
+
+            st.markdown("<hr style='margin: 8px 0 16px 0; opacity: 0.15;'>", unsafe_allow_html=True)
 
 # PAGE 4: SQUAD LEADERBOARD
 elif menu_choice == "🏆 Squad Leaderboard":
