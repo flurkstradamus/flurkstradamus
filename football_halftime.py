@@ -99,12 +99,21 @@ if "saved_bets" not in st.session_state:
 # ADVANCED STATISTICAL PROJECTION ENGINES
 # ==========================================
 def calculate_win_prob(target_line, projected_total, std_dev=7.0, is_under=True):
+    if std_dev <= 0.2:
+        if is_under:
+            return 1.0 if projected_total < target_line else 0.0
+        else:
+            return 1.0 if projected_total > target_line else 0.0
+            
     std_dev = max(std_dev, 0.75)
     z = (target_line - projected_total) / std_dev
     under_prob = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
     return under_prob if is_under else (1.0 - under_prob)
 
-def calculate_moneyline_prob(home_proj, away_proj, home_record_str, away_record_str):
+def calculate_moneyline_prob(home_proj, away_proj, home_record_str, away_record_str, is_final=False):
+    if is_final:
+        return 1.0 if home_proj > away_proj else 0.0
+        
     spread_exp = home_proj - away_proj
 
     def parse_rec(rec):
@@ -138,6 +147,31 @@ def get_live_games(league_code="nfl"):
             home = next(c for c in competitors if c["homeAway"] == "home")
             away = next(c for c in competitors if c["homeAway"] == "away")
             status_obj = comp["status"]
+            state_text = status_obj["type"]["state"]
+            status_desc = status_obj["type"]["shortDetail"]
+            period = status_obj.get("period", 1)
+
+            # Determine checkpoint
+            if state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower():
+                checkpoint = "Final / Game Completed"
+                is_completed = True
+            elif state_text == "pre":
+                checkpoint = "Pre-Game"
+                is_completed = False
+            else:
+                is_completed = False
+                if period == 1:
+                    checkpoint = "1st Quarter"
+                elif period == 2 and "half" not in status_desc.lower():
+                    checkpoint = "2nd Quarter"
+                elif "half" in status_desc.lower():
+                    checkpoint = "Halftime"
+                elif period == 3:
+                    checkpoint = "3rd Quarter"
+                elif period >= 4:
+                    checkpoint = "4th Quarter / Late Game"
+                else:
+                    checkpoint = "Halftime"
 
             games.append({
                 "id": str(event.get("id", "")),
@@ -150,9 +184,10 @@ def get_live_games(league_code="nfl"):
                 "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
                 "home_score": int(home.get("score", 0)),
                 "away_score": int(away.get("score", 0)),
-                "status": status_obj["type"]["shortDetail"],
-                "completed": status_obj["type"].get("completed", False),
-                "period": status_obj.get("period", 1),
+                "status": status_desc,
+                "checkpoint": checkpoint,
+                "completed": is_completed,
+                "period": period,
                 "displayClock": status_obj.get("displayClock", "0:00")
             })
         return games
@@ -175,6 +210,30 @@ def find_game_for_bet(bet, games):
         if g_h in m_text or g_a in m_text:
             return g_item
     return None
+
+# ==========================================
+# AUTO-SETTLE RESOLUTION LOGIC
+# ==========================================
+def auto_resolve_bets(bets, games):
+    changed = False
+    for b in bets:
+        if b.get("status") == "Pending":
+            match_game = find_game_for_bet(b, games)
+            if match_game and (match_game.get("completed", False) or "final" in match_game["status"].lower()):
+                tot = match_game["away_score"] + match_game["home_score"]
+                b_cat = b.get("bet_category", "Total")
+                if b_cat == "Total" and b.get("target_line") is not None:
+                    is_und = (b.get("bet_direction", "Under") == "Under")
+                    b["status"] = "Won" if ((tot < b["target_line"]) if is_und else (tot > b["target_line"])) else "Lost"
+                    changed = True
+                elif b_cat == "Moneyline" and b.get("picked_team"):
+                    h_won = match_game["home_score"] > match_game["away_score"]
+                    actual_winner = match_game["home_team"] if h_won else match_game["away_team"]
+                    b["status"] = "Won" if (b["picked_team"] == actual_winner) else "Lost"
+                    changed = True
+    if changed:
+        save_bets(bets)
+    return changed
 
 # ==========================================
 # MOBILE-FIRST SIDEBAR NAVIGATION
@@ -212,6 +271,9 @@ menu_choice = st.sidebar.radio(
 @st.fragment(run_every=refresh_interval if auto_refresh else None)
 def render_main_engine():
     games_data = get_live_games(league_param)
+
+    # Automatically resolve pending games on each tick
+    auto_resolve_bets(st.session_state.saved_bets, games_data)
 
     # ------------------------------------------
     # DETAIL PAGE: IN-GAME BET WAR ROOM
@@ -254,7 +316,7 @@ def render_main_engine():
         st.markdown("---")
 
         if bet_category == "Moneyline":
-            h_prob = calculate_moneyline_prob(curr_home, curr_away, live_game_info["home_record"], live_game_info["away_record"])
+            h_prob = calculate_moneyline_prob(curr_home, curr_away, live_game_info["home_record"], live_game_info["away_record"], is_final=is_final)
             picked_home = selected_bet.get("picked_team") == live_game_info["home_team"]
             win_prob = h_prob if picked_home else (1.0 - h_prob)
 
@@ -265,11 +327,20 @@ def render_main_engine():
 
         else:
             is_under = (bet_dir == "Under")
-            decay_sigma = 7.0 if period <= 2 else (4.5 if period == 3 else 2.0)
-            frac_rem = 0.5 if period <= 2 else (0.25 if period == 3 else 0.08)
-            proj_pts = selected_bet.get("model_proj", total_pts + 10.0)
+            if is_final:
+                decay_sigma = 0.01
+                in_game_proj = total_pts
+            elif period >= 4:
+                decay_sigma = 1.8
+                in_game_proj = total_pts + 3.0
+            elif period == 3:
+                decay_sigma = 4.0
+                in_game_proj = total_pts + 9.0
+            else:
+                decay_sigma = 6.5
+                proj_pts = selected_bet.get("model_proj", total_pts + 14.0)
+                in_game_proj = total_pts + ((proj_pts - total_pts) * 0.5)
 
-            in_game_proj = total_pts + ((proj_pts - total_pts) * frac_rem) if proj_pts > total_pts else total_pts + 3.0
             prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under)
             cushion = target_line - total_pts if is_under else total_pts - target_line
 
@@ -282,48 +353,66 @@ def render_main_engine():
         return
 
     # ------------------------------------------
-    # PAGE 1: BRACKETED SINGLE GAME ENGINE
+    # PAGE 1: SINGLE GAME ENGINE
     # ------------------------------------------
     if menu_choice == "Single Game Engine":
-        st.subheader("⚡ Bracketed Single Game Edge Engine")
+        st.subheader("⚡ Single Game Edge & Status Engine")
 
         if games_data:
             game_options = [f"{g['away_team']} @ {g['home_team']} ({g['status']})" for g in games_data]
             selected_idx = st.selectbox("Select Active Matchup", range(len(game_options)), format_func=lambda x: game_options[x])
             g = games_data[selected_idx]
             g_id = g.get("id", str(selected_idx))
+            detected_stage = g["checkpoint"]
         else:
             st.warning("Manual Matchup Mode")
-            g = {"id": "man", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3"}
+            g = {"id": "man", "home_team": "Home", "away_team": "Away", "home_score": 14, "away_score": 10, "status": "Halftime", "home_record": "6-2", "away_record": "5-3", "checkpoint": "Halftime", "completed": False}
             g_id = "man"
+            detected_stage = "Halftime"
 
-        bracket_stage = st.select_slider(
-            "Current Game Checkpoint / Bracket",
-            options=["Pre-Game", "After 1st Quarter", "Halftime", "After 3rd Quarter"],
-            value="Halftime"
+        all_stages = [
+            "Pre-Game",
+            "1st Quarter",
+            "Halftime",
+            "3rd Quarter",
+            "4th Quarter / Late Game",
+            "Final / Game Completed"
+        ]
+
+        default_stage_idx = all_stages.index(detected_stage) if detected_stage in all_stages else 2
+        bracket_stage = st.selectbox(
+            "Game Checkpoint / Period",
+            options=all_stages,
+            index=default_stage_idx,
+            help="Auto-detected from live ESPN status. Adjust manually if projecting ahead."
         )
 
         c1, c2 = st.columns(2)
         with c1:
             home_team = st.text_input("Home Team", value=g["home_team"], key=f"h_{g_id}")
             away_team = st.text_input("Away Team", value=g["away_team"], key=f"a_{g_id}")
-            home_rec = st.text_input(f"{home_team} Season Record", value=g.get("home_record", "0-0"), key=f"h_rec_{g_id}")
-            away_rec = st.text_input(f"{away_team} Season Record", value=g.get("away_record", "0-0"), key=f"a_rec_{g_id}")
+            home_rec = st.text_input(f"{home_team} Record", value=g.get("home_record", "0-0"), key=f"h_rec_{g_id}")
+            away_rec = st.text_input(f"{away_team} Record", value=g.get("away_record", "0-0"), key=f"a_rec_{g_id}")
             pregame_total = st.number_input("Pre-Game Baseline Total", value=47.5, step=0.5, key=f"pre_{g_id}")
 
         with c2:
             sc1, sc2 = st.columns(2)
             h_pts = sc1.number_input(f"{home_team} Score", min_value=0, value=g["home_score"], key=f"hp_{g_id}")
             a_pts = sc2.number_input(f"{away_team} Score", min_value=0, value=g["away_score"], key=f"ap_{g_id}")
-            market_line = st.number_input("Market Total Offered (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
+            market_line = st.number_input("Market Total Line (pts)", value=round(pregame_total) + 0.5, step=0.5, key=f"mkt_{g_id}")
 
         pts_scored = h_pts + a_pts
         margin = abs(h_pts - a_pts)
+        is_completed = (bracket_stage == "Final / Game Completed")
 
-        if bracket_stage == "Pre-Game":
+        # Dynamic Checkpoint Variance & Projections
+        if is_completed:
+            final_proj = float(pts_scored)
+            std_bracket = 0.01
+        elif bracket_stage == "Pre-Game":
             final_proj = pregame_total
             std_bracket = 8.5
-        elif bracket_stage == "After 1st Quarter":
+        elif bracket_stage == "1st Quarter":
             pace_diff = pts_scored - (pregame_total * 0.25)
             final_proj = pregame_total + (pace_diff * 0.40)
             std_bracket = 7.5
@@ -332,15 +421,19 @@ def render_main_engine():
             script = -3.5 if margin >= 17 else (-1.5 if margin >= 10 else (1.5 if margin <= 3 else 0.0))
             final_proj = pts_scored + (pregame_total * 0.475) + (pace_diff * 0.30) + script + 0.5
             std_bracket = 6.0
-        else:
+        elif bracket_stage == "3rd Quarter":
             pace_diff = pts_scored - (pregame_total * 0.775)
             final_proj = pts_scored + (pregame_total * 0.225) + (pace_diff * 0.20)
-            std_bracket = 3.5
+            std_bracket = 4.0
+        else:  # 4th Quarter / Late Game
+            rem_points_exp = max((pregame_total * 0.10) - (pts_scored * 0.05), 1.0)
+            final_proj = pts_scored + rem_points_exp
+            std_bracket = 1.8
 
         st.markdown("---")
         st.subheader(f"📊 Projected Consensus ({bracket_stage})")
 
-        home_win_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), home_rec, away_rec)
+        home_win_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), home_rec, away_rec, is_final=is_completed)
         away_win_prob = 1.0 - home_win_prob
 
         m1, m2, m3 = st.columns(3)
@@ -351,17 +444,20 @@ def render_main_engine():
         st.markdown("---")
         st.subheader("🎯 Suggested Edge Tiers")
 
-        line_good = round(final_proj + 6.5) + 0.5
-        line_better = round(final_proj + 3.5) + 0.5
-        prob_good = calculate_win_prob(line_good, final_proj, std_bracket, is_under=True)
-        prob_better = calculate_win_prob(line_better, final_proj, std_bracket, is_under=True)
+        if is_completed:
+            st.info(f"🏁 **Game is Finished!** Final Total: **{pts_scored} Points** — Winner: **{home_team if h_pts > a_pts else away_team}**")
+        else:
+            line_good = round(final_proj + (5.5 if std_bracket > 3.0 else 2.5)) + 0.5
+            line_better = round(final_proj + (3.0 if std_bracket > 3.0 else 1.0)) + 0.5
+            prob_good = calculate_win_prob(line_good, final_proj, std_bracket, is_under=True)
+            prob_better = calculate_win_prob(line_better, final_proj, std_bracket, is_under=True)
 
-        c_t1, c_t2, c_t3 = st.columns(3)
-        c_t1.success(f"🟢 **Safe Floor: Under {line_good}**\n\nWin Prob: **{prob_good * 100:.1f}%**")
-        c_t2.info(f"🟡 **Balanced: Under {line_better}**\n\nWin Prob: **{prob_better * 100:.1f}%**")
-        fav_team = home_team if home_win_prob > 0.5 else away_team
-        fav_prob = max(home_win_prob, away_win_prob)
-        c_t3.warning(f"🔥 **Straight-Up Moneyline: {fav_team}**\n\nWin Prob: **{fav_prob * 100:.1f}%**")
+            c_t1, c_t2, c_t3 = st.columns(3)
+            c_t1.success(f"🟢 **Safe Floor: Under {line_good}**\n\nWin Prob: **{prob_good * 100:.1f}%**")
+            c_t2.info(f"🟡 **Balanced: Under {line_better}**\n\nWin Prob: **{prob_better * 100:.1f}%**")
+            fav_team = home_team if home_win_prob > 0.5 else away_team
+            fav_prob = max(home_win_prob, away_win_prob)
+            c_t3.warning(f"🔥 **Moneyline: {fav_team}**\n\nWin Prob: **{fav_prob * 100:.1f}%**")
 
         st.markdown("---")
         st.subheader(f"🔒 Lock In Ticket as {current_user}")
@@ -372,7 +468,8 @@ def render_main_engine():
 
             if bet_type == "Game Total":
                 side = f2.selectbox("Side", ["Under", "Over"])
-                strike = f3.number_input("Line (pts)", value=float(line_better), step=0.5)
+                default_strike = round(final_proj + 2.5) + 0.5 if not is_completed else float(pts_scored)
+                strike = f3.number_input("Line (pts)", value=float(default_strike), step=0.5)
                 picked_t = None
             else:
                 side = "Moneyline"
@@ -394,6 +491,14 @@ def render_main_engine():
                     prob_calc = home_win_prob if picked_t == home_team else away_win_prob
                     bet_label = f"{picked_t} ML"
 
+                initial_status = "Pending"
+                if is_completed:
+                    if bet_type == "Game Total":
+                        initial_status = "Won" if ((pts_scored < strike) if side == "Under" else (pts_scored > strike)) else "Lost"
+                    else:
+                        actual_winner = home_team if h_pts > a_pts else away_team
+                        initial_status = "Won" if (picked_t == actual_winner) else "Lost"
+
                 ticket_record = {
                     "id": str(datetime.now().timestamp()),
                     "user": current_user.strip() if current_user.strip() else "Flurk",
@@ -412,7 +517,7 @@ def render_main_engine():
                     "model_proj": round(final_proj, 1),
                     "bracket": bracket_stage,
                     "win_prob": f"{prob_calc * 100:.1f}%",
-                    "status": "Pending",
+                    "status": initial_status,
                     "notes": ticket_notes
                 }
                 st.session_state.saved_bets.insert(0, ticket_record)
@@ -440,10 +545,12 @@ def render_main_engine():
                 d_h, d_a = leg_g["home_team"], leg_g["away_team"]
                 d_h_pts, d_a_pts = leg_g["home_score"], leg_g["away_score"]
                 d_h_rec, d_a_rec = leg_g.get("home_record", "0-0"), leg_g.get("away_record", "0-0")
+                leg_completed = leg_g["completed"]
             else:
                 d_h, d_a = f"Home {i+1}", f"Away {i+1}"
                 d_h_pts, d_a_pts = 14, 10
                 d_h_rec, d_a_rec = "5-2", "4-3"
+                leg_completed = False
 
             col_a, col_b, col_c = st.columns(3)
             wager_cat = col_a.selectbox(f"Wager Type (Leg {i+1})", ["Game Total", "Straight Up Winner"], key=f"wtype_{i}")
@@ -456,7 +563,7 @@ def render_main_engine():
             else:
                 winner = col_b.selectbox("Pick Winner", [d_h, d_a], key=f"lwinner_{i}")
                 strike = None
-                h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec)
+                h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec, is_final=leg_completed)
                 leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
                 leg_desc = f"{d_a} @ {d_h}: {winner} ML"
                 col_c.write(f"Estimated Win: **{leg_prob * 100:.1f}%**")
@@ -505,27 +612,12 @@ def render_main_engine():
         b_col1, b_col2 = st.columns([3, 1])
         user_filter = b_col1.selectbox("Filter Bettor", ["All Bettors"] + sorted(list({b.get("user", "Flurk") for b in st.session_state.saved_bets})))
 
-        if b_col2.button("⚡ Auto-Resolve Finals"):
-            res_count = 0
-            for b in st.session_state.saved_bets:
-                if b.get("status") == "Pending":
-                    match_game = find_game_for_bet(b, games_data)
-                    if match_game and (match_game.get("completed", False) or "final" in match_game["status"].lower()):
-                        tot = match_game["away_score"] + match_game["home_score"]
-                        b_cat = b.get("bet_category", "Total")
-                        if b_cat == "Total" and b.get("target_line") is not None:
-                            is_und = (b.get("bet_direction", "Under") == "Under")
-                            b["status"] = "Won" if ((tot < b["target_line"]) if is_und else (tot > b["target_line"])) else "Lost"
-                            res_count += 1
-                        elif b_cat == "Moneyline" and b.get("picked_team"):
-                            h_won = match_game["home_score"] > match_game["away_score"]
-                            actual_winner = match_game["home_team"] if h_won else match_game["away_team"]
-                            b["status"] = "Won" if (b["picked_team"] == actual_winner) else "Lost"
-                            res_count += 1
-            if res_count > 0:
-                save_bets(st.session_state.saved_bets)
-                st.success(f"Resolved {res_count} tickets!")
+        if b_col2.button("⚡ Force Grade Finished Games"):
+            if auto_resolve_bets(st.session_state.saved_bets, games_data):
+                st.success("Updated finished games to Won/Lost!")
                 st.rerun()
+            else:
+                st.info("All finished games are already up to date.")
 
         active_tickets = [b for b in st.session_state.saved_bets if user_filter == "All Bettors" or b.get("user", "Flurk") == user_filter]
 
@@ -629,54 +721,37 @@ def render_main_engine():
 
         st.markdown("### 1. In-Game Pace & Drift Modeling")
         st.write(
-            "Sportsbooks typically project second-half points using simple static percentages (e.g. dividing the total by 2). "
-            "Flurkstradamus calculates pace deviation and applies game-script decay across 4 distinct game checkpoints:"
+            "Sportsbooks typically project points using static half-time divisions. "
+            "Flurkstradamus continuously recalculates variance and drift across 6 distinct states:"
         )
 
         st.markdown(
             """
-            * **Pre-Game Stage:** $Baseline = Pregame\ Total$, with initial standard deviation $\sigma = 8.5$.
-            * **After 1st Quarter:** Measures actual scoring versus expected 25% pace:
+            * **Pre-Game:** Baseline = Open Total, $\sigma = 8.5$.
+            * **1st Quarter:** Evaluates scoring pace relative to a 25% game duration baseline:
               $$Pace\ Delta = Points\ Scored - (Pregame \times 0.25)$$
-              Adjusts the final projection by 40% of the pace difference ($\sigma = 7.5$).
-            * **Halftime:** Analyzes point differential (blowout vs close game) and possession turnover:
+              Adjusts the final projection by 40% of the early deviation ($\sigma = 7.5$).
+            * **Halftime:** Factor in point margins and game script:
               $$Projected\ 2H = (Pregame \times 0.475) + (Pace\ Delta \times 0.30) + Game\ Script\ Modifier$$
-              * *Blowout ($\ge 17$ pt margin):* $-3.5$ pts (teams run the clock out).
+              * *Blowout ($\ge 17$ pt margin):* $-3.5$ pts (clock bleed).
               * *Decisive ($10-16$ pt margin):* $-1.5$ pts.
-              * *Close ($0-3$ pt margin):* $+1.5$ pts (two-minute drills and late clock stops).
-            * **After 3rd Quarter:** Locks 75% of actual scoring, projecting only the remaining 22.5% volume with tight variance ($\sigma = 3.5$).
+              * *Close ($0-3$ pt margin):* $+1.5$ pts (stopping clock, hurry-up drives).
+            * **3rd Quarter:** Locks 75% of actual scoring ($\sigma = 4.0$).
+            * **4th Quarter / Late Game:** Closes remaining scoring volume to actual game pace ($\sigma = 1.8$).
+            * **Final / Completed:** All remaining variance decays to zero ($\sigma \to 0$); probabilities resolve to 100% or 0%.
             """
         )
 
         st.markdown("---")
         st.markdown("### 2. Normal CDF & Win Probability Calculation")
-        st.write(
-            "Every edge percentage uses a cumulative distribution function (CDF) comparing the target strike line ($L$) against the model's projected total ($\mu$):"
-        )
+        st.write("Target line comparison uses the cumulative normal distribution function:")
         st.latex(r"Z = \frac{L - \mu}{\sigma}")
         st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
-        st.write(
-            "For Over bets, $P(\\text{Over}) = 1 - P(\\text{Under})$. As the game progresses and remaining time decreases, "
-            "variance ($\sigma$) decays from $8.5$ down to $2.0$, causing probabilities to harden toward 0% or 100%."
-        )
 
         st.markdown("---")
         st.markdown("### 3. Straight-Up Moneyline / Win Expectancy Engine")
-        st.write(
-            "Moneyline win expectancy combines the live projected scoring margin with regular season win-rate differentials:"
-        )
-        st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Projected} - \text{Away Projected}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
+        st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
         st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
-        st.write(
-            "This logistic sigmoid curve translates the effective scoring advantage into a win percentage calibrated for college and professional football outcomes."
-        )
 
-        st.markdown("---")
-        st.markdown("### 4. Multi-Leg Combo Compound Math")
-        st.write(
-            "For 2 to 5 leg combo tickets, the overall probability is the product of all independent leg probabilities:"
-        )
-        st.latex(r"P(\text{Combo}) = \prod_{i=1}^{n} P(\text{Leg}_i) = P(\text{Leg}_1) \times P(\text{Leg}_2) \times \dots \times P(\text{Leg}_n)")
-
-# Launch the live fragment engine
+# Launch the live engine
 render_main_engine()
