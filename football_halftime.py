@@ -65,79 +65,46 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
-    /* TIGHT RECOMMENDATION ROWS */
-    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] {
-        border-radius: 8px !important;
-        border: 1px solid rgba(255, 255, 255, 0.12) !important;
-        background-color: rgba(255, 255, 255, 0.02) !important;
-        padding: 4px 10px !important;
-        margin-top: 2px !important;
-        margin-bottom: 2px !important;
-        min-height: unset !important;
-        height: auto !important;
+    /* PURE 1-LINE COMPACT RECOMMENDATION CARD */
+    .rec-single-line-card {
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background-color: rgba(255, 255, 255, 0.02);
+        padding: 4px 10px;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+        line-height: 1.2;
     }
-    div.rec-card-container div[data-testid="stVerticalBlockBorderWrapper"] > div {
-        padding: 0 !important;
-        margin: 0 !important;
-        gap: 0 !important;
-    }
-    div.rec-card-container div[data-testid="stMarkdownContainer"] p {
-        margin: 0 !important;
-        padding: 0 !important;
-        line-height: 1.2 !important;
-        font-size: 0.85rem !important;
-    }
-    div.rec-card-container div[data-testid="stHorizontalBlock"] {
-        align-items: center !important;
-        gap: 0.25rem !important;
-    }
-
-    /* PLAIN [remove] TEXT BUTTON MATCHING PROBABILITY FONT SIZE */
-    div.rec-card-container div[data-testid="stButton"] {
-        margin: 0 !important;
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: flex-end !important;
-    }
-    div.rec-card-container div[data-testid="stButton"] button {
-        float: right !important;
-        padding: 0px !important;
-        min-height: unset !important;
-        height: auto !important;
-        width: auto !important;
-        font-size: 0.75rem !important;
-        line-height: 1 !important;
-        border: none !important;
-        background: transparent !important;
-        color: rgba(239, 68, 68, 0.7) !important;
-        cursor: pointer !important;
-        margin: 0 !important;
-        box-shadow: none !important;
-    }
-    div.rec-card-container div[data-testid="stButton"] button p {
-        font-size: 0.75rem !important;
-        line-height: 1 !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        font-weight: 500 !important;
-    }
-    div.rec-card-container div[data-testid="stButton"] button:hover {
-        color: #ef4444 !important;
-        background: transparent !important;
-        border: none !important;
-        text-decoration: underline !important;
-    }
-
-    .rec-item-row {
+    .rec-left-wrap {
         display: flex;
         align-items: center;
         gap: 7px;
-        flex-wrap: wrap;
-        margin: 0 !important;
+    }
+    .rec-right-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* EDIT LINK BUTTON */
+    .edit-link-btn div[data-testid="stButton"] button {
+        background: transparent !important;
+        border: none !important;
         padding: 0 !important;
-        line-height: 1.2 !important;
-        font-size: 0.85rem !important;
+        min-height: unset !important;
+        height: auto !important;
+        color: #38bdf8 !important;
+        font-size: 0.78rem !important;
+        font-weight: 600 !important;
+        cursor: pointer !important;
+        text-decoration: underline !important;
+    }
+    .edit-link-btn div[data-testid="stButton"] button:hover {
+        color: #0284c7 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -173,6 +140,8 @@ if "ai_recommended_combo" not in st.session_state:
     st.session_state.ai_recommended_combo = None
 if "active_nav_page" not in st.session_state:
     st.session_state.active_nav_page = "2-12 Leg Combo Builder"
+if "editing_ai_combo" not in st.session_state:
+    st.session_state.editing_ai_combo = False
 
 # Access Gatekeeper
 if not st.session_state.authenticated:
@@ -296,7 +265,6 @@ def get_extended_games(league_code="nfl"):
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
 
-# 1. Bettor Handle directly above navigation
 current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
 
 st.sidebar.markdown("---")
@@ -805,58 +773,79 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         break
 
             st.session_state.ai_recommended_combo = selected_ai_legs
+            st.session_state.editing_ai_combo = False
 
-        # INTEGRATED ULTRA-COMPACT CARDS ([remove] TEXT AT THE END OF ROW)
+        # PURE 1-LINE HTML ROWS + SUBTLE TEXT 'EDIT' LINK
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
             for l_item in st.session_state.ai_recommended_combo:
                 comp_p *= l_item["prob"]
 
-            st.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
+            # Header with small 'Edit' text link beside it
+            t_col1, t_col2 = st.columns([8.5, 1.5], vertical_alignment="center")
+            with t_col1:
+                st.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
+            with t_col2:
+                st.markdown('<div class="edit-link-btn">', unsafe_allow_html=True)
+                toggle_label = "Done" if st.session_state.editing_ai_combo else "Edit"
+                if st.button(toggle_label, key="toggle_edit_ai"):
+                    st.session_state.editing_ai_combo = not st.session_state.editing_ai_combo
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
-            # Dedicated container class for zero-gap targeting
-            st.markdown('<div class="rec-card-container">', unsafe_allow_html=True)
-            for idx_ai, l_ai in enumerate(list(st.session_state.ai_recommended_combo)):
-                g_match = games_data[l_ai["matchup_idx"]]
-                leg_key = l_ai.get("leg_id", f"leg_{idx_ai}_{l_ai['matchup_idx']}")
-                detail_str = l_ai.get("detail", "")
-
+            # Interactive Radio Button Edit Drawer (Visible only when 'Edit' is clicked)
+            if st.session_state.editing_ai_combo:
                 with st.container(border=True):
-                    c_left, c_mid, c_rem = st.columns([5.6, 3.8, 0.6], vertical_alignment="center")
-                    
-                    with c_left:
-                        st.markdown(f"""
-                        <div class="rec-item-row">
-                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.70rem; padding: 1px 6px; border-radius: 4px;">
-                                LEG {idx_ai+1}
-                            </span>
-                            <img src="{g_match['away_logo']}" width="18" height="18" style="border-radius: 50%;">
-                            <strong>{g_match['away_short']}</strong>
-                            <span style="opacity: 0.4;">@</span>
-                            <img src="{g_match['home_logo']}" width="18" height="18" style="border-radius: 50%;">
-                            <strong>{g_match['home_short']}</strong>
-                            <span style="opacity: 0.55; font-size: 0.75rem;">({g_match.get('kickoff', g_match['status'])})</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with c_mid:
-                        st.markdown(f"""
-                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0;">
-                            <strong style="color: #4ade80; font-size: 0.88rem;">{l_ai['desc']}</strong>
-                            <span style="opacity: 0.6; font-size: 0.75rem;">({detail_str})</span>
-                            <span style="background-color: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
-                                {l_ai['prob']*100:.1f}%
-                            </span>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                    with c_rem:
-                        if st.button("[remove]", key=f"btn_remove_{leg_key}", help=f"Remove Leg {idx_ai+1}"):
-                            st.session_state.ai_recommended_combo = [item for item in st.session_state.ai_recommended_combo if item.get("leg_id") != l_ai.get("leg_id")]
+                    leg_options = [
+                        f"Leg {k+1}: {item['desc']} ({games_data[item['matchup_idx']]['away_short']}@{games_data[item['matchup_idx']]['home_short']})"
+                        for k, item in enumerate(st.session_state.ai_recommended_combo)
+                    ]
+                    selected_leg_idx = st.radio(
+                        "Select a leg to remove:",
+                        options=range(len(leg_options)),
+                        format_func=lambda x: leg_options[x],
+                        label_visibility="collapsed"
+                    )
+                    r_c1, r_c2 = st.columns([2, 1], vertical_alignment="center")
+                    with r_c1:
+                        if st.button("🗑️ Remove Selected Leg", use_container_width=True):
+                            st.session_state.ai_recommended_combo.pop(selected_leg_idx)
+                            if not st.session_state.ai_recommended_combo:
+                                st.session_state.editing_ai_combo = False
+                            st.rerun()
+                    with r_c2:
+                        if st.button("Done Editing", use_container_width=True):
+                            st.session_state.editing_ai_combo = False
                             st.rerun()
 
-            st.markdown('</div>', unsafe_allow_html=True)
+            # Render each leg on a pure 1-line HTML block with zero distortion
+            for idx_ai, l_ai in enumerate(st.session_state.ai_recommended_combo):
+                g_match = games_data[l_ai["matchup_idx"]]
+                detail_str = l_ai.get("detail", "")
+
+                st.markdown(f"""
+                <div class="rec-single-line-card">
+                    <div class="rec-left-wrap">
+                        <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.70rem; padding: 1px 6px; border-radius: 4px;">
+                            LEG {idx_ai+1}
+                        </span>
+                        <img src="{g_match['away_logo']}" width="18" height="18" style="border-radius: 50%;">
+                        <strong style="font-size: 0.85rem;">{g_match['away_short']}</strong>
+                        <span style="opacity: 0.4; font-size: 0.85rem;">@</span>
+                        <img src="{g_match['home_logo']}" width="18" height="18" style="border-radius: 50%;">
+                        <strong style="font-size: 0.85rem;">{g_match['home_short']}</strong>
+                        <span style="opacity: 0.55; font-size: 0.75rem;">({g_match.get('kickoff', g_match['status'])})</span>
+                    </div>
+                    <div class="rec-right-wrap">
+                        <strong style="color: #4ade80; font-size: 0.85rem;">{l_ai['desc']}</strong>
+                        <span style="opacity: 0.6; font-size: 0.75rem;">({detail_str})</span>
+                        <span style="background-color: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
+                            {l_ai['prob']*100:.1f}%
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
             m_rec1, m_rec2 = st.columns([2, 1], vertical_alignment="center")
             m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta=f"{len(st.session_state.ai_recommended_combo)} Legs Total")
