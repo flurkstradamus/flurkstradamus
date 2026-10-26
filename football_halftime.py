@@ -698,9 +698,7 @@ elif menu_choice == "🔥 Live Squad Feed":
                     cat_label = b.get("bet_category", b.get("type", "Single"))
                     st.write(f"**Type:** `{cat_label}`")
 
-# ==========================================
-# 4. THE LOCKER ROOM (EDIT, REMOVE, EASTERN TIME, REPLIES, REACTIONS)
-# ==========================================
+# 4. THE LOCKER ROOM
 elif menu_choice == "💬 The Locker Room":
     st.subheader("💬 The Locker Room")
     st.caption("Squad banter, threaded replies, reactions, and editable posts.")
@@ -1092,7 +1090,7 @@ elif menu_choice == "💡 How It Works":
         st.write("The Single Game Engine connects live to ESPN scoreboard endpoints to track games in real-time.")
         st.markdown("""
         * **Live Line Drift Tracking:** Compares opening sportsbook lines against real-time scoring to compute live totals, 2H totals, and ATS margins.
-        * **The Risk vs. Return Dial:** Adjust the slider to set your model objective from Safe Floor up to High Profit.
+        * **The Risk vs. Return Dial:** Adjust the slider to set your model objective from Safe Floor up to High Profit. Lines and Win Probabilities recalibrate dynamically.
         * **One-Click Loading:** Press '📥 Load to Form' on any card to immediately populate your slip.
         """)
 
@@ -1636,13 +1634,29 @@ elif menu_choice == "Single Game Engine":
         m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%", delta=f"{ml_swing:+.1f}% momentum")
         m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line")
 
-    # TIERED STRATEGY ENGINE
+    # =========================================================================
+    # TIERED STRATEGY ENGINE WITH FULL FILTER & OBJECTIVE RECALIBRATION
+    # =========================================================================
     with st.expander("🤖 AI Strategy Engine (Adjustable Risk vs. Return Scale)", expanded=True):
         col_scope, col_type_filter = st.columns(2)
         scope_choice = col_scope.selectbox("Target Slate", ["🎯 Focus on Selected Game Above", "⚡ Scan Full Slate for Highest Discrepancy"])
-        filter_choice = col_type_filter.selectbox("Type of Bet", ["⚡ Let the System Pick (All Markets Combined)", "📊 Full Game Total Score Over/Under", "⏱️ 2nd Half Total Points", "🏆 Team Win/Loser (Moneyline)", "🛡️ Spread (ATS Cover)"])
+        filter_choice = col_type_filter.selectbox("Type of Bet", [
+            "⚡ Let the System Pick (All Markets Combined)", 
+            "📊 Full Game Total Score Over/Under", 
+            "⏱️ 2nd Half Total Points", 
+            "🏆 Team Win/Loser (Moneyline)", 
+            "🛡️ Spread (ATS Cover)"
+        ])
         
-        strategy_dial = st.select_slider("Model Objective", options=["🛡️ Safe Floor (High Win %, Low Drawdown)", "⚖️ Balanced Edge (+EV Sweet Spot)", "🚀 High Profit (Max Multiplier & Value Underdogs)"], value="⚖️ Balanced Edge (+EV Sweet Spot)")
+        strategy_dial = st.select_slider(
+            "Model Objective", 
+            options=[
+                "🛡️ Safe Floor (High Win %, Low Drawdown)", 
+                "⚖️ Balanced Edge (+EV Sweet Spot)", 
+                "🚀 High Profit (Max Multiplier & Value Underdogs)"
+            ], 
+            value="⚖️ Balanced Edge (+EV Sweet Spot)"
+        )
 
         active_game_for_strat = g
         strat_game_index = st.session_state.single_selected_idx
@@ -1652,70 +1666,292 @@ elif menu_choice == "Single Game Engine":
                 active_game_for_strat = max(live_pool, key=lambda x: abs((x["home_score"] + x["away_score"] + (x.get("market_ou", 47.5)*0.475)) - x.get("market_ou", 47.5)))
                 strat_game_index = games_data.index(active_game_for_strat)
 
-        strat_candidates = []
         tg_away_logo = active_game_for_strat.get("away_logo", DEFAULT_LOGO)
         tg_home_logo = active_game_for_strat.get("home_logo", DEFAULT_LOGO)
         tg_away_short = active_game_for_strat.get("away_short", "AWAY")
         tg_home_short = active_game_for_strat.get("home_short", "HOME")
         tg_date_str = active_game_for_strat.get("kickoff", active_game_for_strat.get("status", "Pre-Game"))
 
+        # Baseline spread metrics
         s_val = market_spd if home_cover_exp >= 0.5 else -market_spd
         s_team = active_game_for_strat["home_team"] if home_cover_exp >= 0.5 else active_game_for_strat["away_team"]
         s_abbr = tg_home_short if home_cover_exp >= 0.5 else tg_away_short
-        s_p = home_cover_exp if home_cover_exp >= 0.5 else away_cover_exp
 
-        strat_candidates.append({
-            "type": "Spread (Consensus Line)",
-            "pick": f"{s_abbr} {s_val:+}",
-            "prob": s_p,
-            "category": "Spread",
-            "side": "Spread",
-            "target_line": s_val,
-            "picked_team": s_team,
-            "game_index": strat_game_index,
-            "est_payout_multiplier": 1.91,
-            "roi_label": "+91% Profit",
-            "drift_info": f"Expected Margin: {spread_drift:+.1f} pts vs line",
-            "rationale": f"High value spread cover on {s_abbr} paying standard 1:1 odds."
-        })
+        # Dynamic Calibration Factors based on Model Objective dial
+        if "Safe Floor" in strategy_dial:
+            obj_tag = "Safe Floor"
+            p_multiplier_spread = 1.55
+            p_multiplier_total = 1.55
+            p_multiplier_2h = 1.55
+            spd_shift = 3.5 if s_val > 0 else 4.0
+            tot_shift = 4.5
+            second_shift = 3.5
+        elif "High Profit" in strategy_dial:
+            obj_tag = "High Profit"
+            p_multiplier_spread = 2.45
+            p_multiplier_total = 2.40
+            p_multiplier_2h = 2.45
+            spd_shift = -3.5 if s_val > 0 else -4.0
+            tot_shift = -3.5
+            second_shift = -3.5
+        else: # Balanced Edge (+EV)
+            obj_tag = "Balanced Edge"
+            p_multiplier_spread = 1.91
+            p_multiplier_total = 1.91
+            p_multiplier_2h = 1.91
+            spd_shift = 0.0
+            tot_shift = 0.0
+            second_shift = 0.0
 
-        line_base_2h = round(live_2h_proj) + 0.5
-        p_base_2h = calculate_win_prob(line_base_2h, live_2h_proj, 5.0, is_under=True)
-        strat_candidates.append({
-            "type": "2nd Half Total (Model Consensus)",
-            "pick": f"2H Under {line_base_2h}",
-            "prob": p_base_2h,
-            "category": "2H Total",
-            "side": "Under",
-            "target_line": line_base_2h,
-            "picked_team": None,
-            "game_index": strat_game_index,
-            "est_payout_multiplier": 1.91,
-            "roi_label": "+91% Profit",
-            "drift_info": f"2H Proj: {live_2h_proj:.1f} pts",
-            "rationale": "Direct statistical regression model projection for second half volume."
-        })
+        # SPREAD RECALIBRATION
+        line_spd_1 = s_val + spd_shift
+        p_spd_1 = calculate_spread_prob(live_proj_margin if s_team == active_game_for_strat["home_team"] else -live_proj_margin, line_spd_1, std_bracket)
+        line_spd_2 = s_val + (spd_shift + 1.5)
+        p_spd_2 = calculate_spread_prob(live_proj_margin if s_team == active_game_for_strat["home_team"] else -live_proj_margin, line_spd_2, std_bracket)
+        line_spd_3 = s_val + (spd_shift - 1.5)
+        p_spd_3 = calculate_spread_prob(live_proj_margin if s_team == active_game_for_strat["home_team"] else -live_proj_margin, line_spd_3, std_bracket)
 
+        spread_bets = [
+            {
+                "type": f"Spread ({obj_tag} Consensus)",
+                "pick": f"{s_abbr} {line_spd_1:+}",
+                "prob": p_spd_1,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": line_spd_1,
+                "picked_team": s_team,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": p_multiplier_spread,
+                "roi_label": f"+{int((p_multiplier_spread-1)*100)}% Profit",
+                "drift_info": f"Expected Margin: {spread_drift:+.1f} pts vs line",
+                "rationale": f"Calibrated for {obj_tag} expectancy."
+            },
+            {
+                "type": f"Spread ({obj_tag} Alternate Buffer)",
+                "pick": f"{s_abbr} {line_spd_2:+}",
+                "prob": p_spd_2,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": line_spd_2,
+                "picked_team": s_team,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": round(max(p_multiplier_spread - 0.20, 1.40), 2),
+                "roi_label": f"+{int((max(p_multiplier_spread - 0.20, 1.40)-1)*100)}% Profit",
+                "drift_info": "Additional buffer bought on alternate spread",
+                "rationale": f"High protection cushion on {s_abbr}."
+            },
+            {
+                "type": f"Spread ({obj_tag} Aggressive Target)",
+                "pick": f"{s_abbr} {line_spd_3:+}",
+                "prob": p_spd_3,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": line_spd_3,
+                "picked_team": s_team,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": round(p_multiplier_spread + 0.35, 2),
+                "roi_label": f"+{int(((p_multiplier_spread + 0.35)-1)*100)}% Profit",
+                "drift_info": "Accelerated cover target",
+                "rationale": f"Enhanced payout margin play on {s_abbr}."
+            }
+        ]
+
+        # FULL GAME TOTAL RECALIBRATION
+        tot_dir = "Under" if delta_full <= 0 else "Over"
+        base_tot_1 = round(final_proj + tot_shift) + 0.5
+        p_tot_1 = calculate_win_prob(base_tot_1, final_proj, std_bracket, is_under=(tot_dir == "Under"))
+        base_tot_2 = base_tot_1 + 2.5
+        p_tot_2 = calculate_win_prob(base_tot_2, final_proj, std_bracket, is_under=(tot_dir == "Under"))
+        base_tot_3 = base_tot_1 - 2.5
+        p_tot_3 = calculate_win_prob(base_tot_3, final_proj, std_bracket, is_under=(tot_dir == "Under"))
+
+        full_totals_bets = [
+            {
+                "type": f"Full Game Total ({obj_tag} {tot_dir})",
+                "pick": f"{tot_dir} {base_tot_1}",
+                "prob": p_tot_1,
+                "category": "Total",
+                "side": tot_dir,
+                "target_line": base_tot_1,
+                "picked_team": None,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": p_multiplier_total,
+                "roi_label": f"+{int((p_multiplier_total-1)*100)}% Profit",
+                "drift_info": f"Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} pace shift)",
+                "rationale": f"Recalibrated for {obj_tag} pacing."
+            },
+            {
+                "type": f"Full Game Total ({obj_tag} Alternate Line)",
+                "pick": f"{tot_dir} {base_tot_2}",
+                "prob": p_tot_2,
+                "category": "Total",
+                "side": tot_dir,
+                "target_line": base_tot_2,
+                "picked_team": None,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": round(max(p_multiplier_total - 0.20, 1.40), 2) if tot_dir == "Under" else round(p_multiplier_total + 0.35, 2),
+                "roi_label": f"+{int((max(p_multiplier_total - 0.20, 1.40)-1)*100)}% Profit",
+                "drift_info": "Alternate total boundary threshold",
+                "rationale": f"Targeting adjusted probability cushion."
+            },
+            {
+                "type": f"Full Game Total ({obj_tag} Aggressive Threshold)",
+                "pick": f"{tot_dir} {base_tot_3}",
+                "prob": p_tot_3,
+                "category": "Total",
+                "side": tot_dir,
+                "target_line": base_tot_3,
+                "picked_team": None,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": round(p_multiplier_total + 0.35, 2) if tot_dir == "Under" else round(max(p_multiplier_total - 0.20, 1.40), 2),
+                "roi_label": f"+{int(((p_multiplier_total + 0.35)-1)*100)}% Profit",
+                "drift_info": "Max multiplier volume threshold",
+                "rationale": "High value undercut on scoring volatility."
+            }
+        ]
+
+        # 2ND HALF TOTAL RECALIBRATION
+        line_2h_1 = round(live_2h_proj + second_shift) + 0.5
+        p_2h_1 = calculate_win_prob(line_2h_1, live_2h_proj, 5.0, is_under=True)
+        line_2h_2 = line_2h_1 + 2.0
+        p_2h_2 = calculate_win_prob(line_2h_2, live_2h_proj, 5.0, is_under=True)
+        line_2h_3 = line_2h_1 - 2.0
+        p_2h_3 = calculate_win_prob(line_2h_3, live_2h_proj, 5.0, is_under=True)
+
+        second_half_bets = [
+            {
+                "type": f"2nd Half Total ({obj_tag} Consensus)",
+                "pick": f"2H Under {line_2h_1}",
+                "prob": p_2h_1,
+                "category": "2H Total",
+                "side": "Under",
+                "target_line": line_2h_1,
+                "picked_team": None,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": p_multiplier_2h,
+                "roi_label": f"+{int((p_multiplier_2h-1)*100)}% Profit",
+                "drift_info": f"2H Proj: {live_2h_proj:.1f} pts ({delta_2h:+.1f} shift)",
+                "rationale": f"Calculated 2H regression for {obj_tag}."
+            },
+            {
+                "type": f"2nd Half Total ({obj_tag} Cushion)",
+                "pick": f"2H Under {line_2h_2}",
+                "prob": p_2h_2,
+                "category": "2H Total",
+                "side": "Under",
+                "target_line": line_2h_2,
+                "picked_team": None,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": round(max(p_multiplier_2h - 0.20, 1.40), 2),
+                "roi_label": f"+{int((max(p_multiplier_2h - 0.20, 1.40)-1)*100)}% Profit",
+                "drift_info": "+2.0 pts additional safety cushion",
+                "rationale": "High win expectancy with expanded 2H buffer."
+            },
+            {
+                "type": f"2nd Half Total ({obj_tag} Aggressive)",
+                "pick": f"2H Under {line_2h_3}",
+                "prob": p_2h_3,
+                "category": "2H Total",
+                "side": "Under",
+                "target_line": line_2h_3,
+                "picked_team": None,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": round(p_multiplier_2h + 0.35, 2),
+                "roi_label": f"+{int(((p_multiplier_2h + 0.35)-1)*100)}% Profit",
+                "drift_info": "Aggressive clock bleed undercut",
+                "rationale": "Plus-money return on fast running clocks."
+            }
+        ]
+
+        # MONEYLINE RECALIBRATION
         fav_team = active_game_for_strat["home_team"] if live_h_prob >= 0.5 else active_game_for_strat["away_team"]
         fav_abbr = tg_home_short if live_h_prob >= 0.5 else tg_away_short
-        fav_prob = max(live_h_prob, live_a_prob)
-        strat_candidates.append({
-            "type": "Moneyline (Model Favorite)",
-            "pick": f"{fav_abbr} ML",
-            "prob": fav_prob,
-            "category": "Moneyline",
-            "side": "Moneyline",
-            "target_line": None,
-            "picked_team": fav_team,
-            "game_index": strat_game_index,
-            "est_payout_multiplier": 1.74,
-            "roi_label": "+74% Profit",
-            "drift_info": f"Win Probability: {fav_prob*100:.1f}%",
-            "rationale": f"{fav_abbr} holds controlling efficiency dominance."
-        })
+        dog_team = active_game_for_strat["away_team"] if live_h_prob >= 0.5 else active_game_for_strat["home_team"]
+        dog_abbr = tg_away_short if live_h_prob >= 0.5 else tg_home_short
 
         if "Safe Floor" in strategy_dial:
-            strat_candidates.sort(key=lambda x: (x["prob"] * 0.85) + ((x["est_payout_multiplier"] / 3.0) * 0.15), reverse=True)
+            ml_p_main = max(live_h_prob, live_a_prob)
+            ml_p_sub = min(ml_p_main + 0.08, 0.95)
+            ml_p_alt = min(ml_p_main + 0.04, 0.92)
+            ml_mult = 1.45
+            ml_pick_primary = f"{fav_abbr} ML"
+            ml_team_primary = fav_team
+        elif "High Profit" in strategy_dial:
+            ml_p_main = min(live_h_prob, live_a_prob)
+            ml_p_sub = max(ml_p_main - 0.05, 0.38)
+            ml_p_alt = min(ml_p_main + 0.04, 0.49)
+            ml_mult = 2.65
+            ml_pick_primary = f"{dog_abbr} ML"
+            ml_team_primary = dog_team
+        else:
+            ml_p_main = max(live_h_prob, live_a_prob)
+            ml_p_sub = min(live_h_prob, live_a_prob)
+            ml_p_alt = max(live_h_prob, live_a_prob)
+            ml_mult = 1.74
+            ml_pick_primary = f"{fav_abbr} ML"
+            ml_team_primary = fav_team
+
+        moneyline_bets = [
+            {
+                "type": f"Moneyline ({obj_tag} Selection)",
+                "pick": ml_pick_primary,
+                "prob": ml_p_main,
+                "category": "Moneyline",
+                "side": "Moneyline",
+                "target_line": None,
+                "picked_team": ml_team_primary,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": ml_mult,
+                "roi_label": f"+{int((ml_mult-1)*100)}% Profit",
+                "drift_info": f"Model Win Expectancy: {ml_p_main*100:.1f}%",
+                "rationale": f"Optimized outright straight-up play for {obj_tag}."
+            },
+            {
+                "type": f"Moneyline ({obj_tag} High Value Alternate)",
+                "pick": f"{fav_abbr} ML",
+                "prob": ml_p_alt,
+                "category": "Moneyline",
+                "side": "Moneyline",
+                "target_line": None,
+                "picked_team": fav_team,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": 1.62,
+                "roi_label": "+62% Profit",
+                "drift_info": f"Favored Win Probability: {ml_p_alt*100:.1f}%",
+                "rationale": f"High consistency winner on {fav_abbr} without laying point spreads."
+            },
+            {
+                "type": f"Moneyline ({obj_tag} Value Underdog)",
+                "pick": f"{dog_abbr} ML",
+                "prob": ml_p_sub,
+                "category": "Moneyline",
+                "side": "Moneyline",
+                "target_line": None,
+                "picked_team": dog_team,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": 2.50,
+                "roi_label": "+150% Profit (2.5x)",
+                "drift_info": f"Upset Win Probability: {ml_p_sub*100:.1f}%",
+                "rationale": f"High return position on {dog_abbr} in close game scripts."
+            }
+        ]
+
+        # Route matching candidates strictly to selected Type of Bet
+        if filter_choice == "📊 Full Game Total Score Over/Under":
+            strat_candidates = full_totals_bets
+        elif filter_choice == "⏱️ 2nd Half Total Points":
+            strat_candidates = second_half_bets
+        elif filter_choice == "🏆 Team Win/Loser (Moneyline)":
+            strat_candidates = moneyline_bets
+        elif filter_choice == "🛡️ Spread (ATS Cover)":
+            strat_candidates = spread_bets
+        else:
+            # Combined / Let the System Pick: Best from each category
+            strat_candidates = [spread_bets[0], full_totals_bets[0], second_half_bets[0], moneyline_bets[0]]
+
+        # Tier sorting ensures that Top Card has the absolute strongest matching score
+        if "Safe Floor" in strategy_dial:
+            strat_candidates.sort(key=lambda x: x["prob"], reverse=True)
             tier_names = ["🥇 BEST (Highest Win Rate)", "🥈 BETTER (Strong Floor)", "🥉 GOOD (Reliable Safety)"]
         elif "High Profit" in strategy_dial:
             strat_candidates.sort(key=lambda x: (x["prob"] * 0.20) + ((x["est_payout_multiplier"] / 3.0) * 0.80), reverse=True)
@@ -1833,6 +2069,10 @@ elif menu_choice == "Single Game Engine":
         if lock_submit:
             bet_label = f"{side} {strike}" if strike else f"{picked_t} ML"
             cat = "2H Total" if bet_type == "2nd Half Total" else ("Spread" if bet_type == "Point Spread (ATS)" else ("Moneyline" if bet_type == "Straight Up Winner (Moneyline)" else "Total"))
+            
+            # Save the true calibrated probability directly on the ticket
+            ticket_prob_str = f"{applied['prob']*100:.1f}%" if applied and "prob" in applied else f"{home_cover_exp*100:.1f}%"
+
             ticket_record = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip(),
@@ -1850,7 +2090,7 @@ elif menu_choice == "Single Game Engine":
                 "payout_dollars": float(payout_amt),
                 "model_proj": round(final_proj, 1),
                 "bracket": bracket_stage,
-                "win_prob": f"{home_cover_exp*100:.1f}%",
+                "win_prob": ticket_prob_str,
                 "status": "Pending",
                 "notes": ticket_notes
             }
