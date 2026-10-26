@@ -15,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Responsive Desktop + Mobile styling & Ultra-compact recommendation rows
+# Responsive Desktop + Mobile styling, clean sidebar tabs, and balanced recommendation rows
 st.markdown("""
 <style>
     @media (min-width: 768px) {
@@ -35,36 +35,35 @@ st.markdown("""
             padding-right: 0.8rem !important;
         }
     }
-    /* Compact bordered container */
+    /* Balanced container margins & equal padding */
     [data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 8px !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
         background-color: rgba(255, 255, 255, 0.02) !important;
-        padding: 3px 8px !important;
+        padding: 4px 10px !important;
+        margin-top: 3px !important;
         margin-bottom: 3px !important;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] {
+        gap: 0rem !important;
     }
     [data-testid="stMetricValue"] {
         font-size: 1.35rem !important;
         font-weight: 700;
     }
-    /* Slim action buttons */
-    .stButton button {
-        border-radius: 6px;
-        min-height: 1.9rem;
-        font-weight: 600;
-    }
-    /* Flush right alignment for delete button */
+    /* Clean flush right delete button */
     div[data-testid="stColumn"]:last-child div[data-testid="stButton"] button {
         float: right !important;
         padding: 0px !important;
-        min-height: 1.6rem !important;
-        height: 1.6rem !important;
-        width: 1.6rem !important;
-        font-size: 0.75rem !important;
-        line-height: 1.6rem !important;
+        min-height: 1.5rem !important;
+        height: 1.5rem !important;
+        width: 1.5rem !important;
+        font-size: 0.72rem !important;
+        line-height: 1.5rem !important;
         border: 1px solid rgba(239, 68, 68, 0.35) !important;
         color: #ef4444 !important;
         background-color: transparent !important;
+        margin: 0 !important;
     }
     div[data-testid="stColumn"]:last-child div[data-testid="stButton"] button:hover {
         background-color: rgba(239, 68, 68, 0.15) !important;
@@ -73,20 +72,17 @@ st.markdown("""
     .rec-item-row {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 7px;
         flex-wrap: wrap;
-        margin: 0;
-        padding: 0;
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1.2 !important;
     }
-    .bet-type-tag {
-        background-color: rgba(255, 255, 255, 0.06);
-        color: #94a3b8;
-        font-size: 0.70rem;
-        font-weight: 700;
-        padding: 1px 5px;
-        border-radius: 4px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+    /* Modern Nav Button Styling */
+    .nav-btn {
+        width: 100%;
+        text-align: left;
+        margin-bottom: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -120,6 +116,8 @@ if "combo_active_legs" not in st.session_state:
     st.session_state.combo_active_legs = []
 if "ai_recommended_combo" not in st.session_state:
     st.session_state.ai_recommended_combo = None
+if "active_nav_page" not in st.session_state:
+    st.session_state.active_nav_page = "2-12 Leg Combo Builder"
 
 # Access Gatekeeper
 if not st.session_state.authenticated:
@@ -238,23 +236,31 @@ def get_extended_games(league_code="nfl"):
     return all_games
 
 # ==========================================
-# SIDEBAR NAVIGATION
+# SIDEBAR NAVIGATION (APP-STYLE BUTTON TABS)
 # ==========================================
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
 
-menu_choice = st.sidebar.radio(
-    "Navigation Menu",
-    [
-        "Single Game Engine",
-        "2-12 Leg Combo Builder",
-        "🔥 Live Squad Feed",
-        "💬 The Locker Room",
-        "Locked Bets History",
-        "🏆 Squad Leaderboard",
-        "📖 Model Methodology & Math"
-    ]
-)
+st.sidebar.markdown("<p style='font-size:0.85rem; font-weight:700; color:#94a3b8; margin-bottom:6px;'>NAVIGATION</p>", unsafe_allow_html=True)
+
+nav_items = [
+    ("⚡ Single Game Engine", "Single Game Engine"),
+    ("🔗 2-12 Leg Combo Builder", "2-12 Leg Combo Builder"),
+    ("🔥 Live Squad Feed", "🔥 Live Squad Feed"),
+    ("💬 The Locker Room", "💬 The Locker Room"),
+    ("📜 Locked Bets History", "Locked Bets History"),
+    ("🏆 Squad Leaderboard", "🏆 Squad Leaderboard"),
+    ("📖 Model Methodology & Math", "📖 Model Methodology & Math")
+]
+
+for label, page_key in nav_items:
+    is_active = (st.session_state.active_nav_page == page_key)
+    btn_type = "primary" if is_active else "secondary"
+    if st.sidebar.button(label, key=f"nav_{page_key}", type=btn_type, use_container_width=True):
+        st.session_state.active_nav_page = page_key
+        st.rerun()
+
+menu_choice = st.session_state.active_nav_page
 
 st.sidebar.markdown("---")
 current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
@@ -647,7 +653,6 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         "leg_id": f"tot_{g_c['id']}_under_{cushion_line}",
                         "matchup_idx": games_data.index(g_c),
                         "type": "Game Total",
-                        "bet_tag": "Total O/U",
                         "side": "Under",
                         "line": cushion_line,
                         "picked_team": c_h,
@@ -664,12 +669,11 @@ elif menu_choice == "2-12 Leg Combo Builder":
                             "leg_id": f"ml_{g_c['id']}_{ml_fav}",
                             "matchup_idx": games_data.index(g_c),
                             "type": "Straight Up Winner",
-                            "bet_tag": "Moneyline",
                             "side": "Under",
                             "line": cushion_line,
                             "picked_team": ml_fav,
                             "prob": ml_p,
-                            "desc": f"{fav_abbr} to Win (ML)",
+                            "desc": f"{fav_abbr} ML",
                             "detail": f"Win Exp: {ml_p*100:.1f}%",
                             "score_metric": ml_p
                         })
@@ -683,7 +687,6 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         "leg_id": f"ev_{g_c['id']}_{'u' if is_u else 'o'}_{tgt_line}",
                         "matchup_idx": games_data.index(g_c),
                         "type": "Game Total",
-                        "bet_tag": "Total O/U",
                         "side": "Under" if is_u else "Over",
                         "line": tgt_line,
                         "picked_team": c_h,
@@ -701,12 +704,11 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         "leg_id": f"ml_{g_c['id']}_{ml_fav}",
                         "matchup_idx": games_data.index(g_c),
                         "type": "Straight Up Winner",
-                        "bet_tag": "Moneyline",
                         "side": "Under",
                         "line": c_ou,
                         "picked_team": ml_fav,
                         "prob": ml_p,
-                        "desc": f"{fav_abbr} to Win (ML)",
+                        "desc": f"{fav_abbr} ML",
                         "detail": f"Win Exp: {ml_p*100:.1f}%",
                         "score_metric": ml_p
                     })
@@ -718,7 +720,6 @@ elif menu_choice == "2-12 Leg Combo Builder":
                         "leg_id": f"def_{g_c['id']}_under_{cushion_line}",
                         "matchup_idx": games_data.index(g_c),
                         "type": "Game Total",
-                        "bet_tag": "Total O/U",
                         "side": "Under",
                         "line": cushion_line,
                         "picked_team": c_h,
@@ -748,7 +749,7 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.session_state.ai_recommended_combo = selected_ai_legs
 
-        # INTEGRATED ULTRA-COMPACT CARDS WITH BET TYPE CHIP AND DETAILS
+        # INTEGRATED ULTRA-COMPACT CARDS (CLEAN ROW WITHOUT IN-BETWEEN TYPE TAGS)
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -757,23 +758,21 @@ elif menu_choice == "2-12 Leg Combo Builder":
 
             st.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
 
-            # Render each recommended leg with type tag, projection, and flush right ✕ button
+            # Render each recommended leg in an equalized, centered container
             for idx_ai, l_ai in enumerate(list(st.session_state.ai_recommended_combo)):
                 g_match = games_data[l_ai["matchup_idx"]]
                 leg_key = l_ai.get("leg_id", f"leg_{idx_ai}_{l_ai['matchup_idx']}")
-                bet_tag = l_ai.get("bet_tag", "Total O/U")
                 detail_str = l_ai.get("detail", "")
 
                 with st.container(border=True):
-                    c_left, c_mid, c_btn = st.columns([5.2, 4.3, 0.5], vertical_alignment="center")
+                    c_left, c_mid, c_btn = st.columns([5.3, 4.2, 0.5], vertical_alignment="center")
                     
                     with c_left:
                         st.markdown(f"""
                         <div class="rec-item-row">
-                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.70rem; padding: 1px 5px; border-radius: 4px;">
+                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.72rem; padding: 1px 6px; border-radius: 4px;">
                                 LEG {idx_ai+1}
                             </span>
-                            <span class="bet-type-tag">[{bet_tag}]</span>
                             <img src="{g_match['away_logo']}" width="18" height="18" style="border-radius: 50%;">
                             <strong>{g_match['away_short']}</strong>
                             <span style="opacity: 0.4;">@</span>
@@ -785,10 +784,10 @@ elif menu_choice == "2-12 Leg Combo Builder":
                     
                     with c_mid:
                         st.markdown(f"""
-                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0;">
                             <strong style="color: #4ade80; font-size: 0.88rem;">{l_ai['desc']}</strong>
                             <span style="opacity: 0.6; font-size: 0.75rem;">({detail_str})</span>
-                            <span style="background-color: rgba(255, 255, 255, 0.08); padding: 1px 5px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
+                            <span style="background-color: rgba(255, 255, 255, 0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
                                 {l_ai['prob']*100:.1f}%
                             </span>
                         </div>
