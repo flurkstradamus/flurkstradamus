@@ -10,20 +10,23 @@ def hash_password(password: str) -> str:
     return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
 
 def load_storage():
-    """Load bets, chat messages, and user accounts from storage.json."""
+    """Load bets, chat messages, user accounts, and banned lists from storage.json."""
     default_users = {
         "flurk": {
             "username": "flurk",
             "display_name": "Flurk",
+            "email": "flurk@flurkstradamus.com",
             "password_hash": hash_password("Loofus1993"),
             "is_admin": True,
+            "is_banned": False,
             "created_at": "2026-10-26",
-            "favorite_team": "NFL"
+            "favorite_team": "NFL",
+            "reset_token": None
         }
     }
     
     if not os.path.exists(DATA_FILE):
-        return [], [], default_users
+        return [], [], default_users, []
         
     try:
         with open(DATA_FILE, "r") as f:
@@ -31,25 +34,36 @@ def load_storage():
             bets = data.get("bets", [])
             chat = data.get("chat", [])
             users = data.get("users", {})
+            banned_emails = data.get("banned_emails", [])
             
-            # Ensure flurk admin account is always present and active
+            # Ensure admin account exists with proper email and password
             if "flurk" not in users or users["flurk"].get("password_hash") != hash_password("Loofus1993"):
                 users["flurk"] = default_users["flurk"]
-                
-            return bets, chat, users
-    except Exception:
-        return [], [], default_users
+            else:
+                if "email" not in users["flurk"]:
+                    users["flurk"]["email"] = "flurk@flurkstradamus.com"
+                if "is_banned" not in users["flurk"]:
+                    users["flurk"]["is_banned"] = False
 
-def save_all_storage(bets, chat, users=None):
-    """Persist all bets, chat messages, and user accounts."""
-    if users is None:
-        _, _, users = load_storage()
+            return bets, chat, users, banned_emails
+    except Exception:
+        return [], [], default_users, []
+
+def save_all_storage(bets, chat, users=None, banned_emails=None):
+    """Persist all bets, chat messages, user accounts, and blacklist."""
+    if users is None or banned_emails is None:
+        _, _, u, b_e = load_storage()
+        if users is None:
+            users = u
+        if banned_emails is None:
+            banned_emails = b_e
     try:
         with open(DATA_FILE, "w") as f:
             json.dump({
                 "bets": bets, 
                 "chat": chat,
-                "users": users
+                "users": users,
+                "banned_emails": banned_emails
             }, f, indent=2)
     except Exception:
         pass
