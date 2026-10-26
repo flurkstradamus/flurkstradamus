@@ -21,55 +21,70 @@ JSONBIN_BIN_ID = "6ade77dbac6210605a51a450"    # Paste your Bin ID here if you h
 JSONBIN_API_KEY = "$2a$10$K8VFT4hzyxMbtkBLLtlaNu/ZB8WthYSFYlKEutPEE4Qg8hi8lA6Ya"   # Paste your Master Key here if you have it
 
 DB_FILE = "bets_history.json"
+CHAT_FILE = "chat_history.json"
 
-def fetch_cloud_bets():
+def fetch_cloud_data():
     if JSONBIN_BIN_ID and JSONBIN_API_KEY:
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
         headers = {"X-Master-Key": JSONBIN_API_KEY}
         try:
             r = requests.get(url, headers=headers, timeout=5)
             if r.status_code == 200:
-                return r.json().get("record", {}).get("bets", [])
+                record = r.json().get("record", {})
+                return record.get("bets", []), record.get("messages", [])
         except Exception:
             pass
-    return None
+    return None, None
 
-def push_cloud_bets(bets):
+def push_cloud_data(bets, messages):
     if JSONBIN_BIN_ID and JSONBIN_API_KEY:
-        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
+        url = f"https://api.jsonBIN.io/v3/b/{JSONBIN_BIN_ID}"
         headers = {
             "Content-Type": "application/json",
             "X-Master-Key": JSONBIN_API_KEY
         }
         try:
-            r = requests.put(url, json={"bets": bets}, headers=headers, timeout=5)
+            r = requests.put(url, json={"bets": bets, "messages": messages}, headers=headers, timeout=5)
             return r.status_code == 200
         except Exception:
             pass
     return False
 
-def load_bets():
-    cloud_records = fetch_cloud_bets()
-    local_records = []
+def load_storage():
+    cloud_bets, cloud_chat = fetch_cloud_data()
+    local_bets = []
+    local_chat = []
+    
     if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, "r") as f:
-                local_records = json.load(f)
+                local_bets = json.load(f)
         except Exception:
-            local_records = []
+            local_bets = []
+            
+    if os.path.exists(CHAT_FILE):
+        try:
+            with open(CHAT_FILE, "r") as f:
+                local_chat = json.load(f)
+        except Exception:
+            local_chat = []
 
-    merged = {b["id"]: b for b in (local_records + (cloud_records or []))}
-    merged_list = list(merged.values())
-    merged_list.sort(key=lambda x: str(x.get("date", "")), reverse=True)
-    return merged_list
+    merged_bets = {b["id"]: b for b in (local_bets + (cloud_bets or []))}
+    bets_list = list(merged_bets.values())
+    bets_list.sort(key=lambda x: str(x.get("date", "")), reverse=True)
+    
+    chat_list = cloud_chat if cloud_chat is not None else local_chat
+    return bets_list, chat_list
 
-def save_bets(bets):
+def save_all_storage(bets, messages):
     try:
         with open(DB_FILE, "w") as f:
             json.dump(bets, f, indent=4)
+        with open(CHAT_FILE, "w") as f:
+            json.dump(messages, f, indent=4)
     except Exception:
         pass
-    push_cloud_bets(bets)
+    push_cloud_data(bets, messages)
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -92,8 +107,10 @@ if not st.session_state.authenticated:
                 st.error("Invalid passcode.")
     st.stop()
 
-if "saved_bets" not in st.session_state:
-    st.session_state.saved_bets = load_bets()
+if "saved_bets" not in st.session_state or "chat_messages" not in st.session_state:
+    b_data, c_data = load_storage()
+    st.session_state.saved_bets = b_data
+    st.session_state.chat_messages = c_data
 
 # ==========================================
 # ADVANCED STATISTICAL PROJECTION ENGINES
@@ -107,8 +124,6 @@ def calculate_win_prob(target_line, projected_total, std_dev=7.0, is_under=True)
     return under_prob if is_under else (1.0 - under_prob)
 
 def calculate_spread_prob(projected_margin, target_spread, std_dev=7.0):
-    # projected_margin: (Home Projected - Away Projected)
-    # target_spread: spread for home team (e.g. -3.5 means home must win by > 3.5)
     diff = projected_margin - (-target_spread)
     z = diff / max(std_dev, 1.0)
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
@@ -153,7 +168,6 @@ def get_live_games(league_code="nfl"):
             status_desc = status_obj["type"]["shortDetail"]
             period = status_obj.get("period", 1)
 
-            # Extract Odds line from ESPN if published
             odds_overunder = 47.5
             odds_spread = -3.5
             if comp.get("odds"):
@@ -227,8 +241,6 @@ def auto_resolve_bets(bets, games):
     for b in bets:
         if b.get("status") == "Pending":
             b_cat = b.get("bet_category", "Total")
-            
-            # Single Wager Auto-Resolution
             if b_cat != "Combo":
                 match_game = find_game_for_bet(b, games)
                 if match_game and (match_game.get("completed", False) or "final" in match_game["status"].lower()):
@@ -251,7 +263,6 @@ def auto_resolve_bets(bets, games):
                         b["status"] = "Won" if (diff + line > 0) else "Lost"
                         changed = True
 
-            # Multi-Leg Combo Auto-Resolution
             elif b_cat == "Combo" and b.get("parsed_legs"):
                 all_done = True
                 any_lost = False
@@ -278,21 +289,22 @@ def auto_resolve_bets(bets, games):
                     changed = True
 
     if changed:
-        save_bets(bets)
+        save_all_storage(bets, st.session_state.chat_messages)
     return changed
 
 # ==========================================
-# MOBILE-FIRST SIDEBAR (NAVIGATION AT TOP)
+# EXPANDED SIDEBAR NAVIGATION
 # ==========================================
 st.sidebar.markdown("## 🔮 Flurkstradamus")
 st.sidebar.caption("The Live Football Edge Engine")
 
-# 1. Navigation Menu Placed at the Top
 menu_choice = st.sidebar.radio(
     "Navigation Menu",
     [
         "Single Game Engine",
         "2-5 Leg Combo Builder",
+        "🔥 Live Squad Feed",
+        "💬 The Locker Room",
         "Locked Bets History",
         "🏆 Squad Leaderboard",
         "📖 Model Methodology & Math"
@@ -300,24 +312,23 @@ menu_choice = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
-
-# 2. Bettor & League Selector
 current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
 league = st.sidebar.radio("Active League", ["NFL", "NCAA Football"])
 league_param = "nfl" if league == "NFL" else "college-football"
 
-# 3. Live Update Settings
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⏱️ Live Updates")
 auto_refresh = st.sidebar.toggle("Auto-Refresh Live Scores", value=True)
 refresh_interval = st.sidebar.slider("Interval (seconds)", min_value=10, max_value=60, value=15, step=5)
 if st.sidebar.button("🔄 Manual Scoreboard Sync"):
     st.cache_data.clear()
-    st.session_state.saved_bets = load_bets()
+    b_data, c_data = load_storage()
+    st.session_state.saved_bets = b_data
+    st.session_state.chat_messages = c_data
     st.rerun()
 
 # ==========================================
-# CORE APP FRAGMENT (AUTO-UPDATES LIVE)
+# CORE APP FRAGMENT
 # ==========================================
 @st.fragment(run_every=refresh_interval if auto_refresh else None)
 def render_main_engine():
@@ -325,7 +336,7 @@ def render_main_engine():
     auto_resolve_bets(st.session_state.saved_bets, games_data)
 
     # ------------------------------------------
-    # DETAIL PAGE: IN-GAME BET WAR ROOM & HEDGE CALCULATOR
+    # DETAIL PAGE: IN-GAME BET WAR ROOM
     # ------------------------------------------
     if st.session_state.selected_bet_id is not None:
         selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
@@ -348,7 +359,6 @@ def render_main_engine():
 
         if not live_game_info:
             st.warning("Live scoreboard data for this game is currently inactive.")
-            st.write(f"Target: **{bet_dir} {target_line}**" if target_line else f"Pick: **{selected_bet['bet']}**")
             return
 
         curr_away = live_game_info["away_score"]
@@ -363,16 +373,13 @@ def render_main_engine():
         col_s3.markdown(f"### {live_game_info['home_team']}\n# **{curr_home}**\n`{live_game_info['home_record']}`")
 
         st.markdown("---")
-
         risk = selected_bet.get("risk_dollars", 10.0)
         payout = selected_bet.get("payout_dollars", 19.0)
 
-        # In-Game Probability Engine
         if bet_category == "Moneyline":
             h_prob = calculate_moneyline_prob(curr_home, curr_away, live_game_info["home_record"], live_game_info["away_record"], is_final=is_final)
             picked_home = selected_bet.get("picked_team") == live_game_info["home_team"]
             win_prob = h_prob if picked_home else (1.0 - h_prob)
-
             m1, m2, m3 = st.columns(3)
             m1.metric("Selected Winner", selected_bet.get("picked_team", "N/A"))
             m2.metric("Score Margin", f"{curr_home - curr_away:+d} pts")
@@ -383,7 +390,6 @@ def render_main_engine():
             is_home = selected_bet.get("picked_team") == live_game_info["home_team"]
             proj_diff = diff + 1.5 if is_home else -diff - 1.5
             win_prob = calculate_spread_prob(proj_diff, target_line, std_dev=4.5)
-
             m1, m2, m3 = st.columns(3)
             m1.metric("Selected Spread", f"{selected_bet.get('picked_team')} {target_line:+}")
             m2.metric("Margin Needed", f"{diff:+d} pts currently")
@@ -407,38 +413,79 @@ def render_main_engine():
 
             win_prob = calculate_win_prob(target_line, in_game_proj, std_dev=decay_sigma, is_under=is_under)
             cushion = target_line - total_pts if is_under else total_pts - target_line
-
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Live Total", f"{total_pts} pts")
             m2.metric("Target Line", f"{bet_dir} {target_line}")
             m3.metric("Safety Cushion", f"{cushion:+.1f} pts")
             m4.metric("Live Win Prob", f"{win_prob * 100:.1f}%")
 
-        # Live Hedge & Cashout Value Engine
         st.markdown("---")
         st.subheader("💰 Live Equity & Smart Hedging")
         cur_equity = payout * win_prob
         c_h1, c_h2, c_h3 = st.columns(3)
         c_h1.metric("Initial Risk", f"${risk:.2f}")
-        c_h2.metric("Full Payout Potential", f"${payout:.2f}")
+        c_h2.metric("Payout Potential", f"${payout:.2f}")
         c_h3.metric("Current Fair Equity", f"${cur_equity:.2f}", delta=f"{cur_equity - risk:+.2f}")
-
-        if not is_final:
-            opp_prob = 1.0 - win_prob
-            if win_prob >= 0.70 and cur_equity > risk:
-                hedge_size = (payout - risk) / 2.0
-                st.success(f"💡 **Favorable Position:** Your ticket has {win_prob*100:.1f}% equity. If the opposing side is offered at plus money, bet ~**${hedge_size:.2f}** on the other side to lock in guaranteed profit.")
-            elif win_prob <= 0.30:
-                st.warning(f"⚠️ **Under Pressure:** Win probability has dropped to {win_prob*100:.1f}%. Consider cutting early if a cashout above ${risk*0.35:.2f} is available.")
-            else:
-                st.info("⚖️ **Balanced Game:** Within standard deviation variance. Let the play run.")
-
         return
+
+    # ------------------------------------------
+    # PAGE: LIVE SQUAD FEED (RECENT BETS & TAILING)
+    # ------------------------------------------
+    if menu_choice == "🔥 Live Squad Feed":
+        st.subheader("🔥 Live Squad Feed")
+        st.caption("Real-time feed of all bets placed by your crew. Tail action or share slips with one click.")
+
+        if not st.session_state.saved_bets:
+            st.info("No bets have been locked in yet.")
+        else:
+            for b in st.session_state.saved_bets[:15]:
+                with st.container():
+                    f1, f2, f3 = st.columns([3, 2, 2])
+                    status_badge = "⏳ Active" if b["status"] == "Pending" else ("🏆 Won" if b["status"] == "Won" else "❌ Lost")
+                    
+                    with f1:
+                        st.markdown(f"**{b.get('user', 'Flurk')}** locked in `{b.get('bet')}`")
+                        st.caption(f"{b.get('matchup')} | Risk: ${b.get('risk_dollars', 10.0):.2f} to win ${b.get('payout_dollars', 19.0):.2f}")
+                    with f2:
+                        st.write(f"Logged: `{b.get('date')}`")
+                        st.write(f"Status: **{status_badge}**")
+                    with f3:
+                        share_text = f"🔮 {b.get('user')} locked in {b.get('bet')} on {b.get('matchup')}! Track it on Flurkstradamus: https://flurkstradamus.streamlit.app"
+                        st.text_input("Copy Share Text", value=share_text, key=f"share_{b['id']}")
+
+                    st.markdown("---")
+
+    # ------------------------------------------
+    # PAGE: THE LOCKER ROOM (CHAT / BANTER)
+    # ------------------------------------------
+    elif menu_choice == "💬 The Locker Room":
+        st.subheader("💬 The Locker Room")
+        st.caption("Live squad trash talk & game commentary.")
+
+        with st.form("send_msg_form", clear_on_submit=True):
+            user_msg = st.text_input("Send a message to the group", placeholder="e.g., That Under is looking dangerous...")
+            send_btn = st.form_submit_button("Post Message")
+            if send_btn and user_msg.strip():
+                new_msg = {
+                    "id": str(datetime.now().timestamp()),
+                    "user": current_user.strip() if current_user.strip() else "Flurk",
+                    "time": datetime.now().strftime("%I:%M %p"),
+                    "text": user_msg.strip()
+                }
+                st.session_state.chat_messages.insert(0, new_msg)
+                save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
+                st.rerun()
+
+        if not st.session_state.chat_messages:
+            st.info("The locker room is quiet. Post the first message above!")
+        else:
+            for m in st.session_state.chat_messages[:30]:
+                st.markdown(f"**{m.get('user')}** `({m.get('time')})`: {m.get('text')}")
 
     # ------------------------------------------
     # PAGE 1: SINGLE GAME ENGINE
     # ------------------------------------------
-    if menu_choice == "Single Game Engine":
+    elif menu_choice == "Single Game Engine":
         st.subheader("⚡ Single Game Consensus & Edge Terminal")
 
         if games_data:
@@ -457,22 +504,9 @@ def render_main_engine():
             espn_ou = 47.5
             espn_spread = -3.5
 
-        all_stages = [
-            "Pre-Game",
-            "1st Quarter",
-            "Halftime",
-            "3rd Quarter",
-            "4th Quarter / Late Game",
-            "Final / Game Completed"
-        ]
-
+        all_stages = ["Pre-Game", "1st Quarter", "Halftime", "3rd Quarter", "4th Quarter / Late Game", "Final / Game Completed"]
         default_stage_idx = all_stages.index(detected_stage) if detected_stage in all_stages else 2
-        bracket_stage = st.selectbox(
-            "Game Checkpoint / Period",
-            options=all_stages,
-            index=default_stage_idx,
-            help="Auto-detected from live ESPN status. Adjust manually if projecting ahead."
-        )
+        bracket_stage = st.selectbox("Game Checkpoint / Period", options=all_stages, index=default_stage_idx)
 
         c1, c2 = st.columns(2)
         with c1:
@@ -493,7 +527,6 @@ def render_main_engine():
         margin = abs(h_pts - a_pts)
         is_completed = (bracket_stage == "Final / Game Completed")
 
-        # Dynamic Checkpoint Variance & Projections
         if is_completed:
             final_proj = float(pts_scored)
             std_bracket = 0.01
@@ -519,8 +552,6 @@ def render_main_engine():
             std_bracket = 1.8
 
         st.markdown("---")
-        st.subheader(f"📊 Projected Consensus ({bracket_stage})")
-
         home_win_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), home_rec, away_rec, is_final=is_completed)
         away_win_prob = 1.0 - home_win_prob
         proj_margin = (h_pts + (final_proj / 2.0)) - (a_pts + (final_proj / 2.0))
@@ -533,32 +564,7 @@ def render_main_engine():
         m4.metric(f"{home_team} Spread ({spread_line:+})", f"{home_cover_prob * 100:.1f}%")
 
         st.markdown("---")
-        st.subheader("🎯 Suggested Edge Tiers")
-
-        if is_completed:
-            st.info(f"🏁 **Final Game Score:** {away_team} {a_pts} - {h_pts} {home_team} (Total: **{pts_scored} Points**)")
-        else:
-            line_good = round(final_proj + (5.5 if std_bracket > 3.0 else 2.5)) + 0.5
-            line_better = round(final_proj + (3.0 if std_bracket > 3.0 else 1.0)) + 0.5
-            prob_good = calculate_win_prob(line_good, final_proj, std_bracket, is_under=True)
-            prob_better = calculate_win_prob(line_better, final_proj, std_bracket, is_under=True)
-
-            c_t1, c_t2, c_t3 = st.columns(3)
-            c_t1.success(f"🟢 **Safe Floor: Under {line_good}**\n\nWin Prob: **{prob_good * 100:.1f}%**")
-            c_t2.info(f"🟡 **Balanced: Under {line_better}**\n\nWin Prob: **{prob_better * 100:.1f}%**")
-            fav_team = home_team if home_win_prob > 0.5 else away_team
-            fav_prob = max(home_win_prob, away_win_prob)
-            c_t3.warning(f"🔥 **Straight-Up ML: {fav_team}**\n\nWin Prob: **{fav_prob * 100:.1f}%**")
-
-        st.markdown("---")
-        st.subheader(f"🔒 Lock In Ticket as {current_user}")
-
-        bet_type = st.radio(
-            "Wager Type",
-            ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)"],
-            horizontal=True,
-            key=f"btype_sel_{g_id}"
-        )
+        bet_type = st.radio("Wager Type", ["Game Total", "Straight Up Winner (Moneyline)", "Point Spread (ATS)"], horizontal=True, key=f"btype_sel_{g_id}")
 
         with st.form("single_bet_form"):
             if bet_type == "Game Total":
@@ -631,7 +637,7 @@ def render_main_engine():
                     "notes": ticket_notes
                 }
                 st.session_state.saved_bets.insert(0, ticket_record)
-                save_bets(st.session_state.saved_bets)
+                save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
                 st.success("Ticket saved to history!")
 
     # ------------------------------------------
@@ -663,12 +669,7 @@ def render_main_engine():
                 d_h_rec, d_a_rec = "5-2", "4-3"
                 leg_completed = False
 
-            wager_cat = st.radio(
-                f"Wager Type (Leg {i+1})",
-                ["Game Total", "Straight Up Winner"],
-                horizontal=True,
-                key=f"wtype_{i}"
-            )
+            wager_cat = st.radio(f"Wager Type (Leg {i+1})", ["Game Total", "Straight Up Winner"], horizontal=True, key=f"wtype_{i}")
 
             if wager_cat == "Game Total":
                 col_b, col_c = st.columns(2)
@@ -676,13 +677,7 @@ def render_main_engine():
                 strike = col_c.number_input("Line (pts)", value=44.5, step=0.5, key=f"lstrike_{i}")
                 leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
                 leg_desc = f"{d_a} @ {d_h}: {side} {strike}"
-                parsed_legs.append({
-                    "matchup": f"{d_a} @ {d_h}",
-                    "type": "Total",
-                    "side": side,
-                    "line": strike,
-                    "prob": leg_prob
-                })
+                parsed_legs.append({"matchup": f"{d_a} @ {d_h}", "type": "Total", "side": side, "line": strike, "prob": leg_prob})
             else:
                 col_b, col_c = st.columns(2)
                 winner = col_b.selectbox("Pick Winner", [d_h, d_a], key=f"lwinner_{i}")
@@ -690,12 +685,7 @@ def render_main_engine():
                 leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
                 leg_desc = f"{d_a} @ {d_h}: {winner} ML"
                 col_c.metric("Model Win Expectancy", f"{leg_prob * 100:.1f}%")
-                parsed_legs.append({
-                    "matchup": f"{d_a} @ {d_h}",
-                    "type": "Moneyline",
-                    "picked_team": winner,
-                    "prob": leg_prob
-                })
+                parsed_legs.append({"matchup": f"{d_a} @ {d_h}", "type": "Moneyline", "picked_team": winner, "prob": leg_prob})
 
             compound_prob *= leg_prob
             combo_legs.append({"desc": leg_desc, "prob": leg_prob})
@@ -730,7 +720,7 @@ def render_main_engine():
                     "notes": c_notes
                 }
                 st.session_state.saved_bets.insert(0, combo_record)
-                save_bets(st.session_state.saved_bets)
+                save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
                 st.success("Combo ticket locked in!")
 
     # ------------------------------------------
@@ -749,7 +739,6 @@ def render_main_engine():
             else:
                 st.info("Up to date.")
 
-        # CSV Backup Export
         if st.session_state.saved_bets:
             csv_lines = ["Date,User,Type,Category,Matchup,Pick,Risk,Payout,Status"]
             for b in st.session_state.saved_bets:
@@ -769,7 +758,6 @@ def render_main_engine():
                     r1.write(f"**{b.get('user', 'Flurk')}**\n\n`{b['date']}`\n\n{b['type']}")
                     r2.write(f"**{b['matchup']}**\n\nPick: `{b['bet']}`\n\nRisk: **${b.get('risk_dollars', 10.0):.2f}** | Payout: **${b.get('payout_dollars', 19.0):.2f}**")
 
-                    # Live Scoreboard & Parlay Progress Tracker
                     if b.get("bet_category") == "Combo" and b.get("parsed_legs"):
                         leg_statuses = []
                         for leg in b["parsed_legs"]:
@@ -799,7 +787,7 @@ def render_main_engine():
                     new_stat = r4.selectbox("Result", status_list, index=cur_stat_idx, key=f"stat_{b['id']}")
                     if new_stat != b["status"]:
                         st.session_state.saved_bets[real_idx]["status"] = new_stat
-                        save_bets(st.session_state.saved_bets)
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
                         st.rerun()
 
                     if b.get("bet_category") != "Combo":
@@ -809,7 +797,7 @@ def render_main_engine():
 
                     if r5.button("🗑️", key=f"dl_{b['id']}"):
                         st.session_state.saved_bets.pop(real_idx)
-                        save_bets(st.session_state.saved_bets)
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages)
                         st.rerun()
 
                     st.markdown("---")
