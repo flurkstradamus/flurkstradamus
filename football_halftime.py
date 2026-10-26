@@ -537,7 +537,7 @@ elif menu_choice == "💬 The Locker Room":
             st.write(m.get('text'))
 
 # ==========================================
-# PAGE 1: SINGLE GAME ENGINE (WITH RISK-RETURN SCALE)
+# PAGE 1: SINGLE GAME ENGINE (WITH RISK-RETURN SCALE & RELIABLE LOAD TO FORM)
 # ==========================================
 elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Engine")
@@ -687,7 +687,6 @@ elif menu_choice == "Single Game Engine":
             ]
         )
 
-        # Dynamic Strategy Dial (Slider)
         st.markdown("##### ⚖️ Balance the Scale: Win Rate vs. Profit Multiplier")
         strategy_dial = st.select_slider(
             "Model Objective",
@@ -700,11 +699,13 @@ elif menu_choice == "Single Game Engine":
         )
 
         active_game_for_strat = g
+        strat_game_index = st.session_state.single_selected_idx
         if "Scan Full Slate" in scope_choice and games_data:
             live_pool = [gm for gm in games_data if not gm.get("completed", False)]
             if not live_pool:
                 live_pool = games_data
             active_game_for_strat = max(live_pool, key=lambda x: abs((x["home_score"] + x["away_score"] + (x.get("market_ou", 47.5)*0.475)) - x.get("market_ou", 47.5)))
+            strat_game_index = games_data.index(active_game_for_strat)
 
         strat_candidates = []
 
@@ -714,7 +715,7 @@ elif menu_choice == "Single Game Engine":
         tg_home_short = active_game_for_strat.get("home_short", "HOME")
         tg_date_str = active_game_for_strat.get("kickoff", active_game_for_strat.get("status", "Pre-Game"))
 
-        # Model Spread Edge Setup
+        # Setup Spread Metrics
         if home_cover_exp >= 0.50:
             s_team, s_abbr, s_val, s_p = active_game_for_strat["home_team"], active_game_for_strat["home_short"], market_spd, home_cover_exp
             s_diff = live_proj_margin + market_spd
@@ -724,7 +725,6 @@ elif menu_choice == "Single Game Engine":
 
         s_sign = "+" if s_val > 0 else ""
 
-        # Spread Standard Consensus (-110 odds / 1.91x)
         strat_candidates.append({
             "type": "Spread (Consensus Line)",
             "pick": f"{s_abbr} {s_sign}{s_val}",
@@ -733,13 +733,13 @@ elif menu_choice == "Single Game Engine":
             "side": "Spread",
             "target_line": s_val,
             "picked_team": s_team,
+            "game_index": strat_game_index,
             "est_payout_multiplier": 1.91,
             "roi_label": "+91% Profit",
             "drift_info": f"Expected Margin: {s_diff:+.1f} pts vs line",
             "rationale": f"High value spread cover on {s_abbr} paying standard 1:1 odds."
         })
 
-        # Spread Alternate Floor Cushion (-175 odds / 1.55x)
         alt_cushion = s_val + 2.5 if s_val > 0 else s_val + 3.0
         p_cushion = min(s_p + 0.10, 0.94)
         strat_candidates.append({
@@ -750,13 +750,13 @@ elif menu_choice == "Single Game Engine":
             "side": "Spread",
             "target_line": alt_cushion,
             "picked_team": s_team,
+            "game_index": strat_game_index,
             "est_payout_multiplier": 1.55,
             "roi_label": "+55% Profit",
             "drift_info": "+3.0 pts additional safety cushion",
             "rationale": "High win expectancy with expanded cover buffer."
         })
 
-        # Spread Aggressive Margin Alt Line (+145 odds / 2.45x)
         alt_agg = s_val - 2.5 if s_val > 0 else s_val - 3.0
         p_agg = max(s_p - 0.12, 0.49)
         strat_candidates.append({
@@ -767,13 +767,13 @@ elif menu_choice == "Single Game Engine":
             "side": "Spread",
             "target_line": alt_agg,
             "picked_team": s_team,
+            "game_index": strat_game_index,
             "est_payout_multiplier": 2.45,
             "roi_label": "+145% Profit (2.45x)",
             "drift_info": "Blowout expansion target",
             "rationale": f"Plus-money payout. Bet $5 to return $12.25 if {s_abbr} pulls away."
         })
 
-        # 2nd Half Total Consensus Under (1.91x)
         line_base_2h = round(live_2h_proj) + 0.5
         p_base_2h = calculate_win_prob(line_base_2h, live_2h_proj, 5.0, is_under=True)
         strat_candidates.append({
@@ -784,13 +784,13 @@ elif menu_choice == "Single Game Engine":
             "side": "Under",
             "target_line": line_base_2h,
             "picked_team": None,
+            "game_index": strat_game_index,
             "est_payout_multiplier": 1.91,
             "roi_label": "+91% Profit",
             "drift_info": f"2H Proj: {live_2h_proj:.1f} pts ({delta_2h:+.1f} pts shift)",
             "rationale": "Direct statistical regression model projection for second half volume."
         })
 
-        # 2nd Half Total Insulated Floor (1.55x)
         line_cush_2h = round(live_2h_proj + 3.5) + 0.5
         p_cush_2h = calculate_win_prob(line_cush_2h, live_2h_proj, 5.0, is_under=True)
         strat_candidates.append({
@@ -801,13 +801,13 @@ elif menu_choice == "Single Game Engine":
             "side": "Under",
             "target_line": line_cush_2h,
             "picked_team": None,
+            "game_index": strat_game_index,
             "est_payout_multiplier": 1.55,
             "roi_label": "+55% Profit",
             "drift_info": f"Extended 2H Floor: +3.5 pts buffer",
             "rationale": "High win expectancy. Second half clock bleed insulates this total."
         })
 
-        # Full Game Total Consensus (1.91x)
         line_base_tot = round(final_proj) + 0.5
         is_u = delta_full <= 0
         p_base_tot = calculate_win_prob(line_base_tot, final_proj, std_bracket, is_under=is_u)
@@ -819,13 +819,13 @@ elif menu_choice == "Single Game Engine":
             "side": "Under" if is_u else "Over",
             "target_line": line_base_tot,
             "picked_team": None,
+            "game_index": strat_game_index,
             "est_payout_multiplier": 1.91,
             "roi_label": "+91% Profit",
             "drift_info": f"Live Projection: {final_proj:.1f} pts ({delta_full:+.1f} pts pace)",
             "rationale": f"Pace mismatch vs {pregame_tot} opening baseline paying near 1:1 return."
         })
 
-        # Outright Moneylines (Favorite & Live Underdog)
         fav_t = active_game_for_strat["home_team"] if live_h_prob >= 0.5 else active_game_for_strat["away_team"]
         fav_a = active_game_for_strat["home_short"] if live_h_prob >= 0.5 else active_game_for_strat["away_short"]
         dog_t = active_game_for_strat["away_team"] if live_h_prob >= 0.5 else active_game_for_strat["home_team"]
@@ -834,7 +834,6 @@ elif menu_choice == "Single Game Engine":
         p_fav = max(live_h_prob, live_a_prob)
         p_dog = min(live_h_prob, live_a_prob)
 
-        # Favorite (Controlled Juice, e.g. -135 / 1.74x)
         strat_candidates.append({
             "type": "Moneyline (Model Favorite)",
             "pick": f"{fav_a} ML",
@@ -843,13 +842,13 @@ elif menu_choice == "Single Game Engine":
             "side": "Moneyline",
             "target_line": None,
             "picked_team": fav_t,
+            "game_index": strat_game_index,
             "est_payout_multiplier": 1.74,
             "roi_label": "+74% Profit",
             "drift_info": f"Win Probability: {p_fav*100:.1f}% ({ml_swing:+.1f}% momentum)",
             "rationale": f"{fav_a} holds controlling efficiency dominance."
         })
 
-        # Live Underdog Value (+155 / 2.55x)
         if p_dog >= 0.38:
             strat_candidates.append({
                 "type": "Moneyline (High Profit Live Underdog)",
@@ -859,13 +858,13 @@ elif menu_choice == "Single Game Engine":
                 "side": "Moneyline",
                 "target_line": None,
                 "picked_team": dog_t,
+                "game_index": strat_game_index,
                 "est_payout_multiplier": 2.55,
                 "roi_label": "+155% Profit (2.55x)",
                 "drift_info": f"Upset Probability: {p_dog*100:.1f}%",
                 "rationale": f"High return position. Market overdiscounting {dog_a} in a close script."
             })
 
-        # Filter by selected market
         if filter_choice == "📊 Full Game Total Score Over/Under":
             filtered = [c for c in strat_candidates if "Total" in c["category"] and "2H" not in c["category"]]
         elif filter_choice == "⏱️ 2nd Half Total Points":
@@ -877,17 +876,13 @@ elif menu_choice == "Single Game Engine":
         else:
             filtered = strat_candidates
 
-        # Apply Dynamic Scale Weights Based on Slider Position
         if "Safe Floor" in strategy_dial:
-            # Heavily weight high win probability (85% prob / 15% multiplier)
             filtered.sort(key=lambda x: (x["prob"] * 0.85) + ((x["est_payout_multiplier"] / 3.0) * 0.15), reverse=True)
             tier_names = ["🥇 BEST (Highest Win Rate)", "🥈 BETTER (Strong Floor)", "🥉 GOOD (Reliable Safety)"]
         elif "High Profit" in strategy_dial:
-            # Heavily weight payout multiplier & upside (20% prob / 80% multiplier)
             filtered.sort(key=lambda x: (x["prob"] * 0.20) + ((x["est_payout_multiplier"] / 3.0) * 0.80), reverse=True)
             tier_names = ["🥇 BEST (Max Multiplier Edge)", "🥈 BETTER (High Upside)", "🥉 GOOD (Balanced Return)"]
         else:
-            # Balanced Expected Value Sweet Spot (50% prob / 50% multiplier)
             filtered.sort(key=lambda x: (x["prob"] * x["est_payout_multiplier"]), reverse=True)
             tier_names = ["🥇 BEST (Optimal +EV Balance)", "🥈 BETTER (Strong Risk/Reward)", "🥉 GOOD (Solid Fundamental Play)"]
 
@@ -928,11 +923,13 @@ elif menu_choice == "Single Game Engine":
                 with r_c2:
                     if st.button("📥 Load to Form", key=f"apply_tier_{idx}_{sc['pick']}", use_container_width=True):
                         st.session_state.single_applied_pick = sc
+                        st.session_state.single_selected_idx = sc["game_index"]
                         st.session_state.single_form_version += 1
                         st.rerun()
 
     # ----------------------------------------------------
     # SINGLE GAME INPUT FORM & MODEL CALCULATIONS
+    # With Team Logos & Visual Pick Badge Directly Inside
     # ----------------------------------------------------
     form_ver = st.session_state.single_form_version
     applied = st.session_state.single_applied_pick
@@ -976,6 +973,29 @@ elif menu_choice == "Single Game Engine":
     )
 
     with st.form(f"single_bet_form_v{form_ver}"):
+        # Matchup Visual Header with Logos in the Bet Form
+        st.markdown(f"""
+        <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <img src="{g.get('away_logo', DEFAULT_LOGO)}" width="30" height="30" style="border-radius: 50%;">
+                <div>
+                    <strong style="font-size: 1.0rem;">{g['away_short']}</strong>
+                    <span style="opacity: 0.6; font-size: 0.75rem; margin-left: 2px;">({g.get('away_record', '0-0')})</span>
+                </div>
+                <span style="opacity: 0.4; margin: 0 4px; font-weight: 700;">@</span>
+                <img src="{g.get('home_logo', DEFAULT_LOGO)}" width="30" height="30" style="border-radius: 50%;">
+                <div>
+                    <strong style="font-size: 1.0rem;">{g['home_short']}</strong>
+                    <span style="opacity: 0.6; font-size: 0.75rem; margin-left: 2px;">({g.get('home_record', '0-0')})</span>
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div style="opacity: 0.85; font-size: 0.80rem; font-weight: 600;">🗓️ {g.get('kickoff', g.get('status', 'Pre-Game'))}</div>
+                <div style="opacity: 0.55; font-size: 0.75rem;">Selected Slip: <strong>{g['away_short']} @ {g['home_short']}</strong></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         if bet_type in ["Game Total", "2nd Half Total"]:
             f1, f2 = st.columns(2)
             default_side_idx = 0
