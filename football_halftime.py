@@ -298,7 +298,8 @@ nav_items = [
     ("💬 The Locker Room", "💬 The Locker Room"),
     ("📜 Locked Bets History", "Locked Bets History"),
     ("🏆 Squad Leaderboard", "🏆 Squad Leaderboard"),
-    ("📖 Model Methodology & Math", "📖 Model Methodology & Math")
+    ("📖 Model Methodology & Math", "📖 Model Methodology & Math"),
+    ("💡 How It Works", "💡 How It Works")
 ]
 
 for label, page_key in nav_items:
@@ -537,10 +538,12 @@ elif menu_choice == "💬 The Locker Room":
             st.write(m.get('text'))
 
 # ==========================================
-# PAGE 1: SINGLE GAME ENGINE (WITH RISK-RETURN SCALE & RELIABLE LOAD TO FORM)
+# PAGE 1: SINGLE GAME ENGINE (WITH PERMANENT SYNC FIX)
 # ==========================================
 elif menu_choice == "Single Game Engine":
     st.subheader("⚡ Single Game Engine")
+
+    form_ver = st.session_state.single_form_version
 
     if games_data:
         game_options = [f"[{g['league']}] {g['away_short']} @ {g['home_short']} ({g.get('kickoff', g['status'])})" for g in games_data]
@@ -548,12 +551,13 @@ elif menu_choice == "Single Game Engine":
         if st.session_state.single_selected_idx >= len(game_options):
             st.session_state.single_selected_idx = 0
             
+        # Dynamically versioned key allows Load to Form to force update this dropdown
         selected_idx = st.selectbox(
             "Select Matchup", 
             range(len(game_options)), 
             index=st.session_state.single_selected_idx, 
             format_func=lambda x: game_options[x],
-            key="single_matchup_dropdown"
+            key=f"single_matchup_dropdown_v{form_ver}"
         )
         st.session_state.single_selected_idx = selected_idx
         
@@ -931,7 +935,6 @@ elif menu_choice == "Single Game Engine":
     # SINGLE GAME INPUT FORM & MODEL CALCULATIONS
     # With Team Logos & Visual Pick Badge Directly Inside
     # ----------------------------------------------------
-    form_ver = st.session_state.single_form_version
     applied = st.session_state.single_applied_pick
 
     all_stages = ["Pre-Game", "1st Quarter", "Halftime", "3rd Quarter", "4th Quarter / Late Game", "Final / Game Completed"]
@@ -973,7 +976,6 @@ elif menu_choice == "Single Game Engine":
     )
 
     with st.form(f"single_bet_form_v{form_ver}"):
-        # Matchup Visual Header with Logos in the Bet Form
         st.markdown(f"""
         <div style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.1);">
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -1726,3 +1728,58 @@ elif menu_choice == "📖 Model Methodology & Math":
         st.markdown("### 3. Straight-Up Moneyline & Spread Engines")
         st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
         st.latex(r"P(\text{Home Win}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
+
+# ==========================================
+# PAGE 6: HOW IT WORKS (USER GUIDE)
+# ==========================================
+elif menu_choice == "💡 How It Works":
+    st.subheader("💡 How It Works: The Flurkstradamus User Guide")
+    st.caption("Mastering the Edge Engine, Combo Builder, and Squad Tracker.")
+
+    with st.container(border=True):
+        st.markdown("### ⚡ 1. Single Game Engine & AI Strategy Builder")
+        st.write(
+            "The **Single Game Engine** connects live to ESPN scoreboard endpoints to track "
+            "every game from pregame opening through the final whistle."
+        )
+        st.markdown("""
+        * **Live Line Drift Tracking:** The top 4 cards compare opening sportsbook lines against real-time scoring to compute live **Full Game Totals**, **2nd Half Totals**, and **Spread ATS Margins**.
+        * **The Risk vs. Return Dial:** Adjust the slider to set your model objective:
+          * **🛡️ Safe Floor:** Isolates insulated lines with 80%+ win probabilities.
+          * **⚖️ Balanced Edge:** Finds the sweet spot (+EV) paying 1:1 or better with 60–70% win probabilities.
+          * **🚀 High Profit:** Discovers high-multiplier lines (+140 to +250) and mispriced live underdogs.
+        * **One-Click Loading:** Press **'📥 Load to Form'** on any Good, Better, or Best card to immediately sync the matchup, set the lines, and populate your slip below.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 🔗 2. 2–12 Leg Combo Builder")
+        st.write(
+            "Designed for parlay architects. Build customized tickets or let the system analyze the entire slate for compound edge."
+        )
+        st.markdown("""
+        * **Automated Strategy Generator:** Pick an objective (*Max Win Probability*, *High EV*, *Moneyline Dominance*, or *Defensive Under*) and set your target leg count.
+        * **Interactive Leg Removal:** Click **Edit** beside the recommended ticket header to expose the radio selector drawer and drop any leg you don't like.
+        * **Compound Probability Modeling:** As you add or remove picks, the engine compounds true win probabilities across every leg in real time.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 📜 3. Locked Bets History & Live Squad Feed")
+        st.write(
+            "Keep all your tickets in one place and share plays with the squad."
+        )
+        st.markdown("""
+        * **Smart Status Badges:** Slips automatically track game progress:
+          * `⏳ PENDING` for scheduled games that haven't kicked off yet.
+          * `⚡ IN PLAY` with live score updates once the whistle blows.
+          * `🏆 WON` and `❌ LOST` auto-graded as final scores resolve.
+        * **Clean USD Metrics:** Displays risk and return metrics alongside net profit ROI percentages.
+        * **In-Game War Room:** Click on active single bets to enter the War Room and track live equity and smart cashout fair values.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 🏆 4. Squad Leaderboard & The Locker Room")
+        st.markdown("""
+        * **Leaderboard Standings:** Automatically tracks wins, losses, win rates, and total net profit ($) for every bettor in your crew.
+        * **Badges:** Earn badges like `🎯 Sniper` or `🔥 On Fire` based on consistency and profit margins.
+        * **The Locker Room:** Real-time squad chat feed for game chatter, alerts, and banter.
+        """)
