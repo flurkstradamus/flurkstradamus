@@ -151,7 +151,6 @@ def get_live_games(league_code="nfl"):
             status_desc = status_obj["type"]["shortDetail"]
             period = status_obj.get("period", 1)
 
-            # Determine checkpoint
             if state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower():
                 checkpoint = "Final / Game Completed"
                 is_completed = True
@@ -211,9 +210,6 @@ def find_game_for_bet(bet, games):
             return g_item
     return None
 
-# ==========================================
-# AUTO-SETTLE RESOLUTION LOGIC
-# ==========================================
 def auto_resolve_bets(bets, games):
     changed = False
     for b in bets:
@@ -243,7 +239,6 @@ current_user = st.sidebar.text_input("Bettor Handle", value="Flurk")
 league = st.sidebar.radio("Active League", ["NFL", "NCAA Football"])
 league_param = "nfl" if league == "NFL" else "college-football"
 
-# Live Refresh Controls
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ⏱️ Live Updates")
 auto_refresh = st.sidebar.toggle("Auto-Refresh Live Scores", value=True)
@@ -271,8 +266,6 @@ menu_choice = st.sidebar.radio(
 @st.fragment(run_every=refresh_interval if auto_refresh else None)
 def render_main_engine():
     games_data = get_live_games(league_param)
-
-    # Automatically resolve pending games on each tick
     auto_resolve_bets(st.session_state.saved_bets, games_data)
 
     # ------------------------------------------
@@ -405,7 +398,6 @@ def render_main_engine():
         margin = abs(h_pts - a_pts)
         is_completed = (bracket_stage == "Final / Game Completed")
 
-        # Dynamic Checkpoint Variance & Projections
         if is_completed:
             final_proj = float(pts_scored)
             std_bracket = 0.01
@@ -425,7 +417,7 @@ def render_main_engine():
             pace_diff = pts_scored - (pregame_total * 0.775)
             final_proj = pts_scored + (pregame_total * 0.225) + (pace_diff * 0.20)
             std_bracket = 4.0
-        else:  # 4th Quarter / Late Game
+        else:
             rem_points_exp = max((pregame_total * 0.10) - (pts_scored * 0.05), 1.0)
             final_proj = pts_scored + rem_points_exp
             std_bracket = 1.8
@@ -462,20 +454,29 @@ def render_main_engine():
         st.markdown("---")
         st.subheader(f"🔒 Lock In Ticket as {current_user}")
 
-        with st.form("single_bet_form"):
-            f1, f2, f3 = st.columns(3)
-            bet_type = f1.selectbox("Wager Type", ["Game Total", "Straight Up Winner (Moneyline)"])
+        # Placed outside form to allow instant re-rendering of pick fields
+        bet_type = st.radio(
+            "Wager Type",
+            ["Game Total", "Straight Up Winner (Moneyline)"],
+            horizontal=True,
+            key=f"btype_sel_{g_id}"
+        )
 
+        with st.form("single_bet_form"):
             if bet_type == "Game Total":
-                side = f2.selectbox("Side", ["Under", "Over"])
+                f1, f2 = st.columns(2)
+                side = f1.selectbox("Side", ["Under", "Over"], key=f"side_{g_id}")
                 default_strike = round(final_proj + 2.5) + 0.5 if not is_completed else float(pts_scored)
-                strike = f3.number_input("Line (pts)", value=float(default_strike), step=0.5)
+                strike = f2.number_input("Target Line (pts)", value=float(default_strike), step=0.5, key=f"strike_{g_id}")
                 picked_t = None
             else:
                 side = "Moneyline"
-                picked_t = f2.selectbox("Winner", [home_team, away_team])
                 strike = None
-                f3.write("")
+                picked_t = st.selectbox(
+                    "Select Winning Team",
+                    [home_team, away_team],
+                    key=f"ml_pick_{g_id}"
+                )
 
             p1, p2, p3 = st.columns(3)
             risk_amt = p1.number_input("Risk Amount ($)", min_value=1.0, value=10.0, step=5.0)
@@ -552,21 +553,27 @@ def render_main_engine():
                 d_h_rec, d_a_rec = "5-2", "4-3"
                 leg_completed = False
 
-            col_a, col_b, col_c = st.columns(3)
-            wager_cat = col_a.selectbox(f"Wager Type (Leg {i+1})", ["Game Total", "Straight Up Winner"], key=f"wtype_{i}")
+            wager_cat = st.radio(
+                f"Wager Type (Leg {i+1})",
+                ["Game Total", "Straight Up Winner"],
+                horizontal=True,
+                key=f"wtype_{i}"
+            )
 
             if wager_cat == "Game Total":
+                col_b, col_c = st.columns(2)
                 side = col_b.selectbox("Side", ["Under", "Over"], key=f"lside_{i}")
                 strike = col_c.number_input("Line (pts)", value=44.5, step=0.5, key=f"lstrike_{i}")
                 leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
                 leg_desc = f"{d_a} @ {d_h}: {side} {strike}"
             else:
+                col_b, col_c = st.columns(2)
                 winner = col_b.selectbox("Pick Winner", [d_h, d_a], key=f"lwinner_{i}")
                 strike = None
                 h_prob = calculate_moneyline_prob(d_h_pts + 15, d_a_pts + 15, d_h_rec, d_a_rec, is_final=leg_completed)
                 leg_prob = h_prob if winner == d_h else (1.0 - h_prob)
                 leg_desc = f"{d_a} @ {d_h}: {winner} ML"
-                col_c.write(f"Estimated Win: **{leg_prob * 100:.1f}%**")
+                col_c.metric("Model Win Expectancy", f"{leg_prob * 100:.1f}%")
 
             compound_prob *= leg_prob
             combo_legs.append({"desc": leg_desc, "prob": leg_prob})
