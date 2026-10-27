@@ -181,6 +181,8 @@ if "combo_version" not in st.session_state:
     st.session_state.combo_version = 0
 if "editing_msg_id" not in st.session_state:
     st.session_state.editing_msg_id = None
+if "selected_admin_user" not in st.session_state:
+    st.session_state.selected_admin_user = None
 
 # Single Game State Keys
 if "single_selected_idx" not in st.session_state:
@@ -338,88 +340,109 @@ is_user_admin = current_user_profile.get("is_admin", False)
 
 current_user_profile["last_active"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
 
-# ESPN Game Ingestion
-@st.cache_data(ttl=25)
+# =========================================================================
+# MULTI-DAY ESPN INGESTION (INCLUDES UPCOMING, LIVE & PAST MATCHUPS)
+# =========================================================================
+@st.cache_data(ttl=30)
 def get_extended_games(selected_league="All Games"):
     all_games = []
     seen_ids = set()
     
-    endpoints = []
-    if selected_league in ["NFL", "All Games"]:
-        endpoints.append(("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=250"))
-    if selected_league in ["NCAA Football", "All Games"]:
-        endpoints.append(("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=300&groups=80"))
-        endpoints.append(("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=300"))
+    # Query default live/recent scoreboard, plus upcoming 14 days by date query
+    base_dates = [
+        "",  # Default live / active week
+    ]
+    
+    # Add next 14 calendar dates in YYYYMMDD format
+    now_et = get_current_et_time()
+    for d_offset in range(0, 14):
+        f_dt = now_et + timedelta(days=d_offset)
+        base_dates.append(f_dt.strftime("%Y%m%d"))
 
-    for l_label, url in endpoints:
-        try:
-            r = requests.get(url, timeout=5)
-            if r.status_code == 200:
-                data = r.json()
-                for event in data.get("events", []):
-                    ev_id = str(event.get("id", ""))
-                    if ev_id in seen_ids:
-                        continue
-                    seen_ids.add(ev_id)
+    # Also add past 3 days for completed history
+    for p_offset in range(1, 4):
+        p_dt = now_et - timedelta(days=p_offset)
+        base_dates.append(p_dt.strftime("%Y%m%d"))
 
-                    comp = event["competitions"][0]
-                    competitors = comp["competitors"]
-                    home = next(c for c in competitors if c["homeAway"] == "home")
-                    away = next(c for c in competitors if c["homeAway"] == "away")
-                    status_obj = comp["status"]
-                    state_text = status_obj["type"]["state"]
-                    status_desc = status_obj["type"]["shortDetail"]
-                    period = status_obj.get("period", 1)
+    for d_param in base_dates:
+        d_query = f"?dates={d_param}" if d_param else ""
+        d_query_college = f"?dates={d_param}&groups=80" if d_param else "?groups=80"
 
-                    raw_date = event.get("date", "")
-                    kickoff_formatted = format_espn_kickoff(raw_date, status_desc)
-                    home_team_obj = home.get("team", {})
-                    away_team_obj = away.get("team", {})
-                    home_name = home_team_obj.get("displayName", "Home")
-                    away_name = away_team_obj.get("displayName", "Away")
+        endpoints = []
+        if selected_league in ["NFL", "All Games"]:
+            endpoints.append(("NFL", f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard{d_query}"))
+        if selected_league in ["NCAA Football", "All Games"]:
+            endpoints.append(("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard{d_query_college}"))
 
-                    odds_ou = 47.5
-                    odds_spread = -3.5
-                    if comp.get("odds"):
-                        odds_data = comp["odds"][0]
-                        odds_ou = float(odds_data.get("overUnder", 47.5))
-                        odds_spread = float(odds_data.get("spread", -3.5))
+        for l_label, url in endpoints:
+            try:
+                r = requests.get(url, timeout=4)
+                if r.status_code == 200:
+                    data = r.json()
+                    for event in data.get("events", []):
+                        ev_id = str(event.get("id", ""))
+                        if ev_id in seen_ids:
+                            continue
+                        seen_ids.add(ev_id)
 
-                    is_completed = (state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower())
+                        comp = event["competitions"][0]
+                        competitors = comp["competitors"]
+                        home = next(c for c in competitors if c["homeAway"] == "home")
+                        away = next(c for c in competitors if c["homeAway"] == "away")
+                        status_obj = comp["status"]
+                        state_text = status_obj["type"]["state"]
+                        status_desc = status_obj["type"]["shortDetail"]
+                        period = status_obj.get("period", 1)
 
-                    if is_completed:
-                        checkpoint = "Final / Game Completed"
-                    elif state_text == "pre":
-                        checkpoint = "Pre-Game"
-                    else:
-                        checkpoint = "Halftime" if "half" in status_desc.lower() else (f"{period}st Quarter" if period == 1 else f"{period}th Quarter")
+                        raw_date = event.get("date", "")
+                        kickoff_formatted = format_espn_kickoff(raw_date, status_desc)
+                        home_team_obj = home.get("team", {})
+                        away_team_obj = away.get("team", {})
+                        home_name = home_team_obj.get("displayName", "Home")
+                        away_name = away_team_obj.get("displayName", "Away")
 
-                    all_games.append({
-                        "id": ev_id,
-                        "raw_date": raw_date,
-                        "league": l_label,
-                        "name": event["name"],
-                        "kickoff": kickoff_formatted,
-                        "home_team": home_name,
-                        "home_short": clean_abbr(home_name, home_team_obj.get("abbreviation")),
-                        "home_logo": home_team_obj.get("logo", DEFAULT_LOGO),
-                        "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
-                        "away_team": away_name,
-                        "away_short": clean_abbr(away_name, away_team_obj.get("abbreviation")),
-                        "away_logo": away_team_obj.get("logo", DEFAULT_LOGO),
-                        "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
-                        "home_score": int(home.get("score", 0)),
-                        "away_score": int(away.get("score", 0)),
-                        "status": status_desc,
-                        "checkpoint": checkpoint,
-                        "completed": is_completed,
-                        "period": period,
-                        "displayClock": status_obj.get("displayClock", "0:00"),
-                        "market_ou": odds_ou,
-                        "market_spread": odds_spread
-                    })
-        except Exception:
-            pass
+                        odds_ou = 47.5
+                        odds_spread = -3.5
+                        if comp.get("odds"):
+                            odds_data = comp["odds"][0]
+                            odds_ou = float(odds_data.get("overUnder", 47.5))
+                            odds_spread = float(odds_data.get("spread", -3.5))
+
+                        is_completed = (state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower())
+
+                        if is_completed:
+                            checkpoint = "Final / Game Completed"
+                        elif state_text == "pre":
+                            checkpoint = "Pre-Game"
+                        else:
+                            checkpoint = "Halftime" if "half" in status_desc.lower() else (f"{period}st Quarter" if period == 1 else f"{period}th Quarter")
+
+                        all_games.append({
+                            "id": ev_id,
+                            "raw_date": raw_date,
+                            "league": l_label,
+                            "name": event["name"],
+                            "kickoff": kickoff_formatted,
+                            "home_team": home_name,
+                            "home_short": clean_abbr(home_name, home_team_obj.get("abbreviation")),
+                            "home_logo": home_team_obj.get("logo", DEFAULT_LOGO),
+                            "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
+                            "away_team": away_name,
+                            "away_short": clean_abbr(away_name, away_team_obj.get("abbreviation")),
+                            "away_logo": away_team_obj.get("logo", DEFAULT_LOGO),
+                            "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
+                            "home_score": int(home.get("score", 0)),
+                            "away_score": int(away.get("score", 0)),
+                            "status": status_desc,
+                            "checkpoint": checkpoint,
+                            "completed": is_completed,
+                            "period": period,
+                            "displayClock": status_obj.get("displayClock", "0:00"),
+                            "market_ou": odds_ou,
+                            "market_spread": odds_spread
+                        })
+            except Exception:
+                pass
 
     return all_games
 
@@ -459,7 +482,7 @@ with col_u1:
 
 st.sidebar.markdown("---")
 
-# Reorganized into functional tiers
+# Reorganized into logical functional order
 nav_items = [
     ("📊 My Dashboard", "📊 My Dashboard"),
     ("⚡ Single Game Engine", "⚡ Single Game Engine"),
@@ -504,7 +527,7 @@ games_data = get_extended_games(league)
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots)
 
 # =========================================================================
-# WAR ROOM WITH MULTI-TEAM LOGO DISPLAY
+# WAR ROOM: SINGLE BET & MULTI-LEG COMBO DETAILS
 # =========================================================================
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
@@ -518,7 +541,7 @@ if st.session_state.selected_bet_id is not None:
         st.stop()
 
     is_combo = (selected_bet.get("bet_category") == "Combo" or "Leg" in selected_bet.get("type", ""))
-    st.title(f"🏟️ In-Game War Room: {selected_bet.get('matchup', 'Football Ticket')}")
+    st.title(f"🏟️ War Room: {selected_bet.get('matchup', 'Football Ticket')}")
     st.caption(f"Bettor: **{selected_bet.get('user', 'Flurk')}** | Pick: `{selected_bet['bet']}` | Logged: {selected_bet.get('date', 'N/A')} | Status: `{selected_bet.get('status')}`")
 
     wm1, wm2, wm3, wm4 = st.columns(4)
@@ -632,7 +655,7 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # =========================================================================
-# 1. MY DASHBOARD (WITH ONBOARDING TIPS FOR NEW/INACTIVE USERS)
+# 1. MY DASHBOARD
 # =========================================================================
 if menu_choice == "📊 My Dashboard":
     st.subheader(f"📊 {current_user}'s Personal Betting Dashboard")
@@ -643,7 +666,6 @@ if menu_choice == "📊 My Dashboard":
     
     tot_placed = len(my_bets)
 
-    # ONBOARDING QUICK-START CARD WHEN 0 BETS EXIST
     if tot_placed == 0:
         with st.container(border=True):
             st.markdown("### 👋 Welcome to Flurkstradamus! Let's Lock In Your First Edge")
@@ -724,19 +746,20 @@ if menu_choice == "📊 My Dashboard":
             st.info("No recorded losses.")
 
 # =========================================================================
-# 2. SINGLE GAME ENGINE (REAL PLAYER TOUCHDOWNS & STATISTICAL NOTES)
+# 2. SINGLE GAME ENGINE
 # =========================================================================
 elif menu_choice == "⚡ Single Game Engine":
     st.subheader("⚡ Single Game Analytics Engine")
 
     form_ver = st.session_state.single_form_version
 
+    # Filter by Upcoming, Live, or Past
     f_col1, f_col2 = st.columns([1, 2])
     with f_col1:
         timing_view = st.selectbox(
             "Game Status Filter",
-            ["⚡ Upcoming & Live Only", "📜 Past / Completed Games", "🌐 All Games"],
-            help="Filter between upcoming/live matchups or past completed games."
+            ["⏳ Upcoming Games", "⚡ Live Games", "📜 Past / Completed Games", "🌐 All Matchups"],
+            help="Filter between upcoming future games, live active games, or past completed games."
         )
     with f_col2:
         search_query = st.text_input("🔍 Search Matchup or Team", placeholder="e.g. Eagles, Dallas, Ohio State...", help="Search any team name, city, or matchup.")
@@ -748,8 +771,10 @@ elif menu_choice == "⚡ Single Game Engine":
                 save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
 
     pool = games_data
-    if timing_view == "⚡ Upcoming & Live Only":
-        pool = [g for g in pool if not g.get("completed", False)]
+    if timing_view == "⏳ Upcoming Games":
+        pool = [g for g in pool if not g.get("completed", False) and g.get("checkpoint") == "Pre-Game"]
+    elif timing_view == "⚡ Live Games":
+        pool = [g for g in pool if not g.get("completed", False) and g.get("checkpoint") != "Pre-Game"]
     elif timing_view == "📜 Past / Completed Games":
         pool = [g for g in pool if g.get("completed", False)]
 
@@ -778,7 +803,7 @@ elif menu_choice == "⚡ Single Game Engine":
         espn_ou = g["market_ou"]
         espn_spread = g["market_spread"]
     else:
-        st.info("No matchups match your filter or search query.")
+        st.info("No matchups found matching your status filter or search query. Try switching to '⏳ Upcoming Games' or '🌐 All Matchups'.")
         st.stop()
 
     h_pts = g["home_score"]
@@ -842,7 +867,7 @@ elif menu_choice == "⚡ Single Game Engine":
         m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%", help="Logistic straight-up win expectancy.")
         m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line", help="Expected point spread margin differential.")
 
-    # ACCORDION 2: AI STRATEGY ENGINE WITH REAL PLAYER NAMES
+    # ACCORDION 2: AI STRATEGY ENGINE
     with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
         st.markdown(
             "> **What this section does:** Evaluates betting opportunities across Totals, Spreads, Moneylines, and **Player Anytime Touchdown Scorers**. "
@@ -1008,7 +1033,7 @@ elif menu_choice == "⚡ Single Game Engine":
             }
         ]
 
-        # PLAYER ANYTIME TOUCHDOWN SCORER (REAL PLAYER NAMES RETRIEVAL)
+        # Touchdown Props with Real Player Names
         home_scorers = get_star_scorers_for_team(tg_home_short, active_game_for_strat["home_team"])
         away_scorers = get_star_scorers_for_team(tg_away_short, active_game_for_strat["away_team"])
 
@@ -1078,7 +1103,7 @@ elif menu_choice == "⚡ Single Game Engine":
                     st.session_state.single_form_version += 1
                     st.rerun()
 
-    # ACCORDION 3: SLIP BUILDER WITH STATISTICALLY DETAILED NOTES
+    # ACCORDION 3: SLIP BUILDER WITH CONTEXT NOTES
     applied = st.session_state.single_applied_pick
     with st.expander("📝 Section 3: Wager Type & Lock In Bet Slip", expanded=True):
         st.markdown(
@@ -1125,7 +1150,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 picked_t = st.selectbox("Outright Winner", [home_team, away_team])
                 strike = None
                 side = "Moneyline"
-            else: # Real Player Touchdown Prop
+            else:
                 default_p = applied["picked_team"] if (applied and applied.get("picked_team")) else f"{p1_name} ({p1_pos} - {g['home_short']})"
                 picked_t = st.text_input("Player to Score TD", value=default_p, help="Enter exact player name.")
                 strike = 1.0
@@ -1136,11 +1161,11 @@ elif menu_choice == "⚡ Single Game Engine":
             mult = applied.get("est_payout_multiplier", 1.91) if applied else 1.91
             payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=round(risk_amt * mult, 2), help="Total payout returned if ticket wins.")
             
-            # Context-rich statistical notes
+            # Meaningful context-rich notes
             if applied:
                 default_notes = f"Model Edge: {applied['pick']} | {applied.get('drift_info', '')}"
             else:
-                default_notes = f"Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} vs {pregame_tot} open) | Live Margin: {live_proj_margin:+.1f} pts"
+                default_notes = f"Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} vs {pregame_tot} open) | Live ATS Margin: {live_proj_margin:+.1f} pts"
 
             ticket_notes = st.text_input("Notes", default_notes, help="Statistical audit trail and reasoning for this bet.")
 
@@ -1184,18 +1209,43 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
     st.caption("Automated cross-slate parlay scanner, compound probability calculator, and slip builder.")
 
-    game_choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in games_data]
+    # Status Filter for Combo Builder
+    c_fcol1, c_fcol2 = st.columns([1, 2])
+    with c_fcol1:
+        c_timing_view = c_fcol1.selectbox(
+            "Game Status Filter (Combo)",
+            ["⏳ Upcoming Games", "⚡ Live Games", "🌐 All Matchups"],
+            help="Filter games for your parlay legs."
+        )
+    with c_fcol2:
+        c_search = c_fcol2.text_input("🔍 Search Game Slate", placeholder="e.g. Chiefs, Lions, Ravens...", help="Search teams to include in parlay legs.")
 
-    if st.session_state.combo_active_legs and games_data:
+    c_pool = games_data
+    if c_timing_view == "⏳ Upcoming Games":
+        c_pool = [g for g in c_pool if not g.get("completed", False) and g.get("checkpoint") == "Pre-Game"]
+    elif c_timing_view == "⚡ Live Games":
+        c_pool = [g for g in c_pool if not g.get("completed", False) and g.get("checkpoint") != "Pre-Game"]
+
+    if c_search.strip():
+        cq = c_search.strip().lower()
+        c_pool = [g for g in c_pool if cq in g["home_team"].lower() or cq in g["away_team"].lower() or cq in g["home_short"].lower() or cq in g["away_short"].lower()]
+
+    if not c_pool:
+        st.info("No games match the selected status or search filter. Switch back to '⏳ Upcoming Games' or '🌐 All Matchups'.")
+        st.stop()
+
+    game_choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in c_pool]
+
+    if st.session_state.combo_active_legs and c_pool:
         for leg in st.session_state.combo_active_legs:
-            if leg.get("matchup_idx", 0) >= len(games_data):
+            if leg.get("matchup_idx", 0) >= len(c_pool):
                 leg["matchup_idx"] = 0
 
-    if not st.session_state.combo_active_legs and games_data:
-        init_count = min(3, len(games_data))
+    if not st.session_state.combo_active_legs and c_pool:
+        init_count = min(3, len(c_pool))
         st.session_state.combo_active_legs = []
         for j in range(init_count):
-            g_item = games_data[j]
+            g_item = c_pool[j]
             st.session_state.combo_active_legs.append({
                 "matchup_idx": j,
                 "type": "Game Total",
@@ -1220,9 +1270,9 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             help="Select your compound strategy objective."
         )
 
-        active_candidate_games = [gm for gm in games_data if not gm.get("completed", False)]
+        active_candidate_games = [gm for gm in c_pool if not gm.get("completed", False)]
         if not active_candidate_games:
-            active_candidate_games = games_data
+            active_candidate_games = c_pool
         max_possible_legs = min(12, max(2, len(active_candidate_games)))
 
         suggest_legs_count = col_strat2.number_input(
@@ -1234,7 +1284,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
         )
         generate_clicked = st.button("⚡ Scan & Recommend Across Slates", use_container_width=True, help="Run AI scan to select the best combination of picks.")
 
-        if generate_clicked and games_data:
+        if generate_clicked and c_pool:
             candidate_legs = []
             for g_c in active_candidate_games:
                 c_h, c_a = g_c["home_team"], g_c["away_team"]
@@ -1262,7 +1312,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                     p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
                     candidate_legs.append({
                         "leg_id": f"tot_{g_c['id']}_under_{cushion_line}",
-                        "matchup_idx": games_data.index(g_c),
+                        "matchup_idx": c_pool.index(g_c),
                         "type": "Game Total",
                         "side": "Under",
                         "line": cushion_line,
@@ -1279,7 +1329,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                     p = calculate_win_prob(tgt_line, proj_tot, sigma, is_under=is_u)
                     candidate_legs.append({
                         "leg_id": f"ev_{g_c['id']}_{'u' if is_u else 'o'}_{tgt_line}",
-                        "matchup_idx": games_data.index(g_c),
+                        "matchup_idx": c_pool.index(g_c),
                         "type": "Game Total",
                         "side": "Under" if is_u else "Over",
                         "line": tgt_line,
@@ -1295,7 +1345,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                     ml_p = max(h_prob, 1.0 - h_prob)
                     candidate_legs.append({
                         "leg_id": f"ml_{g_c['id']}_{ml_fav}",
-                        "matchup_idx": games_data.index(g_c),
+                        "matchup_idx": c_pool.index(g_c),
                         "type": "Straight Up Winner",
                         "side": "Under",
                         "line": c_ou,
@@ -1320,8 +1370,8 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             st.session_state.ai_recommended_combo = selected_ai_legs
             st.session_state.editing_ai_combo = False
 
-        if st.session_state.ai_recommended_combo and games_data:
-            valid_legs = [l for l in st.session_state.ai_recommended_combo if 0 <= l.get("matchup_idx", -1) < len(games_data)]
+        if st.session_state.ai_recommended_combo and c_pool:
+            valid_legs = [l for l in st.session_state.ai_recommended_combo if 0 <= l.get("matchup_idx", -1) < len(c_pool)]
             st.session_state.ai_recommended_combo = valid_legs
 
         if st.session_state.ai_recommended_combo:
@@ -1340,7 +1390,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             if st.session_state.editing_ai_combo:
                 with st.container(border=True):
                     leg_options = [
-                        f"Leg {k+1}: {item['desc']} ({games_data[min(item['matchup_idx'], len(games_data)-1)]['away_short']}@{games_data[min(item['matchup_idx'], len(games_data)-1)]['home_short']})"
+                        f"Leg {k+1}: {item['desc']} ({c_pool[min(item['matchup_idx'], len(c_pool)-1)]['away_short']}@{c_pool[min(item['matchup_idx'], len(c_pool)-1)]['home_short']})"
                         for k, item in enumerate(st.session_state.ai_recommended_combo)
                     ]
                     selected_leg_idx = st.radio("Select a leg to remove:", range(len(leg_options)), format_func=lambda x: leg_options[x])
@@ -1353,8 +1403,8 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                         st.rerun()
 
             for idx_ai, l_ai in enumerate(st.session_state.ai_recommended_combo):
-                m_idx = min(max(l_ai.get("matchup_idx", 0), 0), len(games_data) - 1)
-                g_match = games_data[m_idx]
+                m_idx = min(max(l_ai.get("matchup_idx", 0), 0), len(c_pool) - 1)
+                g_match = c_pool[m_idx]
                 detail_str = l_ai.get("detail", "")
 
                 st.markdown(f"""
@@ -1383,11 +1433,11 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 st.session_state.combo_version += 1
                 st.session_state.combo_active_legs = [
                     {
-                        "matchup_idx": min(l_item["matchup_idx"], len(games_data)-1),
+                        "matchup_idx": min(l_item["matchup_idx"], len(c_pool)-1),
                         "type": l_item["type"],
                         "side": l_item.get("side", "Under"),
                         "line": float(l_item.get("line", 47.5)),
-                        "picked_team": l_item.get("picked_team", games_data[min(l_item["matchup_idx"], len(games_data)-1)]["home_team"])
+                        "picked_team": l_item.get("picked_team", c_pool[min(l_item["matchup_idx"], len(c_pool)-1)]["home_team"])
                     }
                     for l_item in st.session_state.ai_recommended_combo
                 ]
@@ -1396,9 +1446,9 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
     ver = st.session_state.combo_version
     ctrl_c1, ctrl_c2 = st.columns([3, 1], vertical_alignment="center")
     ctrl_c1.markdown(f"#### Active Ticket Slip ({len(st.session_state.combo_active_legs)} Legs)")
-    if ctrl_c2.button("➕ Add Leg", use_container_width=True, disabled=(len(st.session_state.combo_active_legs) >= 12 or not games_data)):
-        next_idx = min(len(st.session_state.combo_active_legs), len(games_data) - 1)
-        g_next = games_data[next_idx]
+    if ctrl_c2.button("➕ Add Leg", use_container_width=True, disabled=(len(st.session_state.combo_active_legs) >= 12 or not c_pool)):
+        next_idx = min(len(st.session_state.combo_active_legs), len(c_pool) - 1)
+        g_next = c_pool[next_idx]
         st.session_state.combo_active_legs.append({
             "matchup_idx": next_idx,
             "type": "Game Total",
@@ -1422,7 +1472,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 key=f"m_sel_{i}_v{ver}"
             )
             leg_data["matchup_idx"] = sel_matchup
-            leg_g = games_data[sel_matchup]
+            leg_g = c_pool[sel_matchup]
 
             wager_cat = st.radio(
                 f"Wager Type (Leg {i+1})",
@@ -1466,8 +1516,8 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
         if st.form_submit_button(f"Lock In {len(combo_legs)}-Leg Ticket", use_container_width=True):
             parsed_legs = []
             for item in st.session_state.combo_active_legs:
-                s_idx = min(item["matchup_idx"], len(games_data) - 1)
-                mg = games_data[s_idx]
+                s_idx = min(item["matchup_idx"], len(c_pool) - 1)
+                mg = c_pool[s_idx]
                 parsed_legs.append({
                     "matchup": f"{mg['away_short']} @ {mg['home_short']}",
                     "type": item["type"],
@@ -1698,10 +1748,10 @@ elif menu_choice == "💬 The Locker Room":
 elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
-    * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, and top winners.
-    * **⚡ Single Game Engine**: Filter games by upcoming/past or search directly. Review real-time model projections, anytime touchdown props, and custom AI bet rationales.
+    * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, and top winners. If you have no bets placed, follow the quick start onboarding steps!
+    * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Review real-time model projections, anytime touchdown props, and custom AI bet rationales.
     * **🔗 Multi-Leg Combo Builder**: Scan slates for optimal multi-leg parlay opportunities with compound true win probabilities.
-    * **🏟️ In-Game War Room**: Click any single or multi-leg combo ticket in Locked Bets History to evaluate live score updates and quarter-by-quarter projection drift.
+    * **🏟️ In-Game War Room**: Click any single or multi-leg combo ticket in Locked Bets History to evaluate live score updates, all team logos, and quarter-by-quarter projection drift.
     * **⚙️ Account Settings**: Personalize your profile, bio, avatar, and privacy settings.
     """)
 
