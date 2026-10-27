@@ -223,6 +223,8 @@ if "combo_version" not in st.session_state:
     st.session_state.combo_version = 0
 if "editing_msg_id" not in st.session_state:
     st.session_state.editing_msg_id = None
+if "selected_admin_user" not in st.session_state:
+    st.session_state.selected_admin_user = None
 if "scroll_to_form" not in st.session_state:
     st.session_state.scroll_to_form = False
 
@@ -391,21 +393,24 @@ def get_extended_games(selected_league="All Games"):
     seen_ids = set()
     
     now_et = get_current_et_time()
-    past_date_str = (now_et - timedelta(days=3)).strftime("%Y%m%d")
-    future_date_str = (now_et + timedelta(days=14)).strftime("%Y%m%d")
-    date_range_param = f"{past_date_str}-{future_date_str}"
+    
+    # Query current week and day slices across the next 10 days
+    date_queries = [""]
+    for d in range(0, 10):
+        dt_day = (now_et + timedelta(days=d)).strftime("%Y%m%d")
+        date_queries.append(dt_day)
 
     endpoints = []
-    if selected_league in ["NFL", "All Games"]:
-        endpoints.append(("NFL", f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={date_range_param}&limit=150"))
-        endpoints.append(("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=150"))
-    if selected_league in ["NCAA Football", "All Games"]:
-        endpoints.append(("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates={date_range_param}&groups=80&limit=200"))
-        endpoints.append(("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=200"))
+    for dq in date_queries:
+        d_param = f"&dates={dq}" if dq else ""
+        if selected_league in ["NFL", "All Games"]:
+            endpoints.append(("NFL", f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100{d_param}"))
+        if selected_league in ["NCAA Football", "All Games"]:
+            endpoints.append(("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=100&groups=80{d_param}"))
 
     for l_label, url in endpoints:
         try:
-            r = requests.get(url, timeout=5)
+            r = requests.get(url, timeout=3.5)
             if r.status_code == 200:
                 data = r.json()
                 for event in data.get("events", []):
@@ -441,7 +446,7 @@ def get_extended_games(selected_league="All Games"):
 
                     if is_completed:
                         checkpoint = "Final / Game Completed"
-                    elif state_text == "pre":
+                    elif state_text == "pre" or period == 0:
                         checkpoint = "Pre-Game"
                     else:
                         checkpoint = "Halftime" if "half" in status_desc.lower() else (f"{period}st Quarter" if period == 1 else f"{period}th Quarter")
@@ -463,6 +468,7 @@ def get_extended_games(selected_league="All Games"):
                         "home_score": int(home.get("score", 0)),
                         "away_score": int(away.get("score", 0)),
                         "status": status_desc,
+                        "state_text": state_text,
                         "checkpoint": checkpoint,
                         "completed": is_completed,
                         "period": period,
@@ -796,9 +802,9 @@ elif menu_choice == "⚡ Single Game Engine":
 
     pool = games_data
     if timing_view == "⏳ Upcoming Games":
-        pool = [g for g in pool if not g.get("completed", False) and g.get("checkpoint") == "Pre-Game"]
+        pool = [g for g in pool if not g.get("completed", False) and (g.get("state_text") == "pre" or g.get("period", 0) == 0)]
     elif timing_view == "⚡ Live Games":
-        pool = [g for g in pool if not g.get("completed", False) and g.get("checkpoint") != "Pre-Game"]
+        pool = [g for g in pool if not g.get("completed", False) and g.get("state_text") != "pre" and g.get("period", 0) > 0]
     elif timing_view == "📜 Past / Completed Games":
         pool = [g for g in pool if g.get("completed", False)]
 
@@ -827,7 +833,7 @@ elif menu_choice == "⚡ Single Game Engine":
         espn_ou = round_half_point(g["market_ou"])
         espn_spread = round_half_point(g["market_spread"])
     else:
-        st.info("No matchups found matching your status filter or search query. Switch to '⏳ Upcoming Games' or '🌐 All Matchups'.")
+        st.info("No matchups found matching your status filter. Switch to '⏳ Upcoming Games' or '🌐 All Matchups'.")
         st.stop()
 
     h_pts = g["home_score"]
@@ -1279,7 +1285,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 st.success("Ticket locked into your account history!")
 
 # =========================================================================
-# 3. MULTI-LEG COMBO BUILDER (WITH TARGET LEGS FIRST & MATCHUP DATES)
+# 3. MULTI-LEG COMBO BUILDER (TARGET LEGS BEFORE STRATEGY OBJECTIVE)
 # =========================================================================
 elif menu_choice == "🔗 Multi-Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
@@ -1297,9 +1303,9 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
 
     c_pool = games_data
     if c_timing_view == "⏳ Upcoming Games":
-        c_pool = [g for g in c_pool if not g.get("completed", False) and g.get("checkpoint") == "Pre-Game"]
+        c_pool = [g for g in c_pool if not g.get("completed", False) and (g.get("state_text") == "pre" or g.get("period", 0) == 0)]
     elif c_timing_view == "⚡ Live Games":
-        c_pool = [g for g in c_pool if not g.get("completed", False) and g.get("checkpoint") != "Pre-Game"]
+        c_pool = [g for g in c_pool if not g.get("completed", False) and g.get("state_text") != "pre" and g.get("period", 0) > 0]
 
     if c_search.strip():
         cq = c_search.strip().lower()
@@ -1340,7 +1346,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             active_candidate_games = c_pool
         max_possible_legs = min(12, max(2, len(active_candidate_games)))
 
-        # TARGET LEGS FIELD PLACED FIRST
+        # 1. TARGET LEGS FIELD PLACED FIRST
         suggest_legs_count = col_strat1.number_input(
             "Target Legs (Up to 12)",
             min_value=2,
@@ -1349,7 +1355,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             help="Choose how many legs to include in the parlay."
         )
 
-        # STRATEGY OBJECTIVE FIELD PLACED SECOND
+        # 2. STRATEGY OBJECTIVE FIELD PLACED SECOND
         strategy_mode = col_strat2.selectbox(
             "Strategy Objective",
             [
@@ -1453,7 +1459,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             valid_legs = [l for l in st.session_state.ai_recommended_combo if 0 <= l.get("matchup_idx", -1) < len(c_pool)]
             st.session_state.ai_recommended_combo = valid_legs
 
-        # SUGGESTED LEGS CARD DISPLAYING KICKOFF DATE & TIME
+        # DISPLAY LEGS WITH FULL MATCHUP DATES AND TIMES
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
