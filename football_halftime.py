@@ -4,6 +4,7 @@ import re
 import random
 import string
 from datetime import datetime, timedelta
+import streamlit.components.v1 as components
 
 # Import modular engines
 from config import DEFAULT_LOGO, OFFICIAL_ABBR_MAP
@@ -164,6 +165,10 @@ def format_espn_kickoff(date_str, fallback_status):
     except Exception:
         return fallback_status
 
+def round_half_point(val):
+    """Forces lines strictly to 0.5 increments (.0 or .5)."""
+    return round(float(val) * 2.0) / 2.0
+
 # Session Initializations
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
@@ -181,8 +186,8 @@ if "combo_version" not in st.session_state:
     st.session_state.combo_version = 0
 if "editing_msg_id" not in st.session_state:
     st.session_state.editing_msg_id = None
-if "selected_admin_user" not in st.session_state:
-    st.session_state.selected_admin_user = None
+if "scroll_to_form" not in st.session_state:
+    st.session_state.scroll_to_form = False
 
 # Single Game State Keys
 if "single_selected_idx" not in st.session_state:
@@ -340,26 +345,17 @@ is_user_admin = current_user_profile.get("is_admin", False)
 
 current_user_profile["last_active"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
 
-# =========================================================================
-# MULTI-DAY ESPN INGESTION (INCLUDES UPCOMING, LIVE & PAST MATCHUPS)
-# =========================================================================
+# MULTI-DAY ESPN INGESTION (UPCOMING, LIVE & PAST MATCHUPS)
 @st.cache_data(ttl=30)
 def get_extended_games(selected_league="All Games"):
     all_games = []
     seen_ids = set()
     
-    # Query default live/recent scoreboard, plus upcoming 14 days by date query
-    base_dates = [
-        "",  # Default live / active week
-    ]
-    
-    # Add next 14 calendar dates in YYYYMMDD format
+    base_dates = [""]
     now_et = get_current_et_time()
     for d_offset in range(0, 14):
         f_dt = now_et + timedelta(days=d_offset)
         base_dates.append(f_dt.strftime("%Y%m%d"))
-
-    # Also add past 3 days for completed history
     for p_offset in range(1, 4):
         p_dt = now_et - timedelta(days=p_offset)
         base_dates.append(p_dt.strftime("%Y%m%d"))
@@ -482,7 +478,6 @@ with col_u1:
 
 st.sidebar.markdown("---")
 
-# Reorganized into logical functional order
 nav_items = [
     ("📊 My Dashboard", "📊 My Dashboard"),
     ("⚡ Single Game Engine", "⚡ Single Game Engine"),
@@ -526,9 +521,7 @@ if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True, he
 games_data = get_extended_games(league)
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots)
 
-# =========================================================================
-# WAR ROOM: SINGLE BET & MULTI-LEG COMBO DETAILS
-# =========================================================================
+# WAR ROOM ROUTE
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
     
@@ -663,7 +656,6 @@ if menu_choice == "📊 My Dashboard":
 
     curr_user_clean = current_user.strip().lower()
     my_bets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() == curr_user_clean or (curr_user_clean == "flurk" and b.get("user", "").strip().lower() in ["flurk", "admin"])]
-    
     tot_placed = len(my_bets)
 
     if tot_placed == 0:
@@ -682,7 +674,7 @@ if menu_choice == "📊 My Dashboard":
             3. **Choose Your Strategy Objective**:
                * Slide the model dial to **🛡️ Safe Floor** (insulating cushion with high win rates), **⚖️ Balanced Edge** (+EV sweet spot), or **🚀 High Profit** (max multiplier upside).
             4. **Load & Lock In**:
-               * Click **'📥 Load to Form'** on any recommended card. It instantly populates the bet slip at the bottom.
+               * Click **'📥 Load to Form'** on any recommended card. It scrolls down and immediately populates the slip for you!
                * Review your stake and click **Lock In Bet Slip** to save it to your history and leaderboard standing!
             """)
 
@@ -753,7 +745,6 @@ elif menu_choice == "⚡ Single Game Engine":
 
     form_ver = st.session_state.single_form_version
 
-    # Filter by Upcoming, Live, or Past
     f_col1, f_col2 = st.columns([1, 2])
     with f_col1:
         timing_view = st.selectbox(
@@ -800,10 +791,10 @@ elif menu_choice == "⚡ Single Game Engine":
         g = pool[selected_idx]
         g_id = g.get("id", str(selected_idx))
         detected_stage = g["checkpoint"]
-        espn_ou = g["market_ou"]
-        espn_spread = g["market_spread"]
+        espn_ou = round_half_point(g["market_ou"])
+        espn_spread = round_half_point(g["market_spread"])
     else:
-        st.info("No matchups found matching your status filter or search query. Try switching to '⏳ Upcoming Games' or '🌐 All Matchups'.")
+        st.info("No matchups found matching your status filter or search query. Switch to '⏳ Upcoming Games' or '🌐 All Matchups'.")
         st.stop()
 
     h_pts = g["home_score"]
@@ -832,15 +823,16 @@ elif menu_choice == "⚡ Single Game Engine":
             final_proj = pregame_tot + ((pts_scored - expected_pts_so_far) * decay_factor)
             std_bracket = 6.0 if detected_stage == "Halftime" else 4.0
 
+    final_proj = round_half_point(final_proj)
     delta_full = final_proj - pregame_tot
-    pregame_2h = round(pregame_tot * 0.525, 1)
-    live_2h_proj = (pregame_tot * 0.475) + ((pts_scored - (pregame_tot * 0.50)) * 0.45) if detected_stage == "Halftime" else pregame_2h + (delta_full * 0.45)
+    pregame_2h = round_half_point(pregame_tot * 0.525)
+    live_2h_proj = round_half_point((pregame_tot * 0.475) + ((pts_scored - (pregame_tot * 0.50)) * 0.45) if detected_stage == "Halftime" else pregame_2h + (delta_full * 0.45))
     delta_2h = live_2h_proj - pregame_2h
 
     market_spd = float(espn_spread)
     pregame_proj_margin = -market_spd
     current_margin = h_pts - a_pts
-    live_proj_margin = (pregame_proj_margin * 0.45) + (current_margin * 0.55) if detected_stage == "Halftime" else pregame_proj_margin
+    live_proj_margin = round_half_point((pregame_proj_margin * 0.45) + (current_margin * 0.55) if detected_stage == "Halftime" else pregame_proj_margin)
     spread_drift = live_proj_margin - pregame_proj_margin
     home_cover_exp = calculate_spread_prob(live_proj_margin, market_spd, std_bracket)
     away_cover_exp = 1.0 - home_cover_exp
@@ -862,10 +854,10 @@ elif menu_choice == "⚡ Single Game Engine":
         b3.image(g.get("home_logo", DEFAULT_LOGO), width=45)
 
         m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        m_col1.metric("Full Game Total", f"{final_proj:.1f} pts", delta=f"{delta_full:+.1f} vs open ({pregame_tot})", help="Pace-shock full game projection.")
-        m_col2.metric("2nd Half Total", f"{live_2h_proj:.1f} pts", delta=f"{delta_2h:+.1f} vs 2H base ({pregame_2h})", help="Expected scoring volume in the second half.")
+        m_col1.metric("Full Game Total", f"{final_proj:.1f} pts", delta=f"{delta_full:+.1f} vs open ({pregame_tot:.1f})", help="Pace-shock full game projection.")
+        m_col2.metric("2nd Half Total", f"{live_2h_proj:.1f} pts", delta=f"{delta_2h:+.1f} vs 2H base ({pregame_2h:.1f})", help="Expected scoring volume in the second half.")
         m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%", help="Logistic straight-up win expectancy.")
-        m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line", help="Expected point spread margin differential.")
+        m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+.1f})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line", help="Expected point spread margin differential.")
 
     # ACCORDION 2: AI STRATEGY ENGINE
     with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
@@ -936,14 +928,14 @@ elif menu_choice == "⚡ Single Game Engine":
             spd_shift = 0.0
             tot_shift = 0.0
 
-        # Totals
+        # Totals - Locked to 0.5 point steps
         tot_dir = "Under" if delta_full <= 0 else "Over"
-        base_tot_1 = round(final_proj + tot_shift) + 0.5
+        base_tot_1 = round_half_point(final_proj + tot_shift)
         p_tot_1 = calculate_win_prob(base_tot_1, final_proj, std_bracket, is_under=(tot_dir == "Under"))
         full_totals_bets = [
             {
                 "type": f"Full Game Total ({obj_tag} Consensus)",
-                "pick": f"{tot_dir} {base_tot_1}",
+                "pick": f"{tot_dir} {base_tot_1:.1f}",
                 "prob": p_tot_1,
                 "category": "Total",
                 "side": tot_dir,
@@ -953,15 +945,15 @@ elif menu_choice == "⚡ Single Game Engine":
                 "est_payout_multiplier": p_mult,
                 "roi_label": f"+{int((p_mult-1)*100)}% Profit",
                 "drift_info": f"Pace Projection: {final_proj:.1f} pts ({delta_full:+.1f} vs open)",
-                "rationale": f"Selected because in-game scoring volume indicates {final_proj:.1f} total points vs opening line of {pregame_tot}."
+                "rationale": f"Selected because in-game scoring volume indicates {final_proj:.1f} total points vs opening line of {pregame_tot:.1f}."
             },
             {
                 "type": f"Full Game Total ({obj_tag} Alternate Buffer)",
-                "pick": f"{tot_dir} {base_tot_1 + (2.5 if tot_dir == 'Under' else -2.5)}",
+                "pick": f"{tot_dir} {round_half_point(base_tot_1 + (2.5 if tot_dir == 'Under' else -2.5)):.1f}",
                 "prob": min(p_tot_1 + 0.10, 0.94),
                 "category": "Total",
                 "side": tot_dir,
-                "target_line": base_tot_1 + (2.5 if tot_dir == 'Under' else -2.5),
+                "target_line": round_half_point(base_tot_1 + (2.5 if tot_dir == 'Under' else -2.5)),
                 "picked_team": None,
                 "game_index": strat_game_index,
                 "est_payout_multiplier": 1.50,
@@ -971,11 +963,11 @@ elif menu_choice == "⚡ Single Game Engine":
             },
             {
                 "type": f"Full Game Total ({obj_tag} Aggressive Margin)",
-                "pick": f"{tot_dir} {base_tot_1 - (2.5 if tot_dir == 'Under' else 2.5)}",
+                "pick": f"{tot_dir} {round_half_point(base_tot_1 - (2.5 if tot_dir == 'Under' else 2.5)):.1f}",
                 "prob": max(p_tot_1 - 0.12, 0.44),
                 "category": "Total",
                 "side": tot_dir,
-                "target_line": base_tot_1 - (2.5 if tot_dir == 'Under' else 2.5),
+                "target_line": round_half_point(base_tot_1 - (2.5 if tot_dir == 'Under' else 2.5)),
                 "picked_team": None,
                 "game_index": strat_game_index,
                 "est_payout_multiplier": 2.40,
@@ -985,13 +977,13 @@ elif menu_choice == "⚡ Single Game Engine":
             }
         ]
 
-        # Spreads
-        line_spd_1 = s_val + spd_shift
+        # Spreads - Locked to 0.5 point steps
+        line_spd_1 = round_half_point(s_val + spd_shift)
         p_spd_1 = calculate_spread_prob(live_proj_margin if s_team == active_game_for_strat["home_team"] else -live_proj_margin, line_spd_1, std_bracket)
         spread_bets = [
             {
                 "type": f"Spread ({obj_tag} Standard)",
-                "pick": f"{s_abbr} {line_spd_1:+}",
+                "pick": f"{s_abbr} {line_spd_1:+.1f}",
                 "prob": p_spd_1,
                 "category": "Spread",
                 "side": "Spread",
@@ -1005,11 +997,11 @@ elif menu_choice == "⚡ Single Game Engine":
             },
             {
                 "type": f"Spread ({obj_tag} Cushion)",
-                "pick": f"{s_abbr} {(line_spd_1 + 3.0):+}",
+                "pick": f"{s_abbr} {round_half_point(line_spd_1 + 3.0):+.1f}",
                 "prob": min(p_spd_1 + 0.12, 0.94),
                 "category": "Spread",
                 "side": "Spread",
-                "target_line": line_spd_1 + 3.0,
+                "target_line": round_half_point(line_spd_1 + 3.0),
                 "picked_team": s_team,
                 "game_index": strat_game_index,
                 "est_payout_multiplier": 1.55,
@@ -1019,11 +1011,11 @@ elif menu_choice == "⚡ Single Game Engine":
             },
             {
                 "type": f"Spread ({obj_tag} Aggressive)",
-                "pick": f"{s_abbr} {(line_spd_1 - 3.0):+}",
+                "pick": f"{s_abbr} {round_half_point(line_spd_1 - 3.0):+.1f}",
                 "prob": max(p_spd_1 - 0.14, 0.46),
                 "category": "Spread",
                 "side": "Spread",
-                "target_line": line_spd_1 - 3.0,
+                "target_line": round_half_point(line_spd_1 - 3.0),
                 "picked_team": s_team,
                 "game_index": strat_game_index,
                 "est_payout_multiplier": 2.45,
@@ -1097,13 +1089,31 @@ elif menu_choice == "⚡ Single Game Engine":
             with st.container(border=True):
                 st.markdown(f"**{tier_lbl}** • `{sc['type']}` — <strong style='color:#4ade80;'>{sc['pick']}</strong> ({sc['prob']*100:.1f}% Win Prob | {sc['roi_label']})", unsafe_allow_html=True)
                 st.info(f"💡 **Why This Bet Was Selected:** {sc['rationale']}")
-                if st.button("📥 Load to Form", key=f"apply_{idx}_{sc['pick']}", use_container_width=True, help="Load this exact pick, line, and odds directly into your slip below."):
+                if st.button("📥 Load to Form", key=f"apply_{idx}_{sc['pick']}", use_container_width=True, help="Load this exact pick, line, and odds directly into your slip below and scroll to form."):
                     st.session_state.single_applied_pick = sc
                     st.session_state.single_selected_idx = sc["game_index"]
                     st.session_state.single_form_version += 1
+                    st.session_state.scroll_to_form = True
                     st.rerun()
 
-    # ACCORDION 3: SLIP BUILDER WITH CONTEXT NOTES
+    # Anchor point for smooth auto-scrolling
+    st.markdown("<div id='bet-slip-anchor'></div>", unsafe_allow_html=True)
+
+    # AUTO-SCROLL EXECUTION WHEN LOAD TO FORM IS CLICKED
+    if st.session_state.scroll_to_form:
+        st.session_state.scroll_to_form = False
+        components.html("""
+            <script>
+                setTimeout(function() {
+                    const el = window.parent.document.getElementById('bet-slip-anchor');
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }, 300);
+            </script>
+        """, height=0)
+
+    # ACCORDION 3: SLIP BUILDER WITH 0.5 STEP INCREMENTS
     applied = st.session_state.single_applied_pick
     with st.expander("📝 Section 3: Wager Type & Lock In Bet Slip", expanded=True):
         st.markdown(
@@ -1114,11 +1124,11 @@ elif menu_choice == "⚡ Single Game Engine":
         with c1:
             home_team = st.text_input("Home Team", value=g["home_team"], key=f"h_{g_id}_v{form_ver}")
             away_team = st.text_input("Away Team", value=g["away_team"], key=f"a_{g_id}_v{form_ver}")
-            pregame_total = st.number_input("Pre-Game Baseline Total", value=espn_ou, step=0.5, key=f"pre_{g_id}_v{form_ver}", help="Opening sportsbook consensus total.")
+            pregame_total = st.number_input("Pre-Game Baseline Total", value=float(espn_ou), step=0.5, format="%.1f", key=f"pre_{g_id}_v{form_ver}", help="Opening sportsbook consensus total.")
         with c2:
             h_pts_in = st.number_input(f"{g['home_short']} Pts", min_value=0, value=g["home_score"], key=f"hp_{g_id}_v{form_ver}")
             a_pts_in = st.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"ap_{g_id}_v{form_ver}")
-            spread_line = st.number_input(f"{g['home_short']} Spread", value=espn_spread, step=0.5, key=f"spd_{g_id}_v{form_ver}", help="Opening consensus point spread line.")
+            spread_line = st.number_input(f"{g['home_short']} Spread", value=float(espn_spread), step=0.5, format="%.1f", key=f"spd_{g_id}_v{form_ver}", help="Opening consensus point spread line.")
 
         default_wtype = 0
         if applied:
@@ -1139,12 +1149,14 @@ elif menu_choice == "⚡ Single Game Engine":
             if bet_type == "Game Total":
                 f1, f2 = st.columns(2)
                 side = f1.selectbox("Side", ["Under", "Over"], index=0 if (applied and applied.get("side") == "Under") else 1)
-                strike = f2.number_input("Target Line (pts)", value=float(applied["target_line"]) if (applied and applied.get("target_line")) else float(final_proj))
+                default_strike = round_half_point(applied["target_line"]) if (applied and applied.get("target_line")) else round_half_point(final_proj)
+                strike = f2.number_input("Target Line (pts)", value=float(default_strike), step=0.5, format="%.1f")
                 picked_t = None
             elif bet_type == "Point Spread (ATS)":
                 f1, f2 = st.columns(2)
                 picked_t = f1.selectbox("Covering Team", [home_team, away_team])
-                strike = f2.number_input("Spread Line", value=float(applied["target_line"]) if (applied and applied.get("target_line") is not None) else float(spread_line))
+                default_spread = round_half_point(applied["target_line"]) if (applied and applied.get("target_line") is not None) else round_half_point(spread_line)
+                strike = f2.number_input("Spread Line", value=float(default_spread), step=0.5, format="%.1f")
                 side = "Spread"
             elif bet_type == "Straight Up Winner (Moneyline)":
                 picked_t = st.selectbox("Outright Winner", [home_team, away_team])
@@ -1161,11 +1173,10 @@ elif menu_choice == "⚡ Single Game Engine":
             mult = applied.get("est_payout_multiplier", 1.91) if applied else 1.91
             payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=round(risk_amt * mult, 2), help="Total payout returned if ticket wins.")
             
-            # Meaningful context-rich notes
             if applied:
                 default_notes = f"Model Edge: {applied['pick']} | {applied.get('drift_info', '')}"
             else:
-                default_notes = f"Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} vs {pregame_tot} open) | Live ATS Margin: {live_proj_margin:+.1f} pts"
+                default_notes = f"Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} vs {pregame_tot:.1f} open) | Live ATS Margin: {live_proj_margin:+.1f} pts"
 
             ticket_notes = st.text_input("Notes", default_notes, help="Statistical audit trail and reasoning for this bet.")
 
@@ -1174,7 +1185,7 @@ elif menu_choice == "⚡ Single Game Engine":
                     bet_lbl = f"{picked_t} Any Time TD"
                     cat_lbl = "Anytime TD"
                 else:
-                    bet_lbl = f"{side} {strike}" if strike else f"{picked_t} ML"
+                    bet_lbl = f"{side} {strike:.1f}" if strike else f"{picked_t} ML"
                     cat_lbl = "Spread" if bet_type == "Point Spread (ATS)" else ("Total" if bet_type == "Game Total" else "Moneyline")
 
                 ticket_record = {
@@ -1209,7 +1220,6 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
     st.caption("Automated cross-slate parlay scanner, compound probability calculator, and slip builder.")
 
-    # Status Filter for Combo Builder
     c_fcol1, c_fcol2 = st.columns([1, 2])
     with c_fcol1:
         c_timing_view = c_fcol1.selectbox(
@@ -1250,7 +1260,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 "matchup_idx": j,
                 "type": "Game Total",
                 "side": "Under",
-                "line": float(g_item.get("market_ou", 47.5)),
+                "line": round_half_point(g_item.get("market_ou", 47.5)),
                 "picked_team": g_item["home_team"]
             })
 
@@ -1308,7 +1318,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 h_prob = calculate_moneyline_prob(c_h_pts + 14, c_a_pts + 14, c_h_rec, c_a_rec, is_final=False)
 
                 if "Maximum Win Probability" in strategy_mode:
-                    cushion_line = round(proj_tot + (sigma * 1.5)) + 0.5
+                    cushion_line = round_half_point(proj_tot + (sigma * 1.5))
                     p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
                     candidate_legs.append({
                         "leg_id": f"tot_{g_c['id']}_under_{cushion_line}",
@@ -1318,14 +1328,14 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                         "line": cushion_line,
                         "picked_team": c_h,
                         "prob": p,
-                        "desc": f"Under {cushion_line}",
+                        "desc": f"Under {cushion_line:.1f}",
                         "detail": f"Proj: {proj_tot:.1f} pts",
                         "score_metric": p
                     })
                 elif "High Expected Value" in strategy_mode:
                     edge = abs(proj_tot - c_ou)
                     is_u = proj_tot < c_ou
-                    tgt_line = c_ou
+                    tgt_line = round_half_point(c_ou)
                     p = calculate_win_prob(tgt_line, proj_tot, sigma, is_under=is_u)
                     candidate_legs.append({
                         "leg_id": f"ev_{g_c['id']}_{'u' if is_u else 'o'}_{tgt_line}",
@@ -1335,7 +1345,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                         "line": tgt_line,
                         "picked_team": c_h,
                         "prob": p,
-                        "desc": f"{'Under' if is_u else 'Over'} {tgt_line}",
+                        "desc": f"{'Under' if is_u else 'Over'} {tgt_line:.1f}",
                         "detail": f"Edge: {edge:.1f} pts",
                         "score_metric": edge * p
                     })
@@ -1348,7 +1358,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                         "matchup_idx": c_pool.index(g_c),
                         "type": "Straight Up Winner",
                         "side": "Under",
-                        "line": c_ou,
+                        "line": round_half_point(c_ou),
                         "picked_team": ml_fav,
                         "prob": ml_p,
                         "desc": f"{fav_abbr} ML",
@@ -1436,7 +1446,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                         "matchup_idx": min(l_item["matchup_idx"], len(c_pool)-1),
                         "type": l_item["type"],
                         "side": l_item.get("side", "Under"),
-                        "line": float(l_item.get("line", 47.5)),
+                        "line": round_half_point(l_item.get("line", 47.5)),
                         "picked_team": l_item.get("picked_team", c_pool[min(l_item["matchup_idx"], len(c_pool)-1)]["home_team"])
                     }
                     for l_item in st.session_state.ai_recommended_combo
@@ -1453,7 +1463,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             "matchup_idx": next_idx,
             "type": "Game Total",
             "side": "Under",
-            "line": float(g_next.get("market_ou", 47.5)),
+            "line": round_half_point(g_next.get("market_ou", 47.5)),
             "picked_team": g_next["home_team"]
         })
         st.rerun()
@@ -1486,11 +1496,11 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             if wager_cat == "Game Total":
                 col_b, col_c = st.columns(2)
                 side = col_b.selectbox("Side", ["Under", "Over"], index=0 if leg_data.get("side", "Under") == "Under" else 1, key=f"lside_{i}_v{ver}")
-                strike = col_c.number_input("Line (pts)", value=float(leg_data.get("line", leg_g.get("market_ou", 44.5))), step=0.5, key=f"lstrike_{i}_v{ver}")
+                strike = col_c.number_input("Line (pts)", value=float(round_half_point(leg_data.get("line", leg_g.get("market_ou", 44.5)))), step=0.5, format="%.1f", key=f"lstrike_{i}_v{ver}")
                 leg_data["side"] = side
                 leg_data["line"] = strike
                 leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
-                leg_desc = f"{leg_g['away_short']} @ {leg_g['home_short']}: {side} {strike}"
+                leg_desc = f"{leg_g['away_short']} @ {leg_g['home_short']}: {side} {strike:.1f}"
             else:
                 col_b, col_c = st.columns(2)
                 teams_opt = [leg_g["home_team"], leg_g["away_team"]]
@@ -1522,7 +1532,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                     "matchup": f"{mg['away_short']} @ {mg['home_short']}",
                     "type": item["type"],
                     "side": item.get("side", ""),
-                    "line": item.get("line", ""),
+                    "line": round_half_point(item.get("line", 0.0)),
                     "picked_team": item.get("picked_team", "")
                 })
 
