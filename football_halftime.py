@@ -15,7 +15,7 @@ st.set_page_config(
     page_title="Flurkstradamus Edge Engine",
     page_icon="🔮",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Responsive Desktop + Mobile styling & Bootstrap-style full row stacking
@@ -48,6 +48,9 @@ st.markdown("""
             align-items: flex-start !important;
             gap: 6px !important;
             white-space: normal !important;
+        }
+        input, select, textarea {
+            font-size: 16px !important;
         }
     }
 
@@ -86,7 +89,6 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
-    /* CARD STYLING */
     .rec-single-line-card {
         border-radius: 8px;
         border: 1px solid rgba(255, 255, 255, 0.12);
@@ -108,7 +110,45 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Curated Premier Playmakers by Team for Anytime TD Scorer Props
+# CLIENT-SIDE SCRIPTS: AUTO-CLOSE SIDEBAR ON MOBILE & DISMISS KEYBOARD
+components.html("""
+<script>
+    function setupMobileBehaviors() {
+        const doc = window.parent.document;
+        if (!doc) return;
+
+        if (window.parent.innerWidth <= 768) {
+            const active = doc.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+                active.blur();
+            }
+        }
+
+        const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+        if (sidebar) {
+            const navButtons = sidebar.querySelectorAll('button');
+            navButtons.forEach(btn => {
+                if (!btn.dataset.mobileCloseAttached) {
+                    btn.dataset.mobileCloseAttached = "true";
+                    btn.addEventListener('click', () => {
+                        if (window.parent.innerWidth <= 768) {
+                            setTimeout(() => {
+                                const closeBtn = doc.querySelector('[data-testid="stSidebarCollapseButton"]') 
+                                              || doc.querySelector('button[kind="header"]')
+                                              || doc.querySelector('[data-testid="stSidebar"] button');
+                                if (closeBtn) closeBtn.click();
+                            }, 100);
+                        }
+                    });
+                }
+            });
+        }
+    }
+    setTimeout(setupMobileBehaviors, 300);
+    setTimeout(setupMobileBehaviors, 800);
+</script>
+""", height=0)
+
 STAR_TD_PLAYERS = {
     "PHI": [("Saquon Barkley", "RB"), ("A.J. Brown", "WR"), ("Jalen Hurts", "QB")],
     "DAL": [("CeeDee Lamb", "WR"), ("Rico Dowdle", "RB"), ("Jake Ferguson", "TE")],
@@ -131,7 +171,6 @@ STAR_TD_PLAYERS = {
 }
 
 def get_star_scorers_for_team(abbr, team_name):
-    """Retrieves specific real playmaker names for a team."""
     clean_a = abbr.upper()
     if clean_a in STAR_TD_PLAYERS:
         return STAR_TD_PLAYERS[clean_a]
@@ -141,7 +180,6 @@ def get_star_scorers_for_team(abbr, team_name):
     return [("Lead Starting RB", "RB"), ("Primary WR1", "WR"), ("Red Zone TE", "TE")]
 
 def get_current_et_time():
-    """Returns true Eastern Time (ET)."""
     utc_now = datetime.utcnow()
     return utc_now - timedelta(hours=4)
 
@@ -166,7 +204,6 @@ def format_espn_kickoff(date_str, fallback_status):
         return fallback_status
 
 def round_half_point(val):
-    """Forces lines strictly to 0.5 increments (.0 or .5)."""
     return round(float(val) * 2.0) / 2.0
 
 # Session Initializations
@@ -859,7 +896,7 @@ elif menu_choice == "⚡ Single Game Engine":
         m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%", help="Logistic straight-up win expectancy.")
         m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+.1f})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line", help="Expected point spread margin differential.")
 
-    # ACCORDION 2: AI STRATEGY ENGINE
+    # ACCORDION 2: AI STRATEGY ENGINE WITH MATCHUP & TEAM DETAILS
     with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
         st.markdown(
             "> **What this section does:** Evaluates betting opportunities across Totals, Spreads, Moneylines, and **Player Anytime Touchdown Scorers**. "
@@ -878,7 +915,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 "📊 Full Game Total Score Over/Under", 
                 "⏱️ 2nd Half Total Points", 
                 "🛡️ Spread (ATS Cover)",
-                "🏆 Team Win/Loser (Moneyline)",
+                "🏆 Team Win/Loser (Moneyline)", 
                 "🏈 Player Anytime Touchdown Scorer"
             ],
             help="Choose the specific wagering market you wish to generate recommendations for."
@@ -907,6 +944,8 @@ elif menu_choice == "⚡ Single Game Engine":
         tg_home_logo = active_game_for_strat.get("home_logo", DEFAULT_LOGO)
         tg_away_short = active_game_for_strat.get("away_short", "AWAY")
         tg_home_short = active_game_for_strat.get("home_short", "HOME")
+        tg_date_str = active_game_for_strat.get("kickoff", "Scheduled Game")
+        tg_league_str = active_game_for_strat.get("league", "NFL")
 
         s_val = market_spd if home_cover_exp >= 0.5 else -market_spd
         s_team = active_game_for_strat["home_team"] if home_cover_exp >= 0.5 else active_game_for_strat["away_team"]
@@ -928,7 +967,7 @@ elif menu_choice == "⚡ Single Game Engine":
             spd_shift = 0.0
             tot_shift = 0.0
 
-        # Totals - Locked to 0.5 point steps
+        # Totals
         tot_dir = "Under" if delta_full <= 0 else "Over"
         base_tot_1 = round_half_point(final_proj + tot_shift)
         p_tot_1 = calculate_win_prob(base_tot_1, final_proj, std_bracket, is_under=(tot_dir == "Under"))
@@ -977,7 +1016,7 @@ elif menu_choice == "⚡ Single Game Engine":
             }
         ]
 
-        # Spreads - Locked to 0.5 point steps
+        # Spreads
         line_spd_1 = round_half_point(s_val + spd_shift)
         p_spd_1 = calculate_spread_prob(live_proj_margin if s_team == active_game_for_strat["home_team"] else -live_proj_margin, line_spd_1, std_bracket)
         spread_bets = [
@@ -1084,10 +1123,43 @@ elif menu_choice == "⚡ Single Game Engine":
         else:
             strat_candidates = [spread_bets[0], full_totals_bets[0], touchdown_bets[0]]
 
+        # RENDER SUGGESTED BETS WITH FULL MATCHUP, LOGOS & KICKOFF DATE/TIME
         for idx, sc in enumerate(strat_candidates[:3]):
             tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
             with st.container(border=True):
-                st.markdown(f"**{tier_lbl}** • `{sc['type']}` — <strong style='color:#4ade80;'>{sc['pick']}</strong> ({sc['prob']*100:.1f}% Win Prob | {sc['roi_label']})", unsafe_allow_html=True)
+                # Header Marquee with Logos, Kickoff Time & League
+                st.markdown(f"""
+                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-weight: 800; font-size: 0.90rem;">{tier_lbl}</span>
+                        <span style="opacity: 0.4;">•</span>
+                        <code style="font-size: 0.80rem;">{sc['type']}</code>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 7px;">
+                        <span style="background-color: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">[{tg_league_str}]</span>
+                        <img src="{tg_away_logo}" width="22" height="22" style="border-radius: 50%;">
+                        <strong style="font-size: 0.90rem;">{tg_away_short}</strong>
+                        <span style="opacity: 0.4; font-size: 0.8rem;">@</span>
+                        <img src="{tg_home_logo}" width="22" height="22" style="border-radius: 50%;">
+                        <strong style="font-size: 0.90rem;">{tg_home_short}</strong>
+                        <span style="opacity: 0.65; font-size: 0.78rem; margin-left: 4px;">🗓️ {tg_date_str}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Bet Pick, Multiplier & Probability
+                st.markdown(f"""
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                    <strong style='color:#4ade80; font-size:1.15rem;'>{sc['pick']}</strong>
+                    <span style='background-color:#22c55e; color:#000; font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px;'>
+                        {sc['roi_label']}
+                    </span>
+                    <span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px; font-weight:700; font-size:0.80rem;'>
+                        {sc['prob']*100:.1f}% Win Prob
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
                 st.info(f"💡 **Why This Bet Was Selected:** {sc['rationale']}")
                 if st.button("📥 Load to Form", key=f"apply_{idx}_{sc['pick']}", use_container_width=True, help="Load this exact pick, line, and odds directly into your slip below and scroll to form."):
                     st.session_state.single_applied_pick = sc
@@ -1099,7 +1171,6 @@ elif menu_choice == "⚡ Single Game Engine":
     # Anchor point for smooth auto-scrolling
     st.markdown("<div id='bet-slip-anchor'></div>", unsafe_allow_html=True)
 
-    # AUTO-SCROLL EXECUTION WHEN LOAD TO FORM IS CLICKED
     if st.session_state.scroll_to_form:
         st.session_state.scroll_to_form = False
         components.html("""
@@ -1759,7 +1830,7 @@ elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
     * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, and top winners. If you have no bets placed, follow the quick start onboarding steps!
-    * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Review real-time model projections, anytime touchdown props, and custom AI bet rationales.
+    * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Review real-time model projections, anytime touchdown props, and custom AI bet rationales with full team logo headers and dates.
     * **🔗 Multi-Leg Combo Builder**: Scan slates for optimal multi-leg parlay opportunities with compound true win probabilities.
     * **🏟️ In-Game War Room**: Click any single or multi-leg combo ticket in Locked Bets History to evaluate live score updates, all team logos, and quarter-by-quarter projection drift.
     * **⚙️ Account Settings**: Personalize your profile, bio, avatar, and privacy settings.
