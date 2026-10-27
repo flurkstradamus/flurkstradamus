@@ -107,6 +107,38 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Curated Premier Playmakers by Team for Anytime TD Scorer Props
+STAR_TD_PLAYERS = {
+    "PHI": [("Saquon Barkley", "RB"), ("A.J. Brown", "WR"), ("Jalen Hurts", "QB")],
+    "DAL": [("CeeDee Lamb", "WR"), ("Rico Dowdle", "RB"), ("Jake Ferguson", "TE")],
+    "KC": [("Travis Kelce", "TE"), ("Isiah Pacheco", "RB"), ("Xavier Worthy", "WR")],
+    "BAL": [("Derrick Henry", "RB"), ("Lamar Jackson", "QB"), ("Zay Flowers", "WR")],
+    "BUF": [("Josh Allen", "QB"), ("James Cook", "RB"), ("Khalil Shakir", "WR")],
+    "MIA": [("De'Von Achane", "RB"), ("Tyreek Hill", "WR"), ("Jaylen Waddle", "WR")],
+    "SF": [("Christian McCaffrey", "RB"), ("George Kittle", "TE"), ("Deebo Samuel", "WR")],
+    "DET": [("Jahmyr Gibbs", "RB"), ("David Montgomery", "RB"), ("Amon-Ra St. Brown", "WR")],
+    "GB": [("Josh Jacobs", "RB"), ("Jayden Reed", "WR"), ("Tucker Kraft", "TE")],
+    "MIN": [("Justin Jefferson", "WR"), ("Aaron Jones", "RB"), ("Jordan Addison", "WR")],
+    "CIN": [("Ja'Marr Chase", "WR"), ("Chase Brown", "RB"), ("Tee Higgins", "WR")],
+    "HOU": [("Joe Mixon", "RB"), ("Nico Collins", "WR"), ("Stefon Diggs", "WR")],
+    "ALA": [("Jalen Milroe", "QB"), ("Jam Miller", "RB"), ("Ryan Williams", "WR")],
+    "UGA": [("Trevor Etienne", "RB"), ("Dillon Bell", "WR"), ("Dominic Lovett", "WR")],
+    "OSU": [("Quinshon Judkins", "RB"), ("TreVeyon Henderson", "RB"), ("Jeremiah Smith", "WR")],
+    "PSU": [("Nicholas Singleton", "RB"), ("Kaytron Allen", "RB"), ("Tyler Warren", "TE")],
+    "TEX": [("Quinn Ewers", "QB"), ("Jaydon Blue", "RB"), ("Isaiah Bond", "WR")],
+    "ORE": [("Jordan James", "RB"), ("Tez Johnson", "WR"), ("Dillon Gabriel", "QB")]
+}
+
+def get_star_scorers_for_team(abbr, team_name):
+    """Retrieves specific real playmaker names for a team."""
+    clean_a = abbr.upper()
+    if clean_a in STAR_TD_PLAYERS:
+        return STAR_TD_PLAYERS[clean_a]
+    for key, players in STAR_TD_PLAYERS.items():
+        if key in clean_a or key in team_name.upper():
+            return players
+    return [("Lead Starting RB", "RB"), ("Primary WR1", "WR"), ("Red Zone TE", "TE")]
+
 def get_current_et_time():
     """Returns true Eastern Time (ET)."""
     utc_now = datetime.utcnow()
@@ -412,9 +444,7 @@ def sync_game_snapshot(game, proj_total, proj_spread):
         }
         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
 
-# =========================================================================
-# REORGANIZED NAVIGATION MENU (LOGICAL TOP-TO-BOTTOM PROGRESSION)
-# =========================================================================
+# Sidebar UI
 st.sidebar.markdown(f"## 🔮 Flurkstradamus")
 st.sidebar.markdown(f"👤 **{current_user}** (`@{current_user_profile.get('username')}`)")
 if current_user_profile.get("favorite_team"):
@@ -429,7 +459,7 @@ with col_u1:
 
 st.sidebar.markdown("---")
 
-# Reorganized into functional tiers: Dashboard -> Predictive Engines -> Slip History -> Community -> Docs -> Settings
+# Reorganized into functional tiers
 nav_items = [
     ("📊 My Dashboard", "📊 My Dashboard"),
     ("⚡ Single Game Engine", "⚡ Single Game Engine"),
@@ -446,7 +476,6 @@ nav_items = [
 if is_user_admin:
     nav_items.append(("🛡️ Admin", "🛡️ Admin"))
 
-# Clicking any nav item immediately releases the War Room lock
 for label, page_key in nav_items:
     is_active = (st.session_state.active_nav_page == page_key and st.session_state.selected_bet_id is None)
     btn_type = "primary" if is_active else "secondary"
@@ -475,7 +504,7 @@ games_data = get_extended_games(league)
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots)
 
 # =========================================================================
-# WAR ROOM: SINGLE BET & MULTI-LEG COMBO DETAILS
+# WAR ROOM WITH MULTI-TEAM LOGO DISPLAY
 # =========================================================================
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
@@ -489,7 +518,7 @@ if st.session_state.selected_bet_id is not None:
         st.stop()
 
     is_combo = (selected_bet.get("bet_category") == "Combo" or "Leg" in selected_bet.get("type", ""))
-    st.title(f"🏟️ War Room: {selected_bet.get('matchup', 'Football Ticket')}")
+    st.title(f"🏟️ In-Game War Room: {selected_bet.get('matchup', 'Football Ticket')}")
     st.caption(f"Bettor: **{selected_bet.get('user', 'Flurk')}** | Pick: `{selected_bet['bet']}` | Logged: {selected_bet.get('date', 'N/A')} | Status: `{selected_bet.get('status')}`")
 
     wm1, wm2, wm3, wm4 = st.columns(4)
@@ -501,8 +530,8 @@ if st.session_state.selected_bet_id is not None:
     wm4.metric("Live Ticket Status", selected_bet.get("status", "Pending"))
 
     if is_combo:
-        st.markdown("### 📋 Multi-Leg Parlay Breakdown")
-        st.caption("Game-by-game live status, initial vs. in-game projection evolution, and tactical hedge watch points:")
+        st.markdown("### 📋 Multi-Leg Parlay Breakdown (All Teams & Logos)")
+        st.caption("Game-by-game live scoreboard tracking, team logos, and quarter projection evolution:")
         legs = selected_bet.get("parsed_legs", [])
         
         if not legs:
@@ -513,10 +542,22 @@ if st.session_state.selected_bet_id is not None:
                 m_g = find_game_for_bet({"matchup": leg_matchup}, games_data)
                 
                 with st.container(border=True):
-                    st.markdown(f"#### Leg {l_idx+1}: **{leg_matchup}**")
-                    st.write(f"**Pick:** `{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}` ({leg.get('type')})")
-                    
                     if m_g:
+                        col_lg1, col_lg2 = st.columns([7, 3])
+                        with col_lg1:
+                            st.markdown(f"""
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                                <span style="background-color:#38bdf8; color:#000; font-weight:800; font-size:0.75rem; padding:2px 7px; border-radius:4px;">LEG {l_idx+1}</span>
+                                <img src="{m_g['away_logo']}" width="26" height="26" style="border-radius:50%;">
+                                <strong style="font-size:1.0rem;">{m_g['away_short']}</strong> @
+                                <img src="{m_g['home_logo']}" width="26" height="26" style="border-radius:50%;">
+                                <strong style="font-size:1.0rem;">{m_g['home_short']}</strong>
+                                <span style="opacity:0.6; font-size:0.85rem;">({m_g.get('kickoff', m_g['status'])})</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with col_lg2:
+                            st.markdown(f"<div style='text-align:right;'><strong style='color:#4ade80;'>{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}</strong></div>", unsafe_allow_html=True)
+
                         lc1, lc2, lc3 = st.columns([2, 1, 2])
                         lc1.metric(f"Away ({m_g['away_short']})", m_g['away_score'])
                         lc2.write(f"**Status:** {m_g['status']}\n\nClock: `{m_g.get('displayClock', 'Live')}`")
@@ -537,7 +578,9 @@ if st.session_state.selected_bet_id is not None:
                                 })
                             st.table(t_rows)
                     else:
-                        st.caption("Live scoreboard feed for this leg is scheduled or inactive.")
+                        st.markdown(f"#### Leg {l_idx+1}: **{leg_matchup}**")
+                        st.write(f"**Pick:** `{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}` ({leg.get('type')})")
+                        st.caption("Scoreboard feed for this leg is scheduled or inactive.")
 
                     st.markdown("##### 💡 Strategic Insights & What to Watch:")
                     st.write(f"• **Why Suggested:** High compound equity model selected `{leg.get('side', '')} {leg.get('line', '')}` based on opening defensive pace ratings.")
@@ -546,10 +589,17 @@ if st.session_state.selected_bet_id is not None:
     else:
         live_game_info = find_game_for_bet(selected_bet, games_data)
         if live_game_info:
-            c1, c2, c3 = st.columns([2, 1, 2])
-            c1.metric(f"Away ({live_game_info['away_short']})", live_game_info['away_score'])
-            c2.write(f"**Status:** {live_game_info['status']}\n\nClock: `{live_game_info.get('displayClock', 'Live')}`")
-            c3.metric(f"Home ({live_game_info['home_short']})", live_game_info['home_score'])
+            with st.container(border=True):
+                col_s1, col_s2, col_s3 = st.columns([2, 1, 2])
+                with col_s1:
+                    st.image(live_game_info["away_logo"], width=45)
+                    st.markdown(f"**{live_game_info['away_short']}**\n# **{live_game_info['away_score']}**")
+                with col_s2:
+                    st.caption(f"{live_game_info.get('kickoff', live_game_info['status'])}")
+                    st.caption(f"Clock: `{live_game_info.get('displayClock', 'Live')}`")
+                with col_s3:
+                    st.image(live_game_info["home_logo"], width=45)
+                    st.markdown(f"**{live_game_info['home_short']}**\n# **{live_game_info['home_score']}**")
 
             gid = live_game_info["id"]
             snap = st.session_state.game_snapshots.get(gid)
@@ -582,7 +632,7 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # =========================================================================
-# 1. MY DASHBOARD
+# 1. MY DASHBOARD (WITH ONBOARDING TIPS FOR NEW/INACTIVE USERS)
 # =========================================================================
 if menu_choice == "📊 My Dashboard":
     st.subheader(f"📊 {current_user}'s Personal Betting Dashboard")
@@ -592,6 +642,38 @@ if menu_choice == "📊 My Dashboard":
     my_bets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() == curr_user_clean or (curr_user_clean == "flurk" and b.get("user", "").strip().lower() in ["flurk", "admin"])]
     
     tot_placed = len(my_bets)
+
+    # ONBOARDING QUICK-START CARD WHEN 0 BETS EXIST
+    if tot_placed == 0:
+        with st.container(border=True):
+            st.markdown("### 👋 Welcome to Flurkstradamus! Let's Lock In Your First Edge")
+            st.write(
+                "You haven't locked in any bet slips yet. Flurkstradamus continuously tracks live line drift and models scoring pace to identify mispriced sportsbook lines. "
+                "Follow these simple steps to get started:"
+            )
+            st.markdown("""
+            1. **Navigate to the Single Game Engine or Combo Builder**:
+               * Use the **Single Game Engine** for point spreads, totals, moneylines, and player anytime touchdowns.
+               * Use the **Multi-Leg Combo Builder** if you want to compound true win probabilities on a multi-team parlay.
+            2. **Select a Matchup or Let the System Pick**:
+               * Select your game from the dropdown or toggle **Scan Full Slate for Highest Discrepancy**.
+            3. **Choose Your Strategy Objective**:
+               * Slide the model dial to **🛡️ Safe Floor** (insulating cushion with high win rates), **⚖️ Balanced Edge** (+EV sweet spot), or **🚀 High Profit** (max multiplier upside).
+            4. **Load & Lock In**:
+               * Click **'📥 Load to Form'** on any recommended card. It instantly populates the bet slip at the bottom.
+               * Review your stake and click **Lock In Bet Slip** to save it to your history and leaderboard standing!
+            """)
+
+            ob_c1, ob_c2 = st.columns(2)
+            with ob_c1:
+                if st.button("⚡ Go to Single Game Engine", use_container_width=True):
+                    st.session_state.active_nav_page = "⚡ Single Game Engine"
+                    st.rerun()
+            with ob_c2:
+                if st.button("🔗 Go to Multi-Leg Combo Builder", use_container_width=True):
+                    st.session_state.active_nav_page = "🔗 Multi-Leg Combo Builder"
+                    st.rerun()
+
     won_bets = [b for b in my_bets if b.get("status") == "Won"]
     lost_bets = [b for b in my_bets if b.get("status") == "Lost"]
     pending_bets = [b for b in my_bets if b.get("status") == "Pending"]
@@ -642,7 +724,7 @@ if menu_choice == "📊 My Dashboard":
             st.info("No recorded losses.")
 
 # =========================================================================
-# 2. SINGLE GAME ENGINE
+# 2. SINGLE GAME ENGINE (REAL PLAYER TOUCHDOWNS & STATISTICAL NOTES)
 # =========================================================================
 elif menu_choice == "⚡ Single Game Engine":
     st.subheader("⚡ Single Game Analytics Engine")
@@ -760,7 +842,7 @@ elif menu_choice == "⚡ Single Game Engine":
         m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%", help="Logistic straight-up win expectancy.")
         m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line", help="Expected point spread margin differential.")
 
-    # ACCORDION 2: AI STRATEGY ENGINE
+    # ACCORDION 2: AI STRATEGY ENGINE WITH REAL PLAYER NAMES
     with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
         st.markdown(
             "> **What this section does:** Evaluates betting opportunities across Totals, Spreads, Moneylines, and **Player Anytime Touchdown Scorers**. "
@@ -926,11 +1008,36 @@ elif menu_choice == "⚡ Single Game Engine":
             }
         ]
 
-        # Touchdown Props
+        # PLAYER ANYTIME TOUCHDOWN SCORER (REAL PLAYER NAMES RETRIEVAL)
+        home_scorers = get_star_scorers_for_team(tg_home_short, active_game_for_strat["home_team"])
+        away_scorers = get_star_scorers_for_team(tg_away_short, active_game_for_strat["away_team"])
+
+        p1_name, p1_pos = home_scorers[0]
+        p2_name, p2_pos = away_scorers[0]
+        p3_name, p3_pos = home_scorers[1] if len(home_scorers) > 1 else ("Primary Target", "WR")
+
         td_candidates = [
-            {"player": f"Lead RB ({active_game_for_strat['home_short']})", "p_td": 0.58 if "Safe Floor" in strategy_dial else 0.52, "mult": 1.85, "label": "+85% Profit (-115)", "reason": "Dominates 78% of team inside-the-5 red zone carries and goal line packages."},
-            {"player": f"WR1 / Primary Target ({active_game_for_strat['away_short']})", "p_td": 0.44 if "Safe Floor" in strategy_dial else 0.40, "mult": 2.25, "label": "+125% Profit (+125)", "reason": "Commands a 28% red-zone target share against an opponent allowing 1.8 passing TDs per game."},
-            {"player": f"Dual-Threat QB / Red-Zone TE ({active_game_for_strat['home_short']})", "p_td": 0.35 if "Safe Floor" in strategy_dial else 0.32, "mult": 3.10, "label": "+210% Profit (+210)", "reason": "High-value situational red zone threat designed on designed QB draws and play-action seams."}
+            {
+                "player": f"{p1_name} ({p1_pos} - {tg_home_short})",
+                "p_td": 0.58 if "Safe Floor" in strategy_dial else 0.52,
+                "mult": 1.85,
+                "label": "+85% Profit (-115)",
+                "reason": f"{p1_name} commands {tg_home_short}'s goal-line share inside the 5-yard line with unmatched red-zone touch volume."
+            },
+            {
+                "player": f"{p2_name} ({p2_pos} - {tg_away_short})",
+                "p_td": 0.45 if "Safe Floor" in strategy_dial else 0.41,
+                "mult": 2.25,
+                "label": "+125% Profit (+125)",
+                "reason": f"{p2_name} is {tg_away_short}'s premier red-zone option facing an opponent allowing frequent goal-to-go opportunities."
+            },
+            {
+                "player": f"{p3_name} ({p3_pos} - {tg_home_short})",
+                "p_td": 0.36 if "Safe Floor" in strategy_dial else 0.33,
+                "mult": 3.10,
+                "label": "+210% Profit (+210)",
+                "reason": f"{p3_name} serves as the primary situational target on play-action passing concepts in high-scoring scripts."
+            }
         ]
 
         touchdown_bets = [
@@ -945,7 +1052,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 "game_index": strat_game_index,
                 "est_payout_multiplier": c["mult"],
                 "roi_label": c["label"],
-                "drift_info": "Red-zone share & offensive TD expectation",
+                "drift_info": "Red-zone touch volume & defensive matchup efficiency",
                 "rationale": c["reason"]
             }
             for c in td_candidates
@@ -971,7 +1078,7 @@ elif menu_choice == "⚡ Single Game Engine":
                     st.session_state.single_form_version += 1
                     st.rerun()
 
-    # ACCORDION 3: SLIP BUILDER
+    # ACCORDION 3: SLIP BUILDER WITH STATISTICALLY DETAILED NOTES
     applied = st.session_state.single_applied_pick
     with st.expander("📝 Section 3: Wager Type & Lock In Bet Slip", expanded=True):
         st.markdown(
@@ -1018,9 +1125,9 @@ elif menu_choice == "⚡ Single Game Engine":
                 picked_t = st.selectbox("Outright Winner", [home_team, away_team])
                 strike = None
                 side = "Moneyline"
-            else:
-                default_p = applied["picked_team"] if (applied and applied.get("picked_team")) else f"Lead RB ({g['home_short']})"
-                picked_t = st.text_input("Player to Score TD", value=default_p, help="Enter player name or role.")
+            else: # Real Player Touchdown Prop
+                default_p = applied["picked_team"] if (applied and applied.get("picked_team")) else f"{p1_name} ({p1_pos} - {g['home_short']})"
+                picked_t = st.text_input("Player to Score TD", value=default_p, help="Enter exact player name.")
                 strike = 1.0
                 side = "Anytime TD"
 
@@ -1028,7 +1135,14 @@ elif menu_choice == "⚡ Single Game Engine":
             risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0, help="Dollar amount staked.")
             mult = applied.get("est_payout_multiplier", 1.91) if applied else 1.91
             payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=round(risk_amt * mult, 2), help="Total payout returned if ticket wins.")
-            ticket_notes = st.text_input("Notes", f"Model Edge: {applied['pick']}" if applied else "Single play", help="Custom notes or rationale.")
+            
+            # Context-rich statistical notes
+            if applied:
+                default_notes = f"Model Edge: {applied['pick']} | {applied.get('drift_info', '')}"
+            else:
+                default_notes = f"Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} vs {pregame_tot} open) | Live Margin: {live_proj_margin:+.1f} pts"
+
+            ticket_notes = st.text_input("Notes", default_notes, help="Statistical audit trail and reasoning for this bet.")
 
             if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
                 if bet_type == "Player Anytime Touchdown Scorer":
@@ -1631,7 +1745,7 @@ elif menu_choice == "📖 Model Methodology & Math":
         st.latex(r"P(\text{TD}) = 1 - e^{-\left(\lambda_{\text{Team TD}} \times \text{Player Share} \times \text{Defensive Matchup Modifier}\right)}")
 
 # =========================================================================
-# 10. ACCOUNT SETTINGS (PROFILE, PRIVACY, PASSWORD, BIO, PHOTO)
+# 10. ACCOUNT SETTINGS (BOTTOM OF USER NAVIGATION)
 # =========================================================================
 elif menu_choice == "⚙️ Account Settings":
     st.subheader("⚙️ Account Settings & Profile Management")
