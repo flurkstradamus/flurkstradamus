@@ -18,9 +18,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Responsive Desktop + Mobile styling & Bootstrap-style full row stacking
+# Professional Mobile-First & Desktop CSS Design System
 st.markdown("""
 <style>
+    /* GLOBAL CONTAINER SPACING */
     @media (min-width: 768px) {
         .block-container {
             padding-top: 4.5rem !important;
@@ -32,23 +33,40 @@ st.markdown("""
     }
     @media (max-width: 767px) {
         .block-container {
-            padding-top: 3.0rem !important;
+            padding-top: 2.2rem !important;
             padding-bottom: 2rem !important;
             padding-left: 0.6rem !important;
             padding-right: 0.6rem !important;
         }
-        [data-testid="column"] {
+
+        /* 2-COLUMN KPI METRIC CARDS ON MOBILE */
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 8px !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) > div[data-testid="column"] {
             width: 100% !important;
-            flex: 1 1 100% !important;
-            min-width: 100% !important;
-            margin-bottom: 0.5rem !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
         }
-        .rec-single-line-card {
-            flex-direction: column !important;
-            align-items: flex-start !important;
-            gap: 6px !important;
-            white-space: normal !important;
+        div[data-testid="stMetric"] {
+            background: rgba(255, 255, 255, 0.03) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            border-radius: 8px !important;
+            padding: 8px 12px !important;
         }
+        div[data-testid="stMetricLabel"] p {
+            font-size: 0.78rem !important;
+            opacity: 0.8 !important;
+        }
+        div[data-testid="stMetricValue"] div {
+            font-size: 1.3rem !important;
+            font-weight: 700 !important;
+        }
+
+        /* MOBILE INPUT ZOOM PREVENTION */
         input, select, textarea {
             font-size: 16px !important;
         }
@@ -89,17 +107,51 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
-    .rec-single-line-card {
-        border-radius: 8px;
+    /* CARD STYLING */
+    .rec-card-box {
+        border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.12);
-        background-color: rgba(255, 255, 255, 0.02);
-        padding: 10px 14px;
+        background: rgba(255, 255, 255, 0.025);
+        padding: 12px;
+        margin-bottom: 12px;
+    }
+    .rec-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding-bottom: 6px;
         margin-bottom: 8px;
+    }
+    .rec-matchup-meta {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        line-height: 1.3;
-        transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+        gap: 6px;
+        font-size: 0.85rem;
+    }
+    .rec-pick-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+    .badge-roi {
+        background-color: #22c55e;
+        color: #000;
+        font-weight: 800;
+        font-size: 0.75rem;
+        padding: 2px 7px;
+        border-radius: 4px;
+    }
+    .badge-prob {
+        background-color: rgba(255, 255, 255, 0.08);
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-weight: 700;
+        font-size: 0.78rem;
     }
     .clean-subtext {
         font-size: 0.85rem !important;
@@ -394,7 +446,6 @@ def get_extended_games(selected_league="All Games"):
     
     now_et = get_current_et_time()
     
-    # Query current week and day slices across the next 10 days
     date_queries = [""]
     for d in range(0, 10):
         dt_day = (now_et + timedelta(days=d)).strftime("%Y%m%d")
@@ -687,7 +738,7 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # =========================================================================
-# 1. MY DASHBOARD
+# 1. MY DASHBOARD (WITH TWO-COLUMN MOBILE KPI CARDS)
 # =========================================================================
 if menu_choice == "📊 My Dashboard":
     st.subheader(f"📊 {current_user}'s Personal Betting Dashboard")
@@ -744,12 +795,14 @@ if menu_choice == "📊 My Dashboard":
         types_count[t] = types_count.get(t, 0) + 1
     most_common_type = max(types_count, key=types_count.get) if types_count else "None"
 
+    # KPI ROW 1: Auto-converts to 2x2 grid on mobile via CSS
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("My Bets Placed", tot_placed, help="Total tickets placed under your profile.")
     k2.metric("Money Won", f"${tot_won_dollars:.2f}", help="Total net profit from settled winning slips.")
     k3.metric("Money Lost", f"${tot_lost_dollars:.2f}", help="Total stake lost on settled losing slips.")
     k4.metric("Net Profit / Loss", f"${net_pl:+.2f}", delta=f"{roi:+.1f}% ROI", help="Net dollars won/lost and overall return on investment percentage.")
 
+    # KPI ROW 2: Auto-converts to 2x2 grid on mobile via CSS
     k5, k6, k7, k8 = st.columns(4)
     decided = len(won_bets) + len(lost_bets)
     win_pct = (len(won_bets) / decided * 100) if decided > 0 else 0.0
@@ -881,7 +934,7 @@ elif menu_choice == "⚡ Single Game Engine":
 
     sync_game_snapshot(g, final_proj, live_proj_margin)
 
-    # ACCORDION 1
+    # ACCORDION 1: 2-COLUMN GRID METRICS ON MOBILE
     with st.expander("📊 Section 1: Matchup Overview & Live Drift Projections", expanded=True):
         st.markdown(
             "> **What this section does:** Compares opening sportsbook lines against in-game scoring volume to calculate live line drift, "
@@ -898,7 +951,7 @@ elif menu_choice == "⚡ Single Game Engine":
         m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%", help="Logistic straight-up win expectancy.")
         m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+.1f})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line", help="Expected point spread margin differential.")
 
-    # ACCORDION 2: AI STRATEGY ENGINE WITH MATCHUP & TEAM DETAILS
+    # ACCORDION 2: AI STRATEGY ENGINE WITH MODERN MOBILE CARDS
     with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
         st.markdown(
             "> **What this section does:** Evaluates betting opportunities across Totals, Spreads, Moneylines, and **Player Anytime Touchdown Scorers**. "
@@ -1125,48 +1178,44 @@ elif menu_choice == "⚡ Single Game Engine":
         else:
             strat_candidates = [spread_bets[0], full_totals_bets[0], touchdown_bets[0]]
 
-        # RENDER SUGGESTED BETS WITH FULL MATCHUP, LOGOS & KICKOFF DATE/TIME
+        # RENDER SUGGESTED BETS WITH RESPONSIVE MOBILE CONTAINERS
         for idx, sc in enumerate(strat_candidates[:3]):
             tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
-            with st.container(border=True):
-                st.markdown(f"""
-                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px; margin-bottom: 8px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-weight: 800; font-size: 0.90rem;">{tier_lbl}</span>
-                        <span style="opacity: 0.4;">•</span>
-                        <code style="font-size: 0.80rem;">{sc['type']}</code>
+            
+            # Responsive HTML Card Structure
+            st.markdown(f"""
+            <div class="rec-card-box">
+                <div class="rec-header-row">
+                    <div>
+                        <strong style="font-size:0.92rem;">{tier_lbl}</strong>
+                        <span style="opacity:0.4; margin:0 4px;">•</span>
+                        <code style="font-size:0.80rem;">{sc['type']}</code>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 7px;">
-                        <span style="background-color: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">[{tg_league_str}]</span>
-                        <img src="{tg_away_logo}" width="22" height="22" style="border-radius: 50%;">
-                        <strong style="font-size: 0.90rem;">{tg_away_short}</strong>
-                        <span style="opacity: 0.4; font-size: 0.8rem;">@</span>
-                        <img src="{tg_home_logo}" width="22" height="22" style="border-radius: 50%;">
-                        <strong style="font-size: 0.90rem;">{tg_home_short}</strong>
-                        <span style="opacity: 0.65; font-size: 0.78rem; margin-left: 4px;">🗓️ {tg_date_str}</span>
+                    <div class="rec-matchup-meta">
+                        <span style="background-color:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-weight:700; font-size:0.75rem;">[{tg_league_str}]</span>
+                        <img src="{tg_away_logo}" width="20" height="20" style="border-radius:50%;">
+                        <strong>{tg_away_short}</strong>
+                        <span style="opacity:0.4;">@</span>
+                        <img src="{tg_home_logo}" width="20" height="20" style="border-radius:50%;">
+                        <strong>{tg_home_short}</strong>
+                        <span style="opacity:0.65; font-size:0.75rem; margin-left:2px;">({tg_date_str})</span>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
-
-                st.markdown(f"""
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
-                    <strong style='color:#4ade80; font-size:1.15rem;'>{sc['pick']}</strong>
-                    <span style='background-color:#22c55e; color:#000; font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px;'>
-                        {sc['roi_label']}
-                    </span>
-                    <span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px; font-weight:700; font-size:0.80rem;'>
-                        {sc['prob']*100:.1f}% Win Prob
-                    </span>
+                <div class="rec-pick-row">
+                    <strong style="color:#4ade80; font-size:1.15rem;">{sc['pick']}</strong>
+                    <span class="badge-roi">{sc['roi_label']}</span>
+                    <span class="badge-prob">{sc['prob']*100:.1f}% Win Prob</span>
                 </div>
-                """, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
 
-                st.info(f"💡 **Why This Bet Was Selected:** {sc['rationale']}")
-                if st.button("📥 Load to Form", key=f"apply_{idx}_{sc['pick']}", use_container_width=True, help="Load this exact pick, line, and odds directly into your slip below and scroll to form."):
-                    st.session_state.single_applied_pick = sc
-                    st.session_state.single_selected_idx = sc["game_index"]
-                    st.session_state.single_form_version += 1
-                    st.session_state.scroll_to_form = True
-                    st.rerun()
+            st.info(f"💡 **Why This Bet Was Selected:** {sc['rationale']}")
+            if st.button("📥 Load to Form", key=f"apply_{idx}_{sc['pick']}", use_container_width=True, help="Load this exact pick, line, and odds directly into your slip below and scroll to form."):
+                st.session_state.single_applied_pick = sc
+                st.session_state.single_selected_idx = sc["game_index"]
+                st.session_state.single_form_version += 1
+                st.session_state.scroll_to_form = True
+                st.rerun()
 
     # Anchor point for smooth auto-scrolling
     st.markdown("<div id='bet-slip-anchor'></div>", unsafe_allow_html=True)
@@ -1285,7 +1334,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 st.success("Ticket locked into your account history!")
 
 # =========================================================================
-# 3. MULTI-LEG COMBO BUILDER (TARGET LEGS BEFORE STRATEGY OBJECTIVE)
+# 3. MULTI-LEG COMBO BUILDER
 # =========================================================================
 elif menu_choice == "🔗 Multi-Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
@@ -1459,7 +1508,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             valid_legs = [l for l in st.session_state.ai_recommended_combo if 0 <= l.get("matchup_idx", -1) < len(c_pool)]
             st.session_state.ai_recommended_combo = valid_legs
 
-        # DISPLAY LEGS WITH FULL MATCHUP DATES AND TIMES
+        # DISPLAY LEGS WITH CLEAN RESPONSIVE WRAPPER
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -1496,23 +1545,26 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 league_str = g_match.get("league", "NFL")
 
                 st.markdown(f"""
-                <div class="rec-single-line-card">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px;">
-                            LEG {idx_ai+1}
-                        </span>
-                        <span style="background-color: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">[{league_str}]</span>
-                        <img src="{g_match['away_logo']}" width="22" height="22" style="border-radius: 50%;">
-                        <strong style="font-size: 0.95rem;">{g_match['away_short']}</strong> @
-                        <img src="{g_match['home_logo']}" width="22" height="22" style="border-radius: 50%;">
-                        <strong style="font-size: 0.95rem;">{g_match['home_short']}</strong>
-                        <span style="opacity: 0.65; font-size: 0.80rem; margin-left: 4px;">🗓️ {kickoff_str}</span>
+                <div class="rec-card-box">
+                    <div class="rec-header-row">
+                        <div>
+                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px;">
+                                LEG {idx_ai+1}
+                            </span>
+                            <span style="background-color: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; margin-left:4px;">[{league_str}]</span>
+                        </div>
+                        <div class="rec-matchup-meta">
+                            <img src="{g_match['away_logo']}" width="20" height="20" style="border-radius: 50%;">
+                            <strong>{g_match['away_short']}</strong> @
+                            <img src="{g_match['home_logo']}" width="20" height="20" style="border-radius: 50%;">
+                            <strong>{g_match['home_short']}</strong>
+                            <span style="opacity: 0.65; font-size: 0.75rem; margin-left: 2px;">({kickoff_str})</span>
+                        </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <strong style="color: #4ade80; font-size: 1.0rem;">{l_ai['desc']}</strong> ({detail_str}) — 
-                        <span style="background-color: rgba(255, 255, 255, 0.08); padding: 2px 8px; border-radius: 4px; font-size: 0.80rem; font-weight: 700;">
-                            {l_ai['prob']*100:.1f}% Win Prob
-                        </span>
+                    <div class="rec-pick-row">
+                        <strong style="color: #4ade80; font-size: 1.05rem;">{l_ai['desc']}</strong>
+                        <span style="opacity:0.6; font-size:0.80rem;">({detail_str})</span>
+                        <span class="badge-prob">{l_ai['prob']*100:.1f}% Win Prob</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1975,11 +2027,6 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
 
             u_clean = selected_u.lower()
             u_bets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() == u_clean or b.get("user", "").strip().lower() == u_info.get("display_name", "").strip().lower()]
-            
-            st.markdown(f"##### 📊 Betting Portfolio ({len(u_bets)} Tickets Locked In):")
-            u_won = [b for b in u_bets if b.get("status") == "Won"]
-            u_lost = [b for b in u_bets if b.get("status") == "Lost"]
-            u_profit = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in u_won) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
             
             p_col1, p_col2, p_col3 = st.columns(3)
             p_col1.metric("Tickets Placed", len(u_bets))
