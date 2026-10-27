@@ -93,8 +93,8 @@ st.markdown("""
         border-radius: 8px;
         border: 1px solid rgba(255, 255, 255, 0.12);
         background-color: rgba(255, 255, 255, 0.02);
-        padding: 8px 14px;
-        margin-bottom: 6px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -382,100 +382,96 @@ is_user_admin = current_user_profile.get("is_admin", False)
 
 current_user_profile["last_active"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
 
-# MULTI-DAY ESPN INGESTION (UPCOMING, LIVE & PAST MATCHUPS)
+# =========================================================================
+# LIVE SCHEDULE INGESTION (RANGE-BASED, STRICTLY MATCHES ROBINHOOD/SPORTSBOOKS)
+# =========================================================================
 @st.cache_data(ttl=30)
 def get_extended_games(selected_league="All Games"):
     all_games = []
     seen_ids = set()
     
-    base_dates = [""]
     now_et = get_current_et_time()
-    for d_offset in range(0, 14):
-        f_dt = now_et + timedelta(days=d_offset)
-        base_dates.append(f_dt.strftime("%Y%m%d"))
-    for p_offset in range(1, 4):
-        p_dt = now_et - timedelta(days=p_offset)
-        base_dates.append(p_dt.strftime("%Y%m%d"))
+    past_date_str = (now_et - timedelta(days=3)).strftime("%Y%m%d")
+    future_date_str = (now_et + timedelta(days=14)).strftime("%Y%m%d")
+    date_range_param = f"{past_date_str}-{future_date_str}"
 
-    for d_param in base_dates:
-        d_query = f"?dates={d_param}" if d_param else ""
-        d_query_college = f"?dates={d_param}&groups=80" if d_param else "?groups=80"
+    endpoints = []
+    if selected_league in ["NFL", "All Games"]:
+        endpoints.append(("NFL", f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates={date_range_param}&limit=150"))
+        endpoints.append(("NFL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=150"))
+    if selected_league in ["NCAA Football", "All Games"]:
+        endpoints.append(("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?dates={date_range_param}&groups=80&limit=200"))
+        endpoints.append(("NCAA", "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?groups=80&limit=200"))
 
-        endpoints = []
-        if selected_league in ["NFL", "All Games"]:
-            endpoints.append(("NFL", f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard{d_query}"))
-        if selected_league in ["NCAA Football", "All Games"]:
-            endpoints.append(("NCAA", f"https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard{d_query_college}"))
+    for l_label, url in endpoints:
+        try:
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                data = r.json()
+                for event in data.get("events", []):
+                    ev_id = str(event.get("id", ""))
+                    if ev_id in seen_ids:
+                        continue
+                    seen_ids.add(ev_id)
 
-        for l_label, url in endpoints:
-            try:
-                r = requests.get(url, timeout=4)
-                if r.status_code == 200:
-                    data = r.json()
-                    for event in data.get("events", []):
-                        ev_id = str(event.get("id", ""))
-                        if ev_id in seen_ids:
-                            continue
-                        seen_ids.add(ev_id)
+                    comp = event["competitions"][0]
+                    competitors = comp["competitors"]
+                    home = next(c for c in competitors if c["homeAway"] == "home")
+                    away = next(c for c in competitors if c["homeAway"] == "away")
+                    status_obj = comp["status"]
+                    state_text = status_obj["type"]["state"]
+                    status_desc = status_obj["type"]["shortDetail"]
+                    period = status_obj.get("period", 1)
 
-                        comp = event["competitions"][0]
-                        competitors = comp["competitors"]
-                        home = next(c for c in competitors if c["homeAway"] == "home")
-                        away = next(c for c in competitors if c["homeAway"] == "away")
-                        status_obj = comp["status"]
-                        state_text = status_obj["type"]["state"]
-                        status_desc = status_obj["type"]["shortDetail"]
-                        period = status_obj.get("period", 1)
+                    raw_date = event.get("date", "")
+                    kickoff_formatted = format_espn_kickoff(raw_date, status_desc)
+                    home_team_obj = home.get("team", {})
+                    away_team_obj = away.get("team", {})
+                    home_name = home_team_obj.get("displayName", "Home")
+                    away_name = away_team_obj.get("displayName", "Away")
 
-                        raw_date = event.get("date", "")
-                        kickoff_formatted = format_espn_kickoff(raw_date, status_desc)
-                        home_team_obj = home.get("team", {})
-                        away_team_obj = away.get("team", {})
-                        home_name = home_team_obj.get("displayName", "Home")
-                        away_name = away_team_obj.get("displayName", "Away")
+                    odds_ou = 47.5
+                    odds_spread = -3.5
+                    if comp.get("odds"):
+                        odds_data = comp["odds"][0]
+                        odds_ou = float(odds_data.get("overUnder", 47.5))
+                        odds_spread = float(odds_data.get("spread", -3.5))
 
-                        odds_ou = 47.5
-                        odds_spread = -3.5
-                        if comp.get("odds"):
-                            odds_data = comp["odds"][0]
-                            odds_ou = float(odds_data.get("overUnder", 47.5))
-                            odds_spread = float(odds_data.get("spread", -3.5))
+                    is_completed = (state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower())
 
-                        is_completed = (state_text == "post" or status_obj["type"].get("completed", False) or "final" in status_desc.lower())
+                    if is_completed:
+                        checkpoint = "Final / Game Completed"
+                    elif state_text == "pre":
+                        checkpoint = "Pre-Game"
+                    else:
+                        checkpoint = "Halftime" if "half" in status_desc.lower() else (f"{period}st Quarter" if period == 1 else f"{period}th Quarter")
 
-                        if is_completed:
-                            checkpoint = "Final / Game Completed"
-                        elif state_text == "pre":
-                            checkpoint = "Pre-Game"
-                        else:
-                            checkpoint = "Halftime" if "half" in status_desc.lower() else (f"{period}st Quarter" if period == 1 else f"{period}th Quarter")
-
-                        all_games.append({
-                            "id": ev_id,
-                            "raw_date": raw_date,
-                            "league": l_label,
-                            "name": event["name"],
-                            "kickoff": kickoff_formatted,
-                            "home_team": home_name,
-                            "home_short": clean_abbr(home_name, home_team_obj.get("abbreviation")),
-                            "home_logo": home_team_obj.get("logo", DEFAULT_LOGO),
-                            "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
-                            "away_team": away_name,
-                            "away_short": clean_abbr(away_name, away_team_obj.get("abbreviation")),
-                            "away_logo": away_team_obj.get("logo", DEFAULT_LOGO),
-                            "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
-                            "home_score": int(home.get("score", 0)),
-                            "away_score": int(away.get("score", 0)),
-                            "status": status_desc,
-                            "checkpoint": checkpoint,
-                            "completed": is_completed,
-                            "period": period,
-                            "displayClock": status_obj.get("displayClock", "0:00"),
-                            "market_ou": odds_ou,
-                            "market_spread": odds_spread
-                        })
-            except Exception:
-                pass
+                    all_games.append({
+                        "id": ev_id,
+                        "raw_date": raw_date,
+                        "league": l_label,
+                        "name": event["name"],
+                        "kickoff": kickoff_formatted,
+                        "home_team": home_name,
+                        "home_short": clean_abbr(home_name, home_team_obj.get("abbreviation")),
+                        "home_logo": home_team_obj.get("logo", DEFAULT_LOGO),
+                        "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
+                        "away_team": away_name,
+                        "away_short": clean_abbr(away_name, away_team_obj.get("abbreviation")),
+                        "away_logo": away_team_obj.get("logo", DEFAULT_LOGO),
+                        "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
+                        "home_score": int(home.get("score", 0)),
+                        "away_score": int(away.get("score", 0)),
+                        "status": status_desc,
+                        "checkpoint": checkpoint,
+                        "completed": is_completed,
+                        "period": period,
+                        "displayClock": status_obj.get("displayClock", "0:00"),
+                        "market_ou": odds_ou,
+                        "market_spread": odds_spread
+                    })
+        except Exception:
+            pass
 
     return all_games
 
@@ -1127,7 +1123,6 @@ elif menu_choice == "⚡ Single Game Engine":
         for idx, sc in enumerate(strat_candidates[:3]):
             tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
             with st.container(border=True):
-                # Header Marquee with Logos, Kickoff Time & League
                 st.markdown(f"""
                 <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px; margin-bottom: 8px;">
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -1147,7 +1142,6 @@ elif menu_choice == "⚡ Single Game Engine":
                 </div>
                 """, unsafe_allow_html=True)
 
-                # Bet Pick, Multiplier & Probability
                 st.markdown(f"""
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
                     <strong style='color:#4ade80; font-size:1.15rem;'>{sc['pick']}</strong>
@@ -1285,7 +1279,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 st.success("Ticket locked into your account history!")
 
 # =========================================================================
-# 3. MULTI-LEG COMBO BUILDER
+# 3. MULTI-LEG COMBO BUILDER (WITH TARGET LEGS FIRST & MATCHUP DATES)
 # =========================================================================
 elif menu_choice == "🔗 Multi-Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
@@ -1340,7 +1334,23 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             "> **What this scanner does:** Automatically scans the entire slate to find compound edges across totals, spreads, and moneylines matching your target leg count."
         )
         col_strat1, col_strat2 = st.columns(2)
-        strategy_mode = col_strat1.selectbox(
+        
+        active_candidate_games = [gm for gm in c_pool if not gm.get("completed", False)]
+        if not active_candidate_games:
+            active_candidate_games = c_pool
+        max_possible_legs = min(12, max(2, len(active_candidate_games)))
+
+        # TARGET LEGS FIELD PLACED FIRST
+        suggest_legs_count = col_strat1.number_input(
+            "Target Legs (Up to 12)",
+            min_value=2,
+            max_value=max_possible_legs,
+            value=min(max(len(st.session_state.combo_active_legs), 3), max_possible_legs),
+            help="Choose how many legs to include in the parlay."
+        )
+
+        # STRATEGY OBJECTIVE FIELD PLACED SECOND
+        strategy_mode = col_strat2.selectbox(
             "Strategy Objective",
             [
                 "🎯 Maximum Win Probability (Safest Floor)",
@@ -1351,18 +1361,6 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             help="Select your compound strategy objective."
         )
 
-        active_candidate_games = [gm for gm in c_pool if not gm.get("completed", False)]
-        if not active_candidate_games:
-            active_candidate_games = c_pool
-        max_possible_legs = min(12, max(2, len(active_candidate_games)))
-
-        suggest_legs_count = col_strat2.number_input(
-            "Target Legs (Up to 12)",
-            min_value=2,
-            max_value=max_possible_legs,
-            value=min(max(len(st.session_state.combo_active_legs), 3), max_possible_legs),
-            help="Choose how many legs to include in the parlay."
-        )
         generate_clicked = st.button("⚡ Scan & Recommend Across Slates", use_container_width=True, help="Run AI scan to select the best combination of picks.")
 
         if generate_clicked and c_pool:
@@ -1455,6 +1453,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             valid_legs = [l for l in st.session_state.ai_recommended_combo if 0 <= l.get("matchup_idx", -1) < len(c_pool)]
             st.session_state.ai_recommended_combo = valid_legs
 
+        # SUGGESTED LEGS CARD DISPLAYING KICKOFF DATE & TIME
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
@@ -1487,22 +1486,26 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 m_idx = min(max(l_ai.get("matchup_idx", 0), 0), len(c_pool) - 1)
                 g_match = c_pool[m_idx]
                 detail_str = l_ai.get("detail", "")
+                kickoff_str = g_match.get("kickoff", "Scheduled Game")
+                league_str = g_match.get("league", "NFL")
 
                 st.markdown(f"""
                 <div class="rec-single-line-card">
-                    <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px;">
                             LEG {idx_ai+1}
                         </span>
-                        <img src="{g_match['away_logo']}" width="20" height="20" style="border-radius: 50%;">
-                        <strong>{g_match['away_short']}</strong> @
-                        <img src="{g_match['home_logo']}" width="20" height="20" style="border-radius: 50%;">
-                        <strong>{g_match['home_short']}</strong>
+                        <span style="background-color: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">[{league_str}]</span>
+                        <img src="{g_match['away_logo']}" width="22" height="22" style="border-radius: 50%;">
+                        <strong style="font-size: 0.95rem;">{g_match['away_short']}</strong> @
+                        <img src="{g_match['home_logo']}" width="22" height="22" style="border-radius: 50%;">
+                        <strong style="font-size: 0.95rem;">{g_match['home_short']}</strong>
+                        <span style="opacity: 0.65; font-size: 0.80rem; margin-left: 4px;">🗓️ {kickoff_str}</span>
                     </div>
-                    <div>
-                        <strong style="color: #4ade80;">{l_ai['desc']}</strong> ({detail_str}) — 
-                        <span style="background-color: rgba(255, 255, 255, 0.08); padding: 2px 8px; border-radius: 4px; font-size: 0.80rem; font-weight: 600;">
-                            {l_ai['prob']*100:.1f}%
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <strong style="color: #4ade80; font-size: 1.0rem;">{l_ai['desc']}</strong> ({detail_str}) — 
+                        <span style="background-color: rgba(255, 255, 255, 0.08); padding: 2px 8px; border-radius: 4px; font-size: 0.80rem; font-weight: 700;">
+                            {l_ai['prob']*100:.1f}% Win Prob
                         </span>
                     </div>
                 </div>
