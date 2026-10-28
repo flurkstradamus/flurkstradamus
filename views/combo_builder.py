@@ -197,7 +197,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             st.session_state.combo_is_editing = False
             st.rerun()
 
-    # --- AI RECOMMENDATION PREVIEW WITH EDIT & SAVE CONTROLS ---
+    # --- AI RECOMMENDATION PREVIEW (NO INDIVIDUAL EXPANDERS) ---
     if st.session_state.combo_preview_legs:
         with st.container(border=True):
             prev_legs = st.session_state.combo_preview_legs
@@ -258,10 +258,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     </div>
                     """, unsafe_allow_html=True)
 
-                    if p_leg.get("rationale"):
-                        with st.expander(f"🧠 Why Pick #{p_idx+1}? ({p_leg['type']})", expanded=False):
-                            st.caption(f"💡 **Model Edge Insight:** {p_leg['rationale']}")
-
                 with p_c2:
                     if st.session_state.combo_is_editing:
                         if st.button("🗑️", key=f"preview_del_{p_idx}", help=f"Remove Leg #{p_idx+1}"):
@@ -282,7 +278,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in pool]
 
-    # If no legs exist, show empty waiting state with an option to start manually
+    # If no legs exist, show empty waiting state
     if not st.session_state.combo_active_legs:
         st.info("No active parlay slip. Click **⚡ Auto-Generate Combo** above or add a leg manually below.")
         if st.button("➕ Add First Leg Manually", use_container_width=True):
@@ -304,6 +300,23 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             }]
             st.rerun()
         return
+
+    # --- DEDICATED ACCORDION FOR ALL LEG RATIONALES BEFORE THE ACTIVE SLIP ---
+    with st.expander("🧠 AI Model Strategy & Edge Rationales", expanded=False):
+        st.caption("Breakdown of algorithmic discrepancy, pace drift, and edge considerations for active selections:")
+        for idx, leg_item in enumerate(st.session_state.combo_active_legs):
+            leg_name = leg_item.get("picked_team", leg_item.get("matchup_str", f"Leg #{idx+1}"))
+            rat_msg = leg_item.get("rationale") or generate_leg_rationale(
+                leg_item.get("type", "Game Total"),
+                leg_item.get("side", "Under"),
+                leg_item.get("line", 0.0),
+                pool[min(leg_item.get("matchup_idx", 0), len(pool)-1)],
+                leg_name
+            )
+            st.markdown(f"**Leg #{idx+1}: {leg_item.get('matchup_str')}** (`{leg_item.get('type')}`)")
+            st.write(f"💡 {rat_msg}")
+            if idx < len(st.session_state.combo_active_legs) - 1:
+                st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid rgba(255,255,255,0.06);' />", unsafe_allow_html=True)
 
     ctrl1, ctrl2, ctrl3 = st.columns([3, 1, 1], vertical_alignment="center")
     ctrl1.markdown(f"#### Active Ticket Slip ({len(st.session_state.combo_active_legs)} Legs)")
