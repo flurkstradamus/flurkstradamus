@@ -2,6 +2,9 @@ import json
 import os
 import shutil
 import hashlib
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import streamlit as st
 
@@ -28,6 +31,35 @@ def get_admin_credentials():
             "email": "admin@domain.com"
         }
 
+def send_verification_email(recipient_email: str, code: str) -> bool:
+    """Sends verification code email via SMTP if configured in Secrets."""
+    smtp_cfg = st.secrets.get("smtp")
+    if not smtp_cfg:
+        return False
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = smtp_cfg.get("sender_email", smtp_cfg.get("username"))
+        msg["To"] = recipient_email
+        msg["Subject"] = "Your Flurkstradamus Verification Code"
+        
+        body = f"""Welcome to Flurkstradamus!
+        
+Your email verification code is: {code}
+
+Enter this code on the verification screen to activate your account.
+"""
+        msg.attach(MIMEText(body, "plain"))
+        
+        server = smtplib.SMTP(smtp_cfg.get("server", "smtp.gmail.com"), int(smtp_cfg.get("port", 587)))
+        server.starttls()
+        server.login(smtp_cfg.get("username"), smtp_cfg.get("password"))
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"SMTP send failed: {e}")
+        return False
+
 def get_default_users():
     cred = get_admin_credentials()
     u_key = cred["username"].lower()
@@ -39,6 +71,8 @@ def get_default_users():
             "password_hash": hash_password(cred["password"]),
             "is_admin": True,
             "is_banned": False,
+            "is_verified": True,
+            "verification_code": None,
             "created_at": "2026-10-26",
             "last_login": "2026-10-26 12:00 PM ET",
             "favorite_team": "NFL",
@@ -63,7 +97,7 @@ def load_storage():
 
     target_path = STORAGE_FILE if os.path.exists(STORAGE_FILE) else (BACKUP_FILE if os.path.exists(BACKUP_FILE) else None)
     if not target_path:
-        return [], [], default_users, [], {}
+        return [], [], default_users, [], {}, []
 
     try:
         with open(target_path, "r") as f:
@@ -71,6 +105,7 @@ def load_storage():
             saved_bets = data.get("saved_bets", [])
             chat_messages = data.get("chat_messages", [])
             user_accounts = data.get("user_accounts", {})
+            support_tickets = data.get("support_tickets", [])
 
             # Ensure admin matches st.secrets credentials without data loss
             admin_user = user_accounts.get(admin_key, {
@@ -89,6 +124,7 @@ def load_storage():
             })
             admin_user["is_admin"] = True
             admin_user["is_banned"] = False
+            admin_user["is_verified"] = True
             admin_user["password_hash"] = hash_password(admin_cred["password"])
             admin_user["email"] = admin_cred["email"]
             user_accounts[admin_key] = admin_user
@@ -103,18 +139,17 @@ def load_storage():
                     r = float(b.get("risk_dollars", 0.0))
                     b["locked_profit"] = p - r
 
-            return saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots
+            return saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots, support_tickets
     except Exception as e:
         print(f"Error loading storage: {e}")
-        return [], [], default_users, [], {}
+        return [], [], default_users, [], {}, []
 
-def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots):
+def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots, support_tickets=None):
     """
     Guaranteed atomic save with disk merge and automated backup creation.
-    Never wipes out accounts, bets, or chat if an empty state is received.
+    Never wipes out accounts, bets, chat, or support tickets if an empty state is received.
     """
-    # Merge existing disk data defensively
-    disk_bets, disk_chat, disk_users, disk_banned, disk_snaps = [], [], {}, [], {}
+    disk_bets, disk_chat, disk_users, disk_banned, disk_snaps, disk_tickets = [], [], {}, [], {}, []
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r") as f:
@@ -124,7 +159,7 @@ def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, ga
                 disk_users = d.get("user_accounts", {})
                 disk_banned = d.get("banned_emails", [])
                 disk_snaps = d.get("game_snapshots", {})
-            # Backup current verified file
+                disk_tickets = d.get("support_tickets", [])
             shutil.copyfile(STORAGE_FILE, BACKUP_FILE)
         except Exception:
             pass
@@ -134,13 +169,15 @@ def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, ga
     final_users = user_accounts if user_accounts else (disk_users if disk_users else get_default_users())
     final_banned = banned_emails if banned_emails else disk_banned
     final_snaps = game_snapshots if game_snapshots else disk_snaps
+    final_tickets = support_tickets if support_tickets is not None else disk_tickets
 
     payload = {
         "saved_bets": final_bets,
         "chat_messages": final_chat,
         "user_accounts": final_users,
         "banned_emails": final_banned,
-        "game_snapshots": final_snaps
+        "game_snapshots": final_snaps,
+        "support_tickets": final_tickets
     }
     try:
         temp_file = STORAGE_FILE + ".tmp"
@@ -173,7 +210,7 @@ def find_game_for_bet(bet, games_data):
 
     return None
 
-def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots=None):
+def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots=None, support_tickets=None):
     """Grades completed games without modifying user-entered payout or risk amounts."""
     if not saved_bets or not games_data:
         return False
@@ -281,7 +318,8 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
             chat_messages if chat_messages is not None else [], 
             {}, 
             [], 
-            game_snapshots if game_snapshots is not None else {}
+            game_snapshots if game_snapshots is not None else {},
+            support_tickets=support_tickets
         )
 
     return updated
