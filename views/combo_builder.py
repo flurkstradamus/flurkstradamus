@@ -1,5 +1,6 @@
 import streamlit as st
 from datetime import datetime
+from config import DEFAULT_LOGO
 from database import save_all_storage
 from sports.football import round_half_point, get_live_football_roster
 from sports.basketball import get_live_nba_roster
@@ -142,54 +143,73 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     "side": side_val,
                     "line": line_val,
                     "picked_team": target_p_name,
-                    "matchup_str": f"{g_item['away_short']} @ {g_item['home_short']}"
+                    "matchup_str": f"{g_item['away_short']} @ {g_item['home_short']}",
+                    "kickoff": g_item.get("kickoff", "Scheduled"),
+                    "away_logo": g_item.get("away_logo", DEFAULT_LOGO),
+                    "home_logo": g_item.get("home_logo", DEFAULT_LOGO),
+                    "away_short": g_item.get("away_short", "AWAY"),
+                    "home_short": g_item.get("home_short", "HOME"),
+                    "league": g_item.get("league", "SPORTS")
                 })
-            
+
             st.session_state.combo_preview_legs = new_generated
             st.session_state.combo_active_legs = new_generated
             st.rerun()
 
-    # --- RESTORED: INTERACTIVE GREEN TEXT AI RECOMMENDATION PREVIEW ---
+    # --- INTERACTIVE AI RECOMMENDATION PREVIEW (LOGOS + DATES + GREEN TEXT) ---
     if st.session_state.combo_preview_legs:
         with st.container(border=True):
             prev_legs = st.session_state.combo_preview_legs
             st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:10px;">
-                <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:12px;">
+                <div style="display:flex; align-items:center; gap:8px;">
                     <span style="font-size:1.15rem; font-weight:700;">🎯 AI Recommended Parlay Slip ({len(prev_legs)} Legs)</span>
-                    <span style="background-color:#22c55e; color:#000; font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px; margin-left:8px;">OPTIMIZED</span>
+                    <span style="background-color:#22c55e; color:#000; font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px;">OPTIMIZED</span>
                 </div>
-                <div style="font-size:0.85rem; opacity:0.8;">Click ❌ on any leg to customize selection</div>
+                <div style="font-size:0.80rem; opacity:0.75;">Click ❌ to remove any leg</div>
             </div>
             """, unsafe_allow_html=True)
 
-            # Render legs with prominent green text
             for p_idx, p_leg in enumerate(prev_legs):
-                p_c1, p_c2 = st.columns([5.5, 0.5])
-                
-                # Format pick text
+                p_c1, p_c2 = st.columns([5.5, 0.5], vertical_alignment="center")
+
+                # Format specific market pick
                 if p_leg["type"] == "Game Total":
-                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['side']} {p_leg['line']:.1f} pts"
+                    leg_pick_text = f"{p_leg['side']} {p_leg['line']:.1f} pts"
                 elif p_leg["type"] == "Point Spread (ATS)":
-                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['picked_team']} {p_leg['line']:+.1f}"
+                    leg_pick_text = f"{p_leg['picked_team']} {p_leg['line']:+.1f}"
                 elif p_leg["type"] == "Straight Up Winner (Moneyline)":
-                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['picked_team']} Outright ML"
+                    leg_pick_text = f"{p_leg['picked_team']} Outright ML"
                 elif p_leg["type"] == "Player Points Prop":
-                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['picked_team']} {p_leg['side']} {p_leg['line']:.1f} Pts"
+                    leg_pick_text = f"{p_leg['picked_team']} {p_leg['side']} {p_leg['line']:.1f} Pts"
                 else:
-                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['picked_team']} Any Time TD"
+                    leg_pick_text = f"{p_leg['picked_team']} Any Time TD"
 
                 with p_c1:
                     st.markdown(f"""
-                    <div style="margin-bottom:6px; display:flex; align-items:center; gap:8px;">
-                        <span style="opacity:0.6; font-size:0.85rem;">Leg {p_idx+1}:</span>
-                        <strong style="color:#4ade80; font-size:1.05rem;">{leg_pick_text}</strong>
-                        <span style="background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; font-size:0.75rem; opacity:0.85;">{p_leg['type']}</span>
+                    <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:8px 12px; border-radius:8px; margin-bottom:6px;">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="opacity:0.55; font-size:0.80rem; font-weight:600;">#{p_idx+1}</span>
+                            <img src="{p_leg.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
+                            <strong>{p_leg.get('away_short', 'AWAY')}</strong>
+                            <span style="opacity:0.4;">@</span>
+                            <img src="{p_leg.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
+                            <strong>{p_leg.get('home_short', 'HOME')}</strong>
+                            <span style="background:rgba(255,255,255,0.06); color:#94a3b8; padding:2px 7px; border-radius:4px; font-size:0.75rem;">
+                                🗓️ {p_leg.get('kickoff', 'Upcoming')}
+                            </span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <strong style="color:#4ade80; font-size:1.02rem;">{leg_pick_text}</strong>
+                            <span style="background:rgba(56,189,248,0.12); color:#38bdf8; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">
+                                {p_leg['type']}
+                            </span>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
 
                 with p_c2:
-                    if st.button("❌", key=f"preview_del_{p_idx}", help=f"Remove Leg {p_idx+1}"):
+                    if st.button("❌", key=f"preview_del_{p_idx}", help=f"Remove Leg #{p_idx+1}"):
                         st.session_state.combo_preview_legs.pop(p_idx)
                         st.session_state.combo_active_legs = list(st.session_state.combo_preview_legs)
                         st.rerun()
@@ -210,26 +230,40 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     if not st.session_state.combo_active_legs:
         st.session_state.combo_active_legs = []
         for j in range(min(target_legs, len(pool))):
+            gm = pool[j]
             st.session_state.combo_active_legs.append({
                 "matchup_idx": j,
                 "type": "Game Total",
                 "side": "Under",
-                "line": round_half_point(pool[j].get("market_ou", 47.5)),
-                "picked_team": pool[j]["home_team"],
-                "matchup_str": f"{pool[j]['away_short']} @ {pool[j]['home_short']}"
+                "line": round_half_point(gm.get("market_ou", 47.5)),
+                "picked_team": gm["home_team"],
+                "matchup_str": f"{gm['away_short']} @ {gm['home_short']}",
+                "kickoff": gm.get("kickoff", "Scheduled"),
+                "away_logo": gm.get("away_logo", DEFAULT_LOGO),
+                "home_logo": gm.get("home_logo", DEFAULT_LOGO),
+                "away_short": gm.get("away_short", "AWAY"),
+                "home_short": gm.get("home_short", "HOME"),
+                "league": gm.get("league", "SPORTS")
             })
 
     ctrl1, ctrl2, ctrl3 = st.columns([3, 1, 1], vertical_alignment="center")
     ctrl1.markdown(f"#### Active Ticket Slip ({len(st.session_state.combo_active_legs)} Legs)")
     if ctrl2.button("➕ Add Leg", use_container_width=True, disabled=(len(st.session_state.combo_active_legs) >= 12 or not pool)):
         next_i = min(len(st.session_state.combo_active_legs), len(pool) - 1)
+        next_gm = pool[next_i]
         st.session_state.combo_active_legs.append({
             "matchup_idx": next_i,
             "type": "Game Total",
             "side": "Under",
-            "line": round_half_point(pool[next_i].get("market_ou", 47.5)),
-            "picked_team": pool[next_i]["home_team"],
-            "matchup_str": f"{pool[next_i]['away_short']} @ {pool[next_i]['home_short']}"
+            "line": round_half_point(next_gm.get("market_ou", 47.5)),
+            "picked_team": next_gm["home_team"],
+            "matchup_str": f"{next_gm['away_short']} @ {next_gm['home_short']}",
+            "kickoff": next_gm.get("kickoff", "Scheduled"),
+            "away_logo": next_gm.get("away_logo", DEFAULT_LOGO),
+            "home_logo": next_gm.get("home_logo", DEFAULT_LOGO),
+            "away_short": next_gm.get("away_short", "AWAY"),
+            "home_short": next_gm.get("home_short", "HOME"),
+            "league": next_gm.get("league", "SPORTS")
         })
         st.rerun()
 
@@ -243,21 +277,48 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     for i, leg in enumerate(st.session_state.combo_active_legs):
         with st.container(border=True):
-            col_hdr1, col_hdr2 = st.columns([5, 1])
-            col_hdr1.markdown(f"**Leg #{i+1}**")
-            if col_hdr2.button("❌", key=f"del_leg_{i}", help="Remove leg"):
-                st.session_state.combo_active_legs.pop(i)
-                if st.session_state.combo_preview_legs and i < len(st.session_state.combo_preview_legs):
-                    st.session_state.combo_preview_legs.pop(i)
+            safe_idx = min(max(leg.get("matchup_idx", 0), 0), len(choices) - 1)
+            gm = pool[safe_idx]
+            leg["matchup_idx"] = safe_idx
+            leg["matchup_str"] = f"{gm['away_short']} @ {gm['home_short']}"
+            leg["kickoff"] = gm.get("kickoff", "Scheduled")
+            leg["away_logo"] = gm.get("away_logo", DEFAULT_LOGO)
+            leg["home_logo"] = gm.get("home_logo", DEFAULT_LOGO)
+            leg["away_short"] = gm.get("away_short", "AWAY")
+            leg["home_short"] = gm.get("home_short", "HOME")
+            leg["league"] = gm.get("league", "SPORTS")
+
+            # Header with Team Logos & Game Kickoff Date
+            col_hdr1, col_hdr2 = st.columns([5.5, 0.5], vertical_alignment="center")
+            with col_hdr1:
+                st.markdown(f"""
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                    <span style="font-weight:700; font-size:1.0rem;">Leg #{i+1}</span>
+                    <img src="{gm.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
+                    <strong>{gm.get('away_short')}</strong>
+                    <span style="opacity:0.4;">@</span>
+                    <img src="{gm.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
+                    <strong>{gm.get('home_short')}</strong>
+                    <span style="background:rgba(255,255,255,0.06); color:#94a3b8; padding:2px 7px; border-radius:4px; font-size:0.75rem;">
+                        🗓️ {gm.get('kickoff', 'Upcoming')}
+                    </span>
+                    <span style="opacity:0.5; font-size:0.75rem;">[{gm.get('league')}]</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col_hdr2:
+                if st.button("❌", key=f"del_leg_{i}", help="Remove leg"):
+                    st.session_state.combo_active_legs.pop(i)
+                    if st.session_state.combo_preview_legs and i < len(st.session_state.combo_preview_legs):
+                        st.session_state.combo_preview_legs.pop(i)
+                    st.rerun()
+
+            sel_m = st.selectbox(f"Matchup Selector", range(len(choices)), index=safe_idx, format_func=lambda x: choices[x], key=f"cb_m_{i}")
+            if sel_m != safe_idx:
+                leg["matchup_idx"] = sel_m
                 st.rerun()
 
-            safe_idx = min(max(leg.get("matchup_idx", 0), 0), len(choices) - 1)
-            sel_m = st.selectbox(f"Matchup", range(len(choices)), index=safe_idx, format_func=lambda x: choices[x], key=f"cb_m_{i}")
-            leg["matchup_idx"] = sel_m
-            gm = pool[sel_m]
-            leg["matchup_str"] = f"{gm['away_short']} @ {gm['home_short']}"
             is_nba = (gm.get("league") == "NBA")
-
             market_choices = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)"]
             if is_nba:
                 market_choices.append("Player Points Prop")
