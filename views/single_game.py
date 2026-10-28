@@ -459,5 +459,6 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                     st.session_state.support_tickets
                 )
                 st.session_state.single_applied_pick = None
-                st.success("Ticket locked successfully!")
+                st.toast(f"🎉 Ticket locked: {bet_lbl}!", icon="✅")
+                st.session_state.active_nav_page = "📜 Locked Bets History"
                 st.rerun()
