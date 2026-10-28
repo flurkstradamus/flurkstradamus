@@ -9,6 +9,9 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     st.subheader("🔗 Multi-Leg Cross-Sport Combo Builder (Up to 12 Legs)")
     st.caption("Automated cross-slate parlay scanner, compound probability calculator, and slip builder.")
 
+    if "combo_preview_legs" not in st.session_state:
+        st.session_state.combo_preview_legs = None
+
     # Top-Level AI Automation & Strategy Controls
     with st.container(border=True):
         st.markdown("#### 🤖 AI Combo Optimizer & Auto-Assembler")
@@ -84,7 +87,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
         if col_gen.button("⚡ Auto-Generate Combo", use_container_width=True, disabled=len(pool) == 0):
-            new_legs = []
+            new_generated = []
             selected_games = pool[:target_legs]
             for j, g_item in enumerate(selected_games):
                 is_nba = (g_item.get("league") == "NBA")
@@ -133,15 +136,70 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     line_val = 1.0
                     side_val = "TD"
 
-                new_legs.append({
+                new_generated.append({
                     "matchup_idx": pool.index(g_item),
                     "type": chosen_type,
                     "side": side_val,
                     "line": line_val,
-                    "picked_team": target_p_name
+                    "picked_team": target_p_name,
+                    "matchup_str": f"{g_item['away_short']} @ {g_item['home_short']}"
                 })
-            st.session_state.combo_active_legs = new_legs
+            
+            st.session_state.combo_preview_legs = new_generated
+            st.session_state.combo_active_legs = new_generated
             st.rerun()
+
+    # --- RESTORED: INTERACTIVE GREEN TEXT AI RECOMMENDATION PREVIEW ---
+    if st.session_state.combo_preview_legs:
+        with st.container(border=True):
+            prev_legs = st.session_state.combo_preview_legs
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:10px;">
+                <div>
+                    <span style="font-size:1.15rem; font-weight:700;">🎯 AI Recommended Parlay Slip ({len(prev_legs)} Legs)</span>
+                    <span style="background-color:#22c55e; color:#000; font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px; margin-left:8px;">OPTIMIZED</span>
+                </div>
+                <div style="font-size:0.85rem; opacity:0.8;">Click ❌ on any leg to customize selection</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Render legs with prominent green text
+            for p_idx, p_leg in enumerate(prev_legs):
+                p_c1, p_c2 = st.columns([5.5, 0.5])
+                
+                # Format pick text
+                if p_leg["type"] == "Game Total":
+                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['side']} {p_leg['line']:.1f} pts"
+                elif p_leg["type"] == "Point Spread (ATS)":
+                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['picked_team']} {p_leg['line']:+.1f}"
+                elif p_leg["type"] == "Straight Up Winner (Moneyline)":
+                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['picked_team']} Outright ML"
+                elif p_leg["type"] == "Player Points Prop":
+                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['picked_team']} {p_leg['side']} {p_leg['line']:.1f} Pts"
+                else:
+                    leg_pick_text = f"{p_leg['matchup_str']} ➔ {p_leg['picked_team']} Any Time TD"
+
+                with p_c1:
+                    st.markdown(f"""
+                    <div style="margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+                        <span style="opacity:0.6; font-size:0.85rem;">Leg {p_idx+1}:</span>
+                        <strong style="color:#4ade80; font-size:1.05rem;">{leg_pick_text}</strong>
+                        <span style="background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; font-size:0.75rem; opacity:0.85;">{p_leg['type']}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with p_c2:
+                    if st.button("❌", key=f"preview_del_{p_idx}", help=f"Remove Leg {p_idx+1}"):
+                        st.session_state.combo_preview_legs.pop(p_idx)
+                        st.session_state.combo_active_legs = list(st.session_state.combo_preview_legs)
+                        st.rerun()
+
+            sync_c1, sync_c2 = st.columns([4, 1.5])
+            sync_c1.caption("All changes made in this green preview box automatically update the detailed form below.")
+            if sync_c2.button("🗑️ Clear AI Suggestion", use_container_width=True):
+                st.session_state.combo_preview_legs = None
+                st.session_state.combo_active_legs = []
+                st.rerun()
 
     if not pool:
         st.info("No matchups found matching your current filter.")
@@ -157,7 +215,8 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 "type": "Game Total",
                 "side": "Under",
                 "line": round_half_point(pool[j].get("market_ou", 47.5)),
-                "picked_team": pool[j]["home_team"]
+                "picked_team": pool[j]["home_team"],
+                "matchup_str": f"{pool[j]['away_short']} @ {pool[j]['home_short']}"
             })
 
     ctrl1, ctrl2, ctrl3 = st.columns([3, 1, 1], vertical_alignment="center")
@@ -169,12 +228,14 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             "type": "Game Total",
             "side": "Under",
             "line": round_half_point(pool[next_i].get("market_ou", 47.5)),
-            "picked_team": pool[next_i]["home_team"]
+            "picked_team": pool[next_i]["home_team"],
+            "matchup_str": f"{pool[next_i]['away_short']} @ {pool[next_i]['home_short']}"
         })
         st.rerun()
 
-    if ctrl3.button("🗑️ Clear Legs", use_container_width=True):
+    if ctrl3.button("🗑️ Clear All", use_container_width=True):
         st.session_state.combo_active_legs = []
+        st.session_state.combo_preview_legs = None
         st.rerun()
 
     combo_legs = []
@@ -186,12 +247,15 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             col_hdr1.markdown(f"**Leg #{i+1}**")
             if col_hdr2.button("❌", key=f"del_leg_{i}", help="Remove leg"):
                 st.session_state.combo_active_legs.pop(i)
+                if st.session_state.combo_preview_legs and i < len(st.session_state.combo_preview_legs):
+                    st.session_state.combo_preview_legs.pop(i)
                 st.rerun()
 
             safe_idx = min(max(leg.get("matchup_idx", 0), 0), len(choices) - 1)
             sel_m = st.selectbox(f"Matchup", range(len(choices)), index=safe_idx, format_func=lambda x: choices[x], key=f"cb_m_{i}")
             leg["matchup_idx"] = sel_m
             gm = pool[sel_m]
+            leg["matchup_str"] = f"{gm['away_short']} @ {gm['home_short']}"
             is_nba = (gm.get("league") == "NBA")
 
             market_choices = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)"]
