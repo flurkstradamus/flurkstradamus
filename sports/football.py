@@ -56,6 +56,7 @@ def get_live_football_roster(team_id_or_abbr, league="NFL"):
     players.sort(key=lambda x: order.get(x[1], 4))
     return players[:6]
 
+@st.cache_data(ttl=30, show_spinner=False)
 def fetch_football_scoreboard(league_filter="NFL", days_range=(-2, 6)):
     games = []
     seen = set()
