@@ -308,27 +308,11 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
     status_val = b.get("status", "Pending")
     is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
 
-    if is_combo:
-        compound_p = 1.0
-        legs_list = b.get("parsed_legs", [])
-        for l_item in legs_list:
-            m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
-            p_str = calculate_live_bet_prob({
-                "status": b.get("status"),
-                "target_line": l_item.get("line"),
-                "bet_direction": l_item.get("side"),
-                "bet_category": l_item.get("type"),
-                "picked_team": l_item.get("picked_team"),
-                "win_prob": "65.0%"
-            }, m_g)
-            try: compound_p *= (float(p_str.replace("%", "")) / 100.0)
-            except: compound_p *= 0.5
-        live_prob_str = f"{compound_p * 100:.1f}%"
-        live_m = None
-    else:
+    live_m = None
+    if not is_combo:
         live_m = find_game_for_bet(b, games_data)
-        live_prob_str = calculate_live_bet_prob(b, live_m)
 
+    # Determine whether the matchup has started or finished
     game_started = False
     is_final = False
     if live_m:
@@ -337,6 +321,40 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         game_started = ("pre" not in chk.lower()) and ("pm" not in stt and "am" not in stt)
         is_final = live_m.get("completed", False) or "final" in stt
 
+    # Check if the bet is resolved or the matchup is final
+    is_ticket_settled = (status_val in ["Won", "Lost"]) or is_final
+
+    # Only compute and display Live Win Prob for active/unsettled tickets
+    live_prob_badge_html = ""
+    if not is_ticket_settled:
+        if is_combo:
+            compound_p = 1.0
+            legs_list = b.get("parsed_legs", [])
+            for l_item in legs_list:
+                m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
+                p_str = calculate_live_bet_prob({
+                    "status": b.get("status"),
+                    "target_line": l_item.get("line"),
+                    "bet_direction": l_item.get("side"),
+                    "bet_category": l_item.get("type"),
+                    "picked_team": l_item.get("picked_team"),
+                    "win_prob": "65.0%"
+                }, m_g)
+                try: 
+                    compound_p *= (float(p_str.replace("%", "")) / 100.0)
+                except: 
+                    compound_p *= 0.5
+            live_prob_str = f"{compound_p * 100:.1f}%"
+        else:
+            live_prob_str = calculate_live_bet_prob(b, live_m)
+
+        live_prob_badge_html = f"""
+        <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
+            🎲 Live Win Prob: {live_prob_str}
+        </span>
+        """
+
+    # Status badge styling
     if status_val == "Won":
         badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
     elif status_val == "Lost":
@@ -354,9 +372,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
                 <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Bettor')}</strong></span>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
-                <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
-                    🎲 Live Win Prob: {live_prob_str}
-                </span>
+                {live_prob_badge_html}
                 {badge_html}
             </div>
         </div>
@@ -385,9 +401,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
                 <span style="opacity:0.55; font-size:0.80rem; margin-left:4px;">by <strong>{b.get('user', 'Bettor')}</strong></span>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
-                <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
-                    🎲 Live Win Prob: {live_prob_str}
-                </span>
+                {live_prob_badge_html}
                 {badge_html}
             </div>
         </div>
@@ -396,7 +410,10 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         header_html = f"""
         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
             <div><strong>{b.get('matchup', 'Matchup')}</strong> <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Bettor')}</strong></span></div>
-            <div>{badge_html}</div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                {live_prob_badge_html}
+                {badge_html}
+            </div>
         </div>
         """
 
@@ -528,7 +545,6 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
 
 st.sidebar.markdown("---")
 
-
 @st.cache_data(ttl=30, show_spinner=False)
 def get_cached_games():
     return fetch_nba_scoreboard() + fetch_football_scoreboard("All Games")
@@ -559,13 +575,13 @@ else:
 nav_list = [
     "📊 My Dashboard", 
     "⚡ Single Game Engine", 
-    "🔗 Multi-Leg Combo Builder",
+    "🔗 Multi-Leg Combo Builder", 
     "📜 Locked Bets History", 
-    "🔥 Live Squad Feed",
+    "🔥 Live Squad Feed", 
     "🏆 Leaderboard", 
     "💡 How It Works", 
     "📖 Model Methodology & Math", 
-    "⚙️ Account Settings",
+    "⚙️ Account Settings", 
     "📩 Feedback & Support", 
     "ℹ️ About Flurkstradamus"
 ]
