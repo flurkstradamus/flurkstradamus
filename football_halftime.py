@@ -23,10 +23,16 @@ except Exception as import_err:
     st.stop()
 
 st.set_page_config(
-    page_title="Flurkstradamus Edge Engine",
+    page_title="Flurkstradamus: In-Game Sports Betting Analytics & Edge Engine",
     page_icon="🔮",
     layout="wide",
     initial_sidebar_state="collapsed"
+)
+
+st.title("🔮 Flurkstradamus")
+st.caption(
+    "Algorithmic sports betting intelligence, in-game pace modeling, "
+    "and automated bet slip tracking for NFL and NCAA football."
 )
 
 # Responsive Desktop + Mobile styling & Custom 3D Spinning Football Loader
