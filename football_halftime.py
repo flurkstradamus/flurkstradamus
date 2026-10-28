@@ -21,7 +21,6 @@ st.set_page_config(
 # Responsive Desktop + Mobile styling & Custom 3D Spinning Football Loader
 st.markdown("""
 <style>
-    /* GLOBAL CONTAINER SPACING */
     @media (min-width: 768px) {
         .block-container {
             padding-top: 4.5rem !important;
@@ -125,22 +124,12 @@ st.markdown("""
         border-radius: 6px !important;
     }
 
-    /* =========================================================================
-       CUSTOM 3D SPINNING FOOTBALL LOADING ANIMATION
-       ========================================================================= */
+    /* CUSTOM 3D SPINNING FOOTBALL LOADER */
     @keyframes spinFootball {
-        0% {
-            transform: rotate(0deg) scale(1);
-        }
-        50% {
-            transform: rotate(180deg) scale(1.15);
-        }
-        100% {
-            transform: rotate(360deg) scale(1);
-        }
+        0% { transform: rotate(0deg) scale(1); }
+        50% { transform: rotate(180deg) scale(1.15); }
+        100% { transform: rotate(360deg) scale(1); }
     }
-
-    /* Replace Streamlit's standard spinner icon and hide raw loading text */
     [data-testid="stSpinner"] {
         display: flex !important;
         align-items: center !important;
@@ -158,8 +147,6 @@ st.markdown("""
         filter: drop-shadow(0px 4px 10px rgba(0, 0, 0, 0.45)) !important;
         margin: 0 auto !important;
     }
-
-    /* Replace top-right header runner with spinning football */
     [data-testid="stStatusWidget"] {
         background: transparent !important;
         border: none !important;
@@ -308,14 +295,10 @@ def get_real_players_for_team(team_abbr, team_name):
     for k, v in STAR_ROSTER.items():
         if k in clean_a or k in clean_n:
             return v
-    if "PANTHERS" in clean_n or "CAROLINA" in clean_n:
-        return STAR_ROSTER["CAR"]
-    if "PACKERS" in clean_n or "GREEN BAY" in clean_n:
-        return STAR_ROSTER["GB"]
-    if "COWBOYS" in clean_n or "DALLAS" in clean_n:
-        return STAR_ROSTER["DAL"]
-    if "EAGLES" in clean_n or "PHILADELPHIA" in clean_n:
-        return STAR_ROSTER["PHI"]
+    if "PANTHERS" in clean_n or "CAROLINA" in clean_n: return STAR_ROSTER["CAR"]
+    if "PACKERS" in clean_n or "GREEN BAY" in clean_n: return STAR_ROSTER["GB"]
+    if "COWBOYS" in clean_n or "DALLAS" in clean_n: return STAR_ROSTER["DAL"]
+    if "EAGLES" in clean_n or "PHILADELPHIA" in clean_n: return STAR_ROSTER["PHI"]
     city = team_name.split()[0] if team_name else "Team"
     return [(f"{city} Lead Rusher", "RB"), (f"{city} Top Target", "WR"), (f"{city} Goal-Line TE", "TE")]
 
@@ -344,7 +327,10 @@ def format_espn_kickoff(date_str, fallback_status):
         return fallback_status
 
 def round_half_point(val):
-    return round(float(val) * 2.0) / 2.0
+    try:
+        return round(float(val) * 2.0) / 2.0
+    except (ValueError, TypeError):
+        return 47.5
 
 def calculate_live_bet_prob(bet_obj, live_m):
     if not live_m:
@@ -388,7 +374,7 @@ def get_numeric_prob(bet_obj, games_data):
         compound_p = 1.0
         legs_list = bet_obj.get("parsed_legs", [])
         if not legs_list:
-            raw_str = bet_obj.get("win_prob", "50.0%").replace("%", "").strip()
+            raw_str = str(bet_obj.get("win_prob", "50.0%")).replace("%", "").strip()
             try: return float(raw_str) / 100.0
             except: return 0.50
         for l_item in legs_list:
@@ -410,7 +396,7 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# Global Card Renderer
+# Global Card Renderer for Locked Bets and Live Squad Feed
 def render_ticket_card(b, real_idx, games_data, can_delete=False):
     status_val = b.get("status", "Pending")
     is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
@@ -826,7 +812,7 @@ def sync_game_snapshot(game, proj_total, proj_spread):
         }
         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
 
-# Sidebar
+# Sidebar UI
 st.sidebar.markdown(f"## 🔮 Flurkstradamus")
 
 if st.sidebar.button(f"👤 {current_user} (@{current_user_profile.get('username')})", key="sidebar_user_profile_link", help="View and edit your profile settings"):
@@ -1910,6 +1896,9 @@ elif menu_choice == "💬 The Locker Room":
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                         st.rerun()
 
+# =========================================================================
+# 8. HOW IT WORKS
+# =========================================================================
 elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
@@ -1920,12 +1909,58 @@ elif menu_choice == "💡 How It Works":
     * **⚙️ Account Settings**: Personalize your profile, bio, avatar, and privacy settings.
     """)
 
+# =========================================================================
+# 9. MODEL METHODOLOGY & MATH (COMPREHENSIVE ARCHITECTURE)
+# =========================================================================
 elif menu_choice == "📖 Model Methodology & Math":
     st.subheader("📖 Flurkstradamus Machine Learning & Mathematical Architecture")
-    st.latex(r"Z = \frac{\text{Line} - \mu_{\text{in-game}}}{\sigma_{\text{decay}}}")
-    st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
-    st.latex(r"P(\text{TD}) = 1 - e^{-\left(\lambda_{\text{Team TD}} \times \text{Player Share} \times \text{Defensive Matchup Modifier}\right)}")
+    st.caption("How our proprietary in-game Bayesian pace models uncover market mispricings.")
 
+    with st.container(border=True):
+        st.markdown("### 🏆 Why Flurkstradamus Outperforms Traditional Sportsbooks")
+        st.write(
+            "Traditional sportsbooks rely heavily on static opening numbers and rigid algorithms that simply divide full-game lines in half "
+            "or adjust lines by flat linear formulas. When unexpected game scripts occur—such as sudden defensive turnovers, torrential weather, "
+            "or fast hurry-up offenses—sportsbook live lines lag behind real pace changes."
+        )
+        st.markdown("""
+        * **Dynamic Tempo Learning:** Flurkstradamus adjusts scoring projections continuously by evaluating drive success, yards per play, and quarter-by-quarter pace deviations rather than relying on stale pre-game consensus.
+        * **Pace-Shock Variance Insulation:** When shootouts or defensive slogs emerge, our engine dynamically widens or compresses standard deviation ($\sigma$) brackets, ensuring bets are never forced back toward bad pre-game numbers.
+        * **Real Value Margins:** The AI compares its derived mathematical probability against implied sportsbook breakeven lines to surface only positive expected value (+EV) tickets.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### ⚙️ How Bets Are Made: The 4-Step Analytical Pipeline")
+        st.markdown("""
+        1. **Live Scoreboard & Odds Ingestion:** Real-time play-by-play telemetry, game clock, and open/current odds lines are pulled directly from live feeds.
+        2. **Bayesian Halftime & Quarter Regression:** Scoring pace is compared against baseline expectations to generate in-game projections for second-half scoring, full-game totals, and adjusted point spread margins.
+        3. **Cumulative Probability Distribution Modeling:** Projections are evaluated against market lines using continuous normal cumulative distributions (CDF) and logistic sigmoid curves to calculate true cover probabilities.
+        4. **Multi-Objective Strategy Filtering:** Bettors select their risk profile (`🛡️ Safe Floor`, `⚖️ Balanced Edge`, or `🚀 High Profit`), and the engine selects the highest-discrepancy lines meeting that objective.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 📐 Mathematical Formulas & Core Distribution Functions")
+        st.markdown("##### 1. Over/Under Win Expectancy (Gaussian Error Function)")
+        st.write("Over/Under win probabilities are calculated via continuous cumulative normal distributions:")
+        st.latex(r"Z = \frac{\text{Line} - \mu_{\text{in-game}}}{\sigma_{\text{decay}}}")
+        st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right], \quad P(\text{Over}) = 1 - P(\text{Under})")
+
+        st.markdown("##### 2. Point Spread (ATS) Cover Probability")
+        st.write("Point spread cover expectations pass projected score differentials through a logistic sigmoid distribution:")
+        st.latex(r"\Delta_{\text{margin}} = (\text{Home Proj} - \text{Away Proj}) + \text{Line}")
+        st.latex(r"P(\text{Home Cover}) = \frac{1}{1 + e^{-\frac{\Delta_{\text{margin}}}{5.0}}}")
+
+        st.markdown("##### 3. Straight-Up Moneyline Logistic Expectancy")
+        st.write("Calculates straight-up win probability based on projected team scoring volume and historical win-percentage differentials:")
+        st.latex(r"P(\text{Home Win}) = \frac{1}{1 + 10^{-\frac{\Delta_{\text{pts}} + (\text{Win\% Diff} \times 7.0)}{14.5}}}")
+
+        st.markdown("##### 4. Player Anytime Touchdown Scorer Prop Engine")
+        st.write("Touchdown probability models red-zone goal-line rush share ($< 5$ yards), red-zone target volume, and defensive efficiency:")
+        st.latex(r"P(\text{TD}) = 1 - e^{-\left(\lambda_{\text{Team TD}} \times \text{Player Share} \times \text{Defensive Modifier}\right)}")
+
+# =========================================================================
+# 10. ACCOUNT SETTINGS
+# =========================================================================
 elif menu_choice == "⚙️ Account Settings":
     st.subheader("⚙️ Account Settings & Profile Management")
     with st.form("account_settings_form"):
@@ -1996,6 +2031,7 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
             u_lost = [b for b in u_bets if b.get("status") == "Lost"]
             u_profit = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in u_won) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
             
+            st.markdown(f"##### 📊 Betting Portfolio ({len(u_bets)} Tickets Locked In):")
             p_col1, p_col2, p_col3 = st.columns(3)
             p_col1.metric("Tickets Placed", len(u_bets))
             p_col2.metric("Record", f"{len(u_won)}W - {len(u_lost)}L")
