@@ -42,12 +42,12 @@ def parse_bet_slip_image(image_bytes):
 
     prompt = """
     You are an expert sports betting and prediction market OCR parser.
-    Examine this screenshot of a bet slip, Robinhood contract, DraftKings, FanDuel, or sports betting ticket.
+    Examine this screenshot of a bet slip, Robinhood event contract, DraftKings, FanDuel, or sports betting ticket.
     Extract the bet details into a strictly valid JSON object:
     {
         "away_team": "string or null",
         "home_team": "string or null",
-        "picked_team": "string or null (team or player name chosen)",
+        "picked_team": "string or null",
         "wager_type": "Point Spread" | "Game Total" | "Moneyline" | "Player Points Prop" | "Anytime TD",
         "side": "Under" | "Over" | "Spread" | "Moneyline",
         "line": float or null,
@@ -74,7 +74,7 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    # Clean endpoint targets across both v1beta and v1
+    # Clean endpoints across v1beta and v1
     candidate_endpoints = [
         ("v1beta", "gemini-1.5-flash"),
         ("v1beta", "gemini-1.5-flash-latest"),
@@ -94,28 +94,13 @@ def parse_bet_slip_image(image_bytes):
                 cleaned = re.sub(r"^```json\s*", "", txt.strip())
                 cleaned = re.sub(r"```$", "", cleaned.strip())
                 return json.loads(cleaned), None
-            elif r.status_code in [404, 503, 429]:
-                last_err = f"{model_name} (HTTP {r.status_code})"
-                continue
             else:
                 last_err = f"{model_name} (HTTP {r.status_code}): {r.text[:120]}"
         except Exception as e:
             last_err = f"{model_name}: {str(e)}"
             continue
 
-    # Clean Fallback Pattern Parser if all remote endpoints fail or rate-limit
-    return {
-        "away_team": "Delaware",
-        "home_team": "Western Kentucky",
-        "picked_team": None,
-        "wager_type": "Game Total",
-        "side": "Under",
-        "line": 77.5,
-        "payout": 31.00,
-        "profit": 12.09,
-        "risk": 18.91,
-        "is_settled": True
-    }, None
+    return None, f"All models failed. Last error: {last_err}"
 
 def match_game_in_pool(away_name, home_name, pool, picked_name=""):
     if not pool:
@@ -124,18 +109,21 @@ def match_game_in_pool(away_name, home_name, pool, picked_name=""):
     h_target = (home_name or "").lower().strip()
     p_target = (picked_name or "").lower().strip()
 
-    # Pass 1: exact/partial match on both teams
+    # Match both teams
     for idx, gm in enumerate(pool):
-        gm_h, gm_a = gm["home_team"].lower(), gm["away_team"].lower()
-        gm_hs, gm_as = gm.get("home_short", "").lower(), gm.get("away_short", "").lower()
+        gm_h = gm["home_team"].lower()
+        gm_a = gm["away_team"].lower()
+        gm_hs = gm.get("home_short", "").lower()
+        gm_as = gm.get("away_short", "").lower()
         h_ok = (h_target in gm_h or gm_h in h_target or h_target in gm_hs) if h_target else True
         a_ok = (a_target in gm_a or gm_a in a_target or a_target in gm_as) if a_target else True
         if h_ok and a_ok and (h_target or a_target):
             return idx
 
-    # Pass 2: match single team or picked name
+    # Match single team or player
     for idx, gm in enumerate(pool):
-        gm_h, gm_a = gm["home_team"].lower(), gm["away_team"].lower()
+        gm_h = gm["home_team"].lower()
+        gm_a = gm["away_team"].lower()
         for mc in [h_target, a_target, p_target]:
             if mc and len(mc) >= 3 and (mc in gm_h or gm_h in mc or mc in gm_a or gm_a in mc):
                 return idx
@@ -171,9 +159,10 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
     with st.expander("📸 Auto-Fill via Slip Screenshot (Robinhood, DraftKings, FanDuel, etc.)", expanded=True):
         st.caption("Upload any sportsbook or prediction contract screenshot to detect teams, lines, risk, and potential payouts.")
-        uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key=f"slip_uploader_v{form_ver}")
+        uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key="slip_file_input")
+        
         if uploaded_slip is not None:
-            if st.button("⚡ Extract & Auto-Fill Form", use_container_width=True, key=f"btn_extract_v{form_ver}"):
+            if st.button("⚡ Extract & Auto-Fill Form", use_container_width=True, key="btn_run_extract"):
                 with st.spinner("Analyzing screenshot with vision model..."):
                     parsed_res, err_msg = parse_bet_slip_image(uploaded_slip.read())
                     if parsed_res:
@@ -190,6 +179,9 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                         w_risk = float(parsed_res.get("risk") or max(1.0, w_payout - w_profit))
                         is_settled_flag = parsed_res.get("is_settled", False)
 
+                        # Increment version to force input re-render with new defaults
+                        new_v = st.session_state.single_form_version + 1
+                        st.session_state.single_form_version = new_v
                         st.session_state.single_selected_idx = matched_idx
                         st.session_state.single_applied_pick = {
                             "category": wager_cat,
@@ -203,11 +195,18 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                             "picked_team": picked_t,
                             "status": "Won" if is_settled_flag else "Pending"
                         }
-                        st.session_state.single_form_version += 1
-                        st.success(f"✅ Extracted: {wager_side} {w_line} ({away_t} vs {home_t}) | Risk: ${w_risk:.2f}, Return: ${w_payout:.2f}")
+                        # Pre-populate specific input keys for Section 3
+                        st.session_state[f"in_h_{new_v}"] = home_t
+                        st.session_state[f"in_a_{new_v}"] = away_t
+                        st.session_state["extracted_banner_msg"] = f"✅ Extracted: {wager_side} {w_line} ({away_t} vs {home_t}) | Risk: ${w_risk:.2f}, Payout: ${w_payout:.2f}"
                         st.rerun()
                     else:
                         st.error(f"❌ Analysis failed: {err_msg}")
+
+    # Display status banner if recently extracted
+    if "extracted_banner_msg" in st.session_state and st.session_state["extracted_banner_msg"]:
+        st.success(st.session_state["extracted_banner_msg"])
+        st.session_state["extracted_banner_msg"] = None
 
     if not pool:
         st.info("No matchups found matching your current filter.")
@@ -270,7 +269,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
     with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
         strat_opts = ["⚡ Consensus Edge", "📊 Full Game Total", "🛡️ Spread (ATS)", "🏆 Moneyline"]
         strat_opts.append("🏀 Player Points Prop" if is_nba_game else "🏈 Player Anytime TD")
-        sel_market = st.selectbox("Strategy Type", strat_opts)
+        sel_market = st.selectbox("Strategy Type", strat_opts, key=f"sel_strat_{form_ver}")
 
         tot_dir = "Under" if delta_full <= 0 else "Over"
         p_tot = calculate_win_prob(final_proj, final_proj, std_bracket, is_under=(tot_dir == "Under"))
@@ -310,11 +309,12 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         """, unsafe_allow_html=True)
 
         if st.button("📥 Load to Form", use_container_width=True, key=f"btn_load_rec_{form_ver}"):
+            new_v = st.session_state.single_form_version + 1
+            st.session_state.single_form_version = new_v
             st.session_state.single_applied_pick = {
                 "category": rec_type, "side": rec_side, "target_line": rec_line,
                 "risk": 10.0, "payout": 19.10, "picked_team": rec_team, "status": "Pending"
             }
-            st.session_state.single_form_version += 1
             st.rerun()
 
     applied = st.session_state.single_applied_pick
@@ -344,43 +344,43 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             if bet_type == "Game Total":
                 f1, f2 = st.columns(2)
                 def_side_idx = 0 if (applied and applied.get("side") == "Under") else 1
-                s_side = f1.selectbox("Side", ["Under", "Over"], index=def_side_idx)
+                s_side = f1.selectbox("Side", ["Under", "Over"], index=def_side_idx, key=f"sel_side_{form_ver}")
                 def_strike = float(applied.get("target_line", final_proj)) if applied else float(final_proj)
-                s_line = f2.number_input("Total Line", value=def_strike, step=0.5)
+                s_line = f2.number_input("Total Line", value=def_strike, step=0.5, key=f"inp_strike_{form_ver}")
             elif bet_type == "Point Spread (ATS)":
                 f1, f2 = st.columns(2)
                 p_cand = applied.get("picked_team", "") if applied else ""
                 def_cov_idx = 1 if (p_cand and p_cand.lower() in away_team.lower()) else 0
-                p_target = f1.selectbox("Covering Team", [home_team, away_team], index=def_cov_idx)
+                p_target = f1.selectbox("Covering Team", [home_team, away_team], index=def_cov_idx, key=f"sel_cover_{form_ver}")
                 s_side = "Spread"
                 def_spd = float(applied.get("target_line", espn_spread)) if applied else float(espn_spread)
-                s_line = f2.number_input("Spread Line", value=def_spd, step=0.5)
+                s_line = f2.number_input("Spread Line", value=def_spd, step=0.5, key=f"inp_spd_{form_ver}")
             elif bet_type == "Straight Up Winner (Moneyline)":
                 p_cand = applied.get("picked_team", "") if applied else ""
                 def_win_idx = 1 if (p_cand and p_cand.lower() in away_team.lower()) else 0
-                p_target = st.selectbox("Outright Winner", [home_team, away_team], index=def_win_idx)
+                p_target = st.selectbox("Outright Winner", [home_team, away_team], index=def_win_idx, key=f"sel_ml_{form_ver}")
                 s_side, s_line = "Moneyline", None
             elif bet_type == "Player Points Prop":
                 f1, f2 = st.columns(2)
                 all_r = [p[0] for p in (h_players + away_players)]
                 p_cand = applied.get("picked_team", "") if applied else ""
                 def_p_idx = all_r.index(p_cand) if p_cand in all_r else 0
-                p_target = f1.selectbox("Player", all_r, index=def_p_idx)
-                s_side = f2.selectbox("Side", ["Over", "Under"], index=0 if (applied and applied.get("side") == "Over") else 1)
+                p_target = f1.selectbox("Player", all_r, index=def_p_idx, key=f"sel_prop_p_{form_ver}")
+                s_side = f2.selectbox("Side", ["Over", "Under"], index=0 if (applied and applied.get("side") == "Over") else 1, key=f"sel_prop_s_{form_ver}")
                 def_pts_strike = float(applied.get("target_line", 22.5)) if applied else 22.5
-                s_line = st.number_input("Points Line", value=def_pts_strike, step=0.5)
+                s_line = st.number_input("Points Line", value=def_pts_strike, step=0.5, key=f"inp_prop_pts_{form_ver}")
             else:
                 all_r = [p[0] for p in (h_players + away_players)]
                 p_cand = applied.get("picked_team", "") if applied else ""
                 def_td_idx = all_r.index(p_cand) if p_cand in all_r else 0
-                p_target = st.selectbox("Player", all_r, index=def_td_idx)
+                p_target = st.selectbox("Player", all_r, index=def_td_idx, key=f"sel_td_p_{form_ver}")
                 s_side, s_line = "TD", 1.0
 
             c_r, c_p = st.columns(2)
             def_risk = float(applied.get("risk", 10.0)) if applied else 10.0
             def_payout = float(applied.get("payout", 19.10)) if applied else 19.10
-            r_amt = c_r.number_input("Risk ($)", min_value=1.0, value=def_risk, step=5.0)
-            p_amt = c_p.number_input("Payout ($)", min_value=1.0, value=def_payout, step=5.0)
+            r_amt = c_r.number_input("Risk ($)", min_value=1.0, value=def_risk, step=5.0, key=f"inp_risk_{form_ver}")
+            p_amt = c_p.number_input("Payout ($)", min_value=1.0, value=def_payout, step=5.0, key=f"inp_payout_{form_ver}")
 
             if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
                 actual_risk = float(r_amt)
