@@ -109,6 +109,21 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
+    /* SIDEBAR USERNAME BUTTON LINK STYLING */
+    div[data-testid="stSidebar"] div[data-testid="stButton"]:has(button[key="sidebar_user_profile_link"]) button {
+        background: transparent !important;
+        border: none !important;
+        padding-left: 4px !important;
+        padding-top: 2px !important;
+        padding-bottom: 2px !important;
+        height: auto !important;
+        min-height: 1.8rem !important;
+    }
+    div[data-testid="stSidebar"] div[data-testid="stButton"]:has(button[key="sidebar_user_profile_link"]) button:hover {
+        background: rgba(255, 255, 255, 0.05) !important;
+        border-radius: 6px !important;
+    }
+
     .rec-card-box {
         border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.12);
@@ -316,7 +331,7 @@ def calculate_live_bet_prob(bet_obj, live_m):
         return f"{p * 100:.1f}%"
     return bet_obj.get("win_prob", "52.0%")
 
-# TOP-LEVEL RENDER FUNCTION (Placed globally to avoid breaking Python syntax)
+# TOP-LEVEL RENDER FUNCTION FOR CARDS
 def render_ticket_card(b, real_idx, games_data, can_delete=False):
     status_val = b.get("status", "Pending")
     is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
@@ -734,9 +749,15 @@ def sync_game_snapshot(game, proj_total, proj_spread):
         }
         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
 
-# Sidebar UI
+# Sidebar with Clickable Profile Link
 st.sidebar.markdown(f"## 🔮 Flurkstradamus")
-st.sidebar.markdown(f"👤 **{current_user}** (`@{current_user_profile.get('username')}`)")
+
+# USERNAME LINK TO ACCOUNT SETTINGS
+if st.sidebar.button(f"👤 {current_user} (@{current_user_profile.get('username')})", key="sidebar_user_profile_link", help="View and edit your profile settings"):
+    st.session_state.selected_bet_id = None
+    st.session_state.active_nav_page = "⚙️ Account Settings"
+    st.rerun()
+
 if current_user_profile.get("favorite_team"):
     st.sidebar.caption(f"🏈 {current_user_profile.get('favorite_team')}")
 
@@ -1441,9 +1462,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             active_candidate_games = c_pool
         max_possible_legs = min(12, max(2, len(active_candidate_games)))
 
-        # 1. Target Legs First
         suggest_legs_count = col_strat1.number_input("Target Legs (Up to 12)", min_value=2, max_value=max_possible_legs, value=min(max(len(st.session_state.combo_active_legs), 3), max_possible_legs))
-        # 2. Strategy Objective Second
         strategy_mode = col_strat2.selectbox("Strategy Objective", [
             "🎯 Maximum Win Probability (Safest Floor)",
             "🔥 High Expected Value (+EV Total Edge)",
@@ -1949,7 +1968,6 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
             u_lost = [b for b in u_bets if b.get("status") == "Lost"]
             u_profit = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in u_won) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
             
-            st.markdown(f"##### 📊 Betting Portfolio ({len(u_bets)} Tickets Locked In):")
             p_col1, p_col2, p_col3 = st.columns(3)
             p_col1.metric("Tickets Placed", len(u_bets))
             p_col2.metric("Record", f"{len(u_won)}W - {len(u_lost)}L")
