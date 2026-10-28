@@ -502,8 +502,10 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
             st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
 
         with c_row2:
-            r_val = float(b.get('risk_dollars', 10.0))
-            p_val = float(b.get('payout_dollars', 19.0))
+            try: r_val = float(b.get('risk_dollars', 10.0))
+            except: r_val = 10.0
+            try: p_val = float(b.get('payout_dollars', 19.0))
+            except: p_val = 19.0
             roi_pct = ((p_val - r_val) / max(r_val, 0.01)) * 100
             st.write(f"Risk: **${r_val:.2f}** ➔ Payout: **${p_val:.2f}**")
             st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${p_val - r_val:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
@@ -515,11 +517,11 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
                 st.caption(f"*{b.get('notes')}*")
 
         with c_row4:
-            if st.button("🏟️ War Room", key=f"open_ticket_war_{b['id']}_{real_idx}", use_container_width=True):
+            if st.button("🏟️ War Room", key=f"open_ticket_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                 st.session_state.selected_bet_id = b["id"]
                 st.rerun()
             if can_delete:
-                if st.button("🗑️", key=f"del_ticket_{b['id']}_{real_idx}", help="Delete ticket", use_container_width=True):
+                if st.button("🗑️", key=f"del_ticket_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
                     st.session_state.saved_bets.pop(real_idx)
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                     st.rerun()
@@ -564,47 +566,29 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
                         """, unsafe_allow_html=True)
 
 # Session State Keys
-if "logged_in_user" not in st.session_state:
-    st.session_state.logged_in_user = None
-if "selected_bet_id" not in st.session_state:
-    st.session_state.selected_bet_id = None
-if "combo_active_legs" not in st.session_state:
-    st.session_state.combo_active_legs = []
-if "ai_recommended_combo" not in st.session_state:
-    st.session_state.ai_recommended_combo = None
-if "active_nav_page" not in st.session_state:
-    st.session_state.active_nav_page = "📊 My Dashboard"
-if "editing_ai_combo" not in st.session_state:
-    st.session_state.editing_ai_combo = False
-if "combo_version" not in st.session_state:
-    st.session_state.combo_version = 0
-if "editing_msg_id" not in st.session_state:
-    st.session_state.editing_msg_id = None
-if "selected_admin_user" not in st.session_state:
-    st.session_state.selected_admin_user = None
-if "scroll_to_form" not in st.session_state:
-    st.session_state.scroll_to_form = False
+if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
+if "selected_bet_id" not in st.session_state: st.session_state.selected_bet_id = None
+if "combo_active_legs" not in st.session_state: st.session_state.combo_active_legs = []
+if "ai_recommended_combo" not in st.session_state: st.session_state.ai_recommended_combo = None
+if "active_nav_page" not in st.session_state: st.session_state.active_nav_page = "📊 My Dashboard"
+if "editing_ai_combo" not in st.session_state: st.session_state.editing_ai_combo = False
+if "combo_version" not in st.session_state: st.session_state.combo_version = 0
+if "editing_msg_id" not in st.session_state: st.session_state.editing_msg_id = None
+if "selected_admin_user" not in st.session_state: st.session_state.selected_admin_user = None
+if "scroll_to_form" not in st.session_state: st.session_state.scroll_to_form = False
 
 # Form state
-if "single_selected_idx" not in st.session_state:
-    st.session_state.single_selected_idx = 0
-if "single_applied_pick" not in st.session_state:
-    st.session_state.single_applied_pick = None
-if "single_form_version" not in st.session_state:
-    st.session_state.single_form_version = 0
+if "single_selected_idx" not in st.session_state: st.session_state.single_selected_idx = 0
+if "single_applied_pick" not in st.session_state: st.session_state.single_applied_pick = None
+if "single_form_version" not in st.session_state: st.session_state.single_form_version = 0
 
 # Database Load
 b_data, c_data, u_data, banned_emails_data, game_snapshots_data = load_storage()
-if "saved_bets" not in st.session_state:
-    st.session_state.saved_bets = b_data
-if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = c_data
-if "user_accounts" not in st.session_state:
-    st.session_state.user_accounts = u_data
-if "banned_emails" not in st.session_state:
-    st.session_state.banned_emails = banned_emails_data
-if "game_snapshots" not in st.session_state:
-    st.session_state.game_snapshots = game_snapshots_data
+if "saved_bets" not in st.session_state: st.session_state.saved_bets = b_data
+if "chat_messages" not in st.session_state: st.session_state.chat_messages = c_data
+if "user_accounts" not in st.session_state: st.session_state.user_accounts = u_data
+if "banned_emails" not in st.session_state: st.session_state.banned_emails = banned_emails_data
+if "game_snapshots" not in st.session_state: st.session_state.game_snapshots = game_snapshots_data
 
 # URL token persistence
 query_params = st.query_params
@@ -812,7 +796,7 @@ def sync_game_snapshot(game, proj_total, proj_spread):
         }
         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
 
-# Sidebar UI
+# Sidebar
 st.sidebar.markdown(f"## 🔮 Flurkstradamus")
 
 if st.sidebar.button(f"👤 {current_user} (@{current_user_profile.get('username')})", key="sidebar_user_profile_link", help="View and edit your profile settings"):
@@ -912,8 +896,10 @@ if st.session_state.selected_bet_id is not None:
     st.caption(f"Pick: `{selected_bet['bet']}` | Status: `{selected_bet.get('status')}`")
 
     wm1, wm2, wm3, wm4, wm5 = st.columns(5)
-    r_val = float(selected_bet.get('risk_dollars', 10.0))
-    p_val = float(selected_bet.get('payout_dollars', 19.0))
+    try: r_val = float(selected_bet.get('risk_dollars', 10.0))
+    except: r_val = 10.0
+    try: p_val = float(selected_bet.get('payout_dollars', 19.0))
+    except: p_val = 19.0
     wm1.metric("Risk", f"${r_val:.2f}")
     wm2.metric("Payout", f"${p_val:.2f}")
     wm3.metric("Profit Potential", f"+${p_val - r_val:.2f}")
@@ -986,9 +972,165 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # =========================================================================
+# 1. MY DASHBOARD (FIXED FOR SAFE ZERO-STATE & FUZZY USER IDENTIFIERS)
+# =========================================================================
+if menu_choice == "📊 My Dashboard":
+    st.subheader(f"📊 {current_user}'s Personal Betting Dashboard")
+    st.caption("Complete portfolio telemetry: settled P&L, live pending stakes, and probability-modeled expected returns.")
+
+    # Match tickets across username, display name, and Flurk aliases safely
+    clean_u = active_uname.lower()
+    clean_disp = current_user_profile.get("display_name", "").strip().lower()
+    
+    my_bets = []
+    for b in st.session_state.saved_bets:
+        bet_owner = str(b.get("user", "")).strip().lower()
+        if (bet_owner in [clean_u, clean_disp]) or (clean_u == "flurk" and bet_owner in ["flurk", "admin"]):
+            my_bets.append(b)
+
+    tot_placed = len(my_bets)
+
+    if tot_placed == 0:
+        with st.container(border=True):
+            st.markdown("### 👋 Welcome to Flurkstradamus! Let's Lock In Your First Edge")
+            st.write(
+                "You haven't locked in any bet slips yet. Flurkstradamus continuously tracks live line drift and models scoring pace to identify mispriced sportsbook lines. "
+                "Follow these simple steps to get started:"
+            )
+            st.markdown("""
+            1. **Navigate to the Single Game Engine or Combo Builder**:
+               * Use the **Single Game Engine** for point spreads, totals, moneylines, and player anytime touchdowns.
+               * Use the **Multi-Leg Combo Builder** if you want to compound true win probabilities on a multi-team parlay.
+            2. **Select a Matchup or Let the System Pick**:
+               * Select your game from the dropdown or toggle **Scan Full Slate for Highest Discrepancy**.
+            3. **Choose Your Strategy Objective**:
+               * Slide the model dial to **🛡️ Safe Floor**, **⚖️ Balanced Edge**, or **🚀 High Profit**.
+            4. **Load & Lock In**:
+               * Click **'📥 Load to Form'** on any recommended card, review your stake, and save the ticket!
+            """)
+            ob_c1, ob_c2 = st.columns(2)
+            if ob_c1.button("⚡ Go to Single Game Engine", use_container_width=True):
+                st.session_state.active_nav_page = "⚡ Single Game Engine"
+                st.rerun()
+            if ob_c2.button("🔗 Go to Multi-Leg Combo Builder", use_container_width=True):
+                st.session_state.active_nav_page = "🔗 Multi-Leg Combo Builder"
+                st.rerun()
+        st.stop()
+
+    # Settled metrics
+    won_bets = [b for b in my_bets if b.get("status") == "Won"]
+    lost_bets = [b for b in my_bets if b.get("status") == "Lost"]
+    pending_bets = [b for b in my_bets if b.get("status") == "Pending"]
+
+    tot_won_dollars = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in won_bets)
+    tot_lost_dollars = sum(float(b.get("risk_dollars", 0)) for b in lost_bets)
+    net_pl = tot_won_dollars - tot_lost_dollars
+    tot_risk = sum(float(b.get("risk_dollars", 0)) for b in my_bets if b.get("status") in ["Won", "Lost"])
+    roi = (net_pl / tot_risk * 100) if tot_risk > 0 else 0.0
+    avg_stake = (sum(float(b.get("risk_dollars", 0)) for b in my_bets) / tot_placed) if tot_placed > 0 else 0.0
+
+    # Advanced Pending Analytics & Probability-Adjusted Value
+    pending_risk_dollars = sum(float(b.get("risk_dollars", 0)) for b in pending_bets)
+    pending_max_profit = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in pending_bets)
+    
+    pending_expected_profit = 0.0
+    sum_weighted_prob = 0.0
+    pending_live_count = 0
+    pending_sched_count = 0
+
+    for b in pending_bets:
+        try: r_amt = float(b.get("risk_dollars", 0))
+        except: r_amt = 0.0
+        try: p_amt = float(b.get("payout_dollars", 0))
+        except: p_amt = 0.0
+        net_win = p_amt - r_amt
+        prob = get_numeric_prob(b, games_data)
+        
+        # EV = (Prob * Profit) - ((1 - Prob) * Risk)
+        ev_ticket = (prob * net_win) - ((1.0 - prob) * r_amt)
+        pending_expected_profit += ev_ticket
+        sum_weighted_prob += (prob * r_amt)
+
+        m_check = find_game_for_bet(b, games_data)
+        if m_check and m_check.get("state_text") != "pre" and m_check.get("period", 0) > 0 and not m_check.get("completed", False):
+            pending_live_count += 1
+        else:
+            pending_sched_count += 1
+
+    weighted_avg_prob = (sum_weighted_prob / max(pending_risk_dollars, 0.01)) * 100 if pending_risk_dollars > 0 else 0.0
+
+    # Realized Portfolio Performance
+    st.markdown("##### 💼 Realized Performance (Settled Slips)")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total Bets Logged", tot_placed, help="All slips created under your profile.")
+    k2.metric("Money Won", f"${tot_won_dollars:.2f}", help="Total net profit from settled winners.")
+    k3.metric("Money Lost", f"${tot_lost_dollars:.2f}", help="Total stake lost on graded losses.")
+    k4.metric("Net Profit / Loss", f"${net_pl:+.2f}", delta=f"{roi:+.1f}% ROI", help="Realized bankroll net profit/loss and return on investment.")
+
+    # Pending Slips & Probability EV
+    st.markdown("##### ⏳ Active Book & Pending Analytics (In Play & Scheduled)")
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric(
+        "Capital at Risk", 
+        f"${pending_risk_dollars:.2f}", 
+        f"{len(pending_bets)} Slips Active", 
+        help="Total dollars currently staked on open tickets."
+    )
+    p2.metric(
+        "Max Potential Profit", 
+        f"+${pending_max_profit:.2f}", 
+        help="Maximum possible net profit if 100% of your open bets win."
+    )
+    p3.metric(
+        "Expected Profit (EV)", 
+        f"${pending_expected_profit:+.2f}", 
+        delta=f"Prob-Adjusted Return",
+        help="True statistical expected return calculated from real-time live game probabilities minus drawdown risk."
+    )
+    p4.metric(
+        "Portfolio Win Expectancy", 
+        f"{weighted_avg_prob:.1f}%", 
+        f"{pending_live_count} Live | {pending_sched_count} Upcoming",
+        help="Dollar-weighted true win probability across your active tickets."
+    )
+
+    # Win Rate & Discipline
+    st.markdown("##### 📈 Historical Discipline & Records")
+    k5, k6, k7, k8 = st.columns(4)
+    decided = len(won_bets) + len(lost_bets)
+    win_pct = (len(won_bets) / decided * 100) if decided > 0 else 0.0
+    k5.metric("Graded Win Rate", f"{win_pct:.1f}%", f"{len(won_bets)}W - {len(lost_bets)}L")
+    k6.metric("Average Stake", f"${avg_stake:.2f}")
+    k7.metric("Pending In Play", f"{len(pending_bets)} tickets")
+    types_count = {}
+    for b in my_bets:
+        t = b.get("bet_category", b.get("type", "Single"))
+        types_count[t] = types_count.get(t, 0) + 1
+    most_common_type = max(types_count, key=types_count.get) if types_count else "None"
+    k8.metric("Favorite Market", most_common_type)
+
+    st.markdown("---")
+    h1, h2 = st.columns(2)
+    with h1:
+        st.markdown("##### 🚀 Top Winner")
+        if won_bets:
+            best_win = max(won_bets, key=lambda x: float(x.get("payout_dollars", 0)) - float(x.get("risk_dollars", 0)))
+            profit = float(best_win.get("payout_dollars", 0)) - float(best_win.get("risk_dollars", 0))
+            st.success(f"{best_win.get('bet')} on `{best_win.get('matchup')}`\n\nProfit: **+${profit:.2f}** | Return: ${best_win.get('payout_dollars'):.2f}")
+        else:
+            st.info("No graded winning slips yet.")
+    with h2:
+        st.markdown("##### 💀 Toughest Beat")
+        if lost_bets:
+            worst_loss = max(lost_bets, key=lambda x: float(x.get("risk_dollars", 0)))
+            st.error(f"{worst_loss.get('bet')} on `{worst_loss.get('matchup')}`\n\nStake Lost: **-${worst_loss.get('risk_dollars'):.2f}**")
+        else:
+            st.info("No recorded losses.")
+
+# =========================================================================
 # 2. SINGLE GAME ENGINE
 # =========================================================================
-if menu_choice == "⚡ Single Game Engine":
+elif menu_choice == "⚡ Single Game Engine":
     st.subheader("⚡ Single Game Analytics Engine")
 
     form_ver = st.session_state.single_form_version
@@ -1697,16 +1839,21 @@ elif menu_choice == "📜 Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
     st.caption("Active slips with live in-game win probabilities, scoreboard telemetry, and total points.")
 
-    curr_user_clean = current_user.strip().lower()
+    clean_u = active_uname.lower()
+    clean_disp = current_user_profile.get("display_name", "").strip().lower()
+    
     col_filter1, col_filter2 = st.columns([3, 1])
     with col_filter2:
         show_all_history = st.toggle("Show All Squad Bets", value=False)
         
-    my_tickets = st.session_state.saved_bets if show_all_history else [
-        b for b in st.session_state.saved_bets 
-        if b.get("user", "").strip().lower() == curr_user_clean 
-        or (curr_user_clean == "flurk" and b.get("user", "").strip().lower() in ["flurk", "admin"])
-    ]
+    my_tickets = []
+    for b in st.session_state.saved_bets:
+        if show_all_history:
+            my_tickets.append(b)
+        else:
+            bet_owner = str(b.get("user", "")).strip().lower()
+            if (bet_owner in [clean_u, clean_disp]) or (clean_u == "flurk" and bet_owner in ["flurk", "admin"]):
+                my_tickets.append(b)
 
     with col_filter1:
         st.write(f"Showing **{len(my_tickets)}** ticket(s).")
@@ -1731,11 +1878,14 @@ elif menu_choice == "🏆 Leaderboard":
 
     user_stats = {}
     for b in st.session_state.saved_bets:
-        u_raw = b.get("user", "Flurk").strip().lower()
+        u_raw = str(b.get("user", "Flurk")).strip().lower()
         if u_raw not in user_stats:
             user_stats[u_raw] = {"name": b.get("user"), "total_bets": 0, "won": 0, "lost": 0, "pending": 0, "net": 0.0, "total_staked": 0.0, "types": {}}
         user_stats[u_raw]["total_bets"] += 1
-        r, p = float(b.get("risk_dollars", 0)), float(b.get("payout_dollars", 0))
+        try: r = float(b.get("risk_dollars", 0))
+        except: r = 0.0
+        try: p = float(b.get("payout_dollars", 0))
+        except: p = 0.0
         cat = b.get("bet_category", b.get("type", "Single"))
         user_stats[u_raw]["types"][cat] = user_stats[u_raw]["types"].get(cat, 0) + 1
         if b.get("status") == "Won":
@@ -1828,7 +1978,7 @@ elif menu_choice == "🔥 Live Squad Feed":
 
     feed_tickets = []
     for b in st.session_state.saved_bets:
-        u_raw = b.get("user", "Flurk").strip().lower()
+        u_raw = str(b.get("user", "Flurk")).strip().lower()
         acc = st.session_state.user_accounts.get(u_raw, {})
         if acc.get("share_feed", True):
             feed_tickets.append(b)
@@ -1863,7 +2013,7 @@ elif menu_choice == "💬 The Locker Room":
         m_id = m.get("id", str(m_idx))
         if "reactions" not in m: m["reactions"] = {}
         if "replies" not in m: m["replies"] = []
-        is_author = (m.get("user", "").strip().lower() == current_user.strip().lower() or is_user_admin)
+        is_author = (str(m.get("user", "")).strip().lower() == current_user.strip().lower() or is_user_admin)
 
         with st.container(border=True):
             top_col1, top_col2 = st.columns([8, 2])
@@ -1902,15 +2052,15 @@ elif menu_choice == "💬 The Locker Room":
 elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
-    * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, active capital at risk, and probability-adjusted expected profit.
+    * **📊 My Dashboard**: Review realized P&L, active capital at risk, probability-modeled EV profit, and discipline stats.
     * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Model projections, point spreads, anytime touchdown props with guaranteed real player names, and auto-scrolling form loading.
     * **🔗 Multi-Leg Combo Builder**: Scan slates for optimal multi-leg parlay opportunities with compound true win probabilities.
-    * **🏟️ In-Game War Room**: Click any single or multi-leg combo ticket in Locked Bets History or Live Squad Feed to evaluate live score updates, all team logos, and live probability chances of winning.
+    * **🏟️ In-Game War Room**: Click any ticket in Locked Bets History or Live Squad Feed to inspect quarter-by-quarter projection drift, real-time clock updates, and live winning probabilities.
     * **⚙️ Account Settings**: Personalize your profile, bio, avatar, and privacy settings.
     """)
 
 # =========================================================================
-# 9. MODEL METHODOLOGY & MATH (COMPREHENSIVE ARCHITECTURE)
+# 9. MODEL METHODOLOGY & MATH (COMPREHENSIVE EXPANDED ARCHITECTURE)
 # =========================================================================
 elif menu_choice == "📖 Model Methodology & Math":
     st.subheader("📖 Flurkstradamus Machine Learning & Mathematical Architecture")
@@ -2031,7 +2181,6 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
             u_lost = [b for b in u_bets if b.get("status") == "Lost"]
             u_profit = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in u_won) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
             
-            st.markdown(f"##### 📊 Betting Portfolio ({len(u_bets)} Tickets Locked In):")
             p_col1, p_col2, p_col3 = st.columns(3)
             p_col1.metric("Tickets Placed", len(u_bets))
             p_col2.metric("Record", f"{len(u_won)}W - {len(u_lost)}L")
