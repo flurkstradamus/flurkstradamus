@@ -63,6 +63,7 @@ st.markdown("""
         }
         .dashboard-header-desktop { display: block !important; }
         .dashboard-header-mobile { display: none !important; }
+        .mobile-only-btn-wrap { display: none !important; }
     }
     @media (max-width: 767px) {
         .block-container { 
@@ -77,6 +78,11 @@ st.markdown("""
             font-size: 1.45rem !important; 
             font-weight: 700 !important; 
             margin-bottom: 0.3rem !important; 
+        }
+        .desktop-only-btn-wrap { display: none !important; }
+        .mobile-only-btn-wrap { 
+            display: block !important; 
+            margin-top: 14px !important; 
         }
 
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
@@ -145,10 +151,15 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    /* Subtle compact padding for ticket cards */
+    /* Subtle padding for bet cards */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         padding: 12px 16px !important;
         margin-bottom: 10px !important;
+    }
+
+    /* Prevent clipping on action icons */
+    div[data-testid="column"]:has(button:contains("🗑️")) {
+        min-width: 44px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -351,8 +362,8 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         </div>
         """, unsafe_allow_html=True)
 
-        # Desktop 4-Column Layout (Generous action column prevents text clipping)
-        c1, c2, c3, c4 = st.columns([3.0, 3.0, 2.2, 1.8], vertical_alignment="center")
+        # 4-Column Layout (Generous action column prevents text clipping and gives trash room)
+        c1, c2, c3, c4 = st.columns([2.9, 2.9, 2.1, 2.1], vertical_alignment="center")
 
         with c1:
             st.markdown(f"""
@@ -375,7 +386,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
 
         with c4:
             if can_delete:
-                b1, b2 = st.columns([3, 1], vertical_alignment="center")
+                b1, b2 = st.columns([2.8, 1.2], vertical_alignment="center")
                 with b1:
                     if st.button("🏟️ War Room", key=f"wr_btn_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                         st.session_state.selected_bet_id = b["id"]
