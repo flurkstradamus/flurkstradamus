@@ -345,22 +345,25 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         else:
             live_prob_str = calculate_live_bet_prob(b, live_m)
 
-        live_prob_badge_html = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.80rem;'>🎲 Live Win Prob: {live_prob_str}</span>"
+        live_prob_badge_html = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:3px 8px;border-radius:6px;font-size:0.75rem;white-space:nowrap;'>🎲 Win: {live_prob_str}</span>"
 
     if status_val == "Won":
-        badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
+        badge_html = "<span style='background-color:#22c55e;color:#000;padding:3px 8px;border-radius:12px;font-weight:800;font-size:0.75rem;white-space:nowrap;'>🏆 WON</span>"
     elif status_val == "Lost":
-        badge_html = "<span style='background-color:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>❌ LOST</span>"
+        badge_html = "<span style='background-color:#ef4444;color:#fff;padding:3px 8px;border-radius:12px;font-weight:800;font-size:0.75rem;white-space:nowrap;'>❌ LOST</span>"
     elif game_started:
-        badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⚡ IN PLAY</span>"
+        badge_html = "<span style='background-color:#eab308;color:#000;padding:3px 8px;border-radius:12px;font-weight:800;font-size:0.75rem;white-space:nowrap;'>⚡ IN PLAY</span>"
     else:
-        badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ SCHEDULED</span>"
+        badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;padding:3px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;white-space:nowrap;'>⏳ SCHEDULED</span>"
 
+    user_name = b.get('user', 'Bettor')
+
+    # RESPONSIVE HEADER: Flex-wrap with clean spacing prevents squishing on small screens
     if is_combo:
         header_html = (
-            "<div style='display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:6px;margin-bottom:8px;'>"
-            f"<div style='display:flex;align-items:center;gap:8px;'><span style='font-size:1.0rem;font-weight:700;'>🔗 Multi-Leg Parlay ({len(b.get('parsed_legs', []))} Legs)</span><span style='opacity:0.55;font-size:0.80rem;'>by <strong>{b.get('user', 'Bettor')}</strong></span></div>"
-            f"<div style='display:flex;align-items:center;gap:8px;'>{live_prob_badge_html}{badge_html}</div>"
+            "<div style='display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;margin-bottom:8px;'>"
+            f"<div style='display:flex;align-items:center;gap:6px;'><span style='font-size:0.95rem;font-weight:700;'>🔗 {len(b.get('parsed_legs', []))}-Leg Parlay</span><span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span></div>"
+            f"<div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>{live_prob_badge_html}{badge_html}</div>"
             "</div>"
         )
     elif live_m:
@@ -372,58 +375,74 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         status_txt = live_m.get("displayClock") or live_m.get("status")
 
         if game_started or is_final:
-            score_badge = f"<span style='background-color:rgba(255,255,255,0.08);padding:2px 8px;border-radius:6px;font-weight:700;font-size:0.82rem;'>{a_sh} {a_sc} - {h_sc} {h_sh} ({tot_pts} pts | {status_txt})</span>"
+            score_badge = f"<span style='background-color:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-weight:700;font-size:0.78rem;white-space:nowrap;'>{a_sc}-{h_sc} ({tot_pts} pts)</span>"
         else:
-            score_badge = f"<span style='opacity:0.65;font-size:0.80rem;'>🗓️ {live_m.get('kickoff', status_txt)}</span>"
+            score_badge = f"<span style='opacity:0.6;font-size:0.75rem;white-space:nowrap;'>{live_m.get('kickoff', status_txt)}</span>"
 
         away_logo = live_m.get('away_logo', DEFAULT_LOGO)
         home_logo = live_m.get('home_logo', DEFAULT_LOGO)
         header_html = (
-            "<div style='display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:6px;margin-bottom:8px;'>"
-            f"<div style='display:flex;align-items:center;gap:8px;'><img src='{away_logo}' width='24' height='24' style='border-radius:50%;object-fit:contain;'><strong>{a_sh}</strong> <span style='opacity:0.4;'>@</span><img src='{home_logo}' width='24' height='24' style='border-radius:50%;object-fit:contain;'><strong>{h_sh}</strong>{score_badge}<span style='opacity:0.55;font-size:0.80rem;margin-left:4px;'>by <strong>{b.get('user', 'Bettor')}</strong></span></div>"
-            f"<div style='display:flex;align-items:center;gap:8px;'>{live_prob_badge_html}{badge_html}</div>"
+            "<div style='display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;margin-bottom:8px;'>"
+            f"<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap;'><img src='{away_logo}' width='20' height='20' style='border-radius:50%;object-fit:contain;'><strong>{a_sh}</strong> <span style='opacity:0.4;'>@</span><img src='{home_logo}' width='20' height='20' style='border-radius:50%;object-fit:contain;'><strong>{h_sh}</strong>{score_badge}<span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span></div>"
+            f"<div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>{live_prob_badge_html}{badge_html}</div>"
             "</div>"
         )
     else:
         m_txt = b.get('matchup', 'Matchup')
-        u_txt = b.get('user', 'Bettor')
         header_html = (
-            "<div style='display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:6px;margin-bottom:8px;'>"
-            f"<div><strong>{m_txt}</strong> <span style='opacity:0.55;font-size:0.80rem;'>by <strong>{u_txt}</strong></span></div>"
-            f"<div style='display:flex;align-items:center;gap:8px;'>{live_prob_badge_html}{badge_html}</div>"
+            "<div style='display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;margin-bottom:8px;'>"
+            f"<div><strong>{m_txt}</strong> <span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span></div>"
+            f"<div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>{live_prob_badge_html}{badge_html}</div>"
             "</div>"
         )
 
+    r_val = float(b.get("risk_dollars", 10.0))
+    p_val = float(b.get("payout_dollars", b.get("payout", 19.0)))
+    profit_locked = float(b.get("locked_profit", p_val - r_val))
+    roi_pct = (profit_locked / max(r_val, 0.01)) * 100
+    cat_label = b.get("bet_category", b.get("type", "Single"))
+    bet_pick_str = str(b.get("bet", "N/A"))
+
     with st.container(border=True):
         st.markdown(header_html, unsafe_allow_html=True)
-        c_row1, c_row2, c_row3, c_row4 = st.columns([3.5, 3.5, 2.0, 1.2])
-        with c_row1:
-            st.write(f"**Pick:** `{b.get('bet')}`")
-            st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
+        
+        # Clean mobile-responsive body card
+        st.markdown(f"""
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.85rem;opacity:0.7;">Pick</span>
+                <span style="background:rgba(255,255,255,0.06);color:#4ade80;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.9rem;">{bet_pick_str}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.85rem;opacity:0.7;">Risk ➔ Payout</span>
+                <span style="font-size:0.88rem;font-weight:600;">${r_val:.2f} ➔ <strong style="color:#f8fafc;">${p_val:.2f}</strong></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.85rem;opacity:0.7;">Potential Profit</span>
+                <span style="color:#4ade80;font-weight:700;font-size:0.88rem;">+${profit_locked:.2f} (+{roi_pct:.1f}%)</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;opacity:0.65;border-top:1px solid rgba(255,255,255,0.04);padding-top:4px;">
+                <span>Type: {cat_label}</span>
+                <span>Logged: {b.get('date', 'N/A')}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        with c_row2:
-            r_val = float(b.get("risk_dollars", 10.0))
-            p_val = float(b.get("payout_dollars", b.get("payout", 19.0)))
-            profit_locked = float(b.get("locked_profit", p_val - r_val))
-            roi_pct = (profit_locked / max(r_val, 0.01)) * 100
-            st.write(f"Risk: **${r_val:.2f}** ➔ Payout: **${p_val:.2f}**")
-            st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${profit_locked:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
-
-        with c_row3:
-            cat_label = b.get("bet_category", b.get("type", "Single"))
-            st.caption(f"Type: **{cat_label}**")
-            if b.get("notes"):
-                st.caption(f"*{b.get('notes')}*")
-
-        with c_row4:
-            if st.button("🏟️ War Room", key=f"open_ticket_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
-                st.session_state.selected_bet_id = b["id"]
-                st.rerun()
-            if can_delete:
+        if can_delete:
+            c_act1, c_act2 = st.columns([4, 1])
+            with c_act1:
+                if st.button("🏟️ War Room", key=f"open_ticket_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                    st.session_state.selected_bet_id = b["id"]
+                    st.rerun()
+            with c_act2:
                 if st.button("🗑️", key=f"del_ticket_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
                     st.session_state.saved_bets.pop(real_idx)
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
                     st.rerun()
+        else:
+            if st.button("🏟️ War Room", key=f"open_ticket_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                st.session_state.selected_bet_id = b["id"]
+                st.rerun()
 
 # State initialization
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
