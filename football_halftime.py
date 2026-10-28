@@ -10,7 +10,7 @@ import streamlit.components.v1 as components
 try:
     from config import DEFAULT_LOGO, OFFICIAL_ABBR_MAP
     from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
-    from database import load_storage, save_all_storage, find_game_for_bet, auto_resolve_bets, hash_password
+    from database import load_storage, save_all_storage, find_game_for_bet, auto_resolve_bets, hash_password, get_admin_credentials
 except Exception as import_err:
     st.error(f"Error loading backend modules: {import_err}")
     st.stop()
@@ -436,7 +436,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
             <div style="display:flex; align-items:center; gap:8px;">
                 <span style="font-size:1.0rem; font-weight:700;">🔗 Multi-Leg Parlay ({len(b.get('parsed_legs', []))} Legs)</span>
-                <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Flurk')}</strong></span>
+                <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Bettor')}</strong></span>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
                 <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
@@ -467,7 +467,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
                 <img src="{live_m.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%;">
                 <strong>{h_sh}</strong>
                 {score_badge}
-                <span style="opacity:0.55; font-size:0.80rem; margin-left:4px;">by <strong>{b.get('user', 'Flurk')}</strong></span>
+                <span style="opacity:0.55; font-size:0.80rem; margin-left:4px;">by <strong>{b.get('user', 'Bettor')}</strong></span>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
                 <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
@@ -480,7 +480,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
     else:
         header_html = f"""
         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
-            <div><strong>{b.get('matchup', 'Matchup')}</strong> <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Flurk')}</strong></span></div>
+            <div><strong>{b.get('matchup', 'Matchup')}</strong> <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Bettor')}</strong></span></div>
             <div>{badge_html}</div>
         </div>
         """
@@ -607,19 +607,22 @@ if st.session_state.logged_in_user is None:
     
     with tab_login:
         with st.form("user_login_form"):
-            uname_input = st.text_input("Username or Email", placeholder="Flurk").strip()
+            uname_input = st.text_input("Username or Email", placeholder="sharpbettor").strip()
             pword_input = st.text_input("Password", type="password", placeholder="••••••••")
             submit_login = st.form_submit_button("Sign In", use_container_width=True)
             if submit_login:
                 clean_target = uname_input.lower()
                 target_hash = hash_password(pword_input)
+                admin_cred = get_admin_credentials()
                 
-                # Master Admin Override
-                if clean_target in ["flurk", "flurk@flurkstradamus.com"] and pword_input == "Loofus1993":
-                    admin_profile = st.session_state.user_accounts.get("flurk", {
-                        "username": "Flurk",
-                        "email": "flurk@flurkstradamus.com",
-                        "display_name": "Flurk",
+                # Check Secrets-Configured Admin Credentials
+                if (clean_target in [admin_cred["username"].lower(), admin_cred["email"].lower()] 
+                    and pword_input == admin_cred["password"]):
+                    admin_key = admin_cred["username"].lower()
+                    admin_profile = st.session_state.user_accounts.get(admin_key, {
+                        "username": admin_cred["username"],
+                        "email": admin_cred["email"],
+                        "display_name": admin_cred["username"],
                         "is_admin": True,
                         "is_banned": False,
                         "password_hash": target_hash
@@ -631,7 +634,7 @@ if st.session_state.logged_in_user is None:
                     if not admin_profile.get("session_token"):
                         admin_profile["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
                     
-                    st.session_state.user_accounts["flurk"] = admin_profile
+                    st.session_state.user_accounts[admin_key] = admin_profile
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                     st.query_params["session_token"] = admin_profile["session_token"]
                     st.session_state.logged_in_user = admin_profile
@@ -712,7 +715,7 @@ if st.session_state.logged_in_user is None:
 # Active Context
 current_user_profile = st.session_state.logged_in_user
 active_uname = current_user_profile.get("username", "").strip().lower()
-current_user = "Flurk" if active_uname == "flurk" else current_user_profile.get("display_name", current_user_profile.get("username", "Bettor"))
+current_user = current_user_profile.get("display_name", current_user_profile.get("username", "Bettor"))
 is_user_admin = current_user_profile.get("is_admin", False)
 
 # Scoreboard Ingestion
@@ -1022,7 +1025,7 @@ if menu_choice == "📊 My Dashboard":
     my_bets = []
     for b in st.session_state.saved_bets:
         bet_owner = str(b.get("user", "")).strip().lower()
-        if (bet_owner in [clean_u, clean_disp]) or (clean_u == "flurk" and bet_owner in ["flurk", "admin"]):
+        if (bet_owner in [clean_u, clean_disp]) or (is_user_admin and bet_owner in [clean_u, "admin"]):
             my_bets.append(b)
 
     tot_placed = len(my_bets)
@@ -1886,7 +1889,7 @@ elif menu_choice == "📜 Locked Bets History":
             my_tickets.append(b)
         else:
             bet_owner = str(b.get("user", "")).strip().lower()
-            if (bet_owner in [clean_u, clean_disp]) or (clean_u == "flurk" and bet_owner in ["flurk", "admin"]):
+            if (bet_owner in [clean_u, clean_disp]) or (is_user_admin and bet_owner in [clean_u, "admin"]):
                 my_tickets.append(b)
 
     with col_filter1:
@@ -1912,7 +1915,7 @@ elif menu_choice == "🏆 Leaderboard":
 
     user_stats = {}
     for b in st.session_state.saved_bets:
-        u_raw = str(b.get("user", "Flurk")).strip().lower()
+        u_raw = str(b.get("user", "Bettor")).strip().lower()
         if u_raw not in user_stats:
             user_stats[u_raw] = {"name": b.get("user"), "total_bets": 0, "won": 0, "lost": 0, "pending": 0, "net": 0.0, "total_staked": 0.0, "types": {}}
         user_stats[u_raw]["total_bets"] += 1
@@ -2015,7 +2018,7 @@ elif menu_choice == "🔥 Live Squad Feed":
 
     feed_tickets = []
     for b in st.session_state.saved_bets:
-        u_raw = str(b.get("user", "Flurk")).strip().lower()
+        u_raw = str(b.get("user", "Bettor")).strip().lower()
         acc = st.session_state.user_accounts.get(u_raw, {})
         if acc.get("share_feed", True):
             feed_tickets.append(b)
@@ -2233,7 +2236,9 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
                     for ub in u_bets:
                         st.markdown(f"• **{ub.get('date')}** — `{ub.get('matchup')}`: **{ub.get('bet')}** | Stake: ${ub.get('risk_dollars', 10):.2f} | Status: `{ub.get('status')}`")
 
-            if selected_u != "flurk":
+            # Check if target is admin before rendering delete/ban options
+            admin_cred = get_admin_credentials()
+            if selected_u != admin_cred["username"].lower():
                 st.markdown("##### ⚙️ Administrative Actions:")
                 act1, act2 = st.columns(2)
                 with act1:
