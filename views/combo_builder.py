@@ -26,6 +26,79 @@ def generate_leg_rationale(b_type, b_side, b_line, gm, p_name=""):
     else:
         return f"{p_name} holds >65% red-zone touch share over recent drives. High goal-line leverage provides positive expected value for Anytime TD."
 
+def build_ai_combo_legs(pool, target_legs, league_choice, target_market_type, strat_choice):
+    new_generated = []
+    selected_games = pool[:int(target_legs)]
+    for j, g_item in enumerate(selected_games):
+        is_nba = (g_item.get("league") == "NBA")
+        line_val = round_half_point(g_item.get("market_ou", 224.5 if is_nba else 47.5))
+        spread_val = round_half_point(g_item.get("market_spread", -3.5))
+
+        if "Game Totals" in target_market_type:
+            chosen_type = "Game Total"
+        elif "Point Spreads" in target_market_type:
+            chosen_type = "Point Spread (ATS)"
+        elif "Straight Up" in target_market_type:
+            chosen_type = "Straight Up Winner (Moneyline)"
+        elif "NBA Player Points" in target_market_type and is_nba:
+            chosen_type = "Player Points Prop"
+        elif "Touchdown" in target_market_type and not is_nba:
+            chosen_type = "Player Anytime Touchdown Scorer"
+        else:
+            if league_choice == "NBA":
+                type_cycle = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Points Prop"]
+            elif league_choice in ["NFL", "NCAA Football"]:
+                type_cycle = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Anytime Touchdown Scorer"]
+            else:
+                type_cycle = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Points Prop" if is_nba else "Player Anytime Touchdown Scorer"]
+            chosen_type = type_cycle[j % len(type_cycle)]
+
+        side_val = "Under"
+        target_p_name = g_item["home_team"]
+
+        if chosen_type == "Game Total":
+            if "Safe Floor" in strat_choice:
+                side_val = "Under"
+                line_val = round_half_point(line_val + (6.5 if is_nba else 3.5))
+            elif "High Profit" in strat_choice:
+                side_val = "Over" if j % 2 == 0 else "Under"
+                line_val = round_half_point(line_val + (-4.5 if is_nba else -2.5))
+        elif chosen_type == "Point Spread (ATS)":
+            side_val = "Spread"
+            line_val = spread_val
+        elif chosen_type == "Straight Up Winner (Moneyline)":
+            side_val = "Moneyline"
+            line_val = 0.0
+        elif chosen_type == "Player Points Prop":
+            roster = get_live_nba_roster(g_item.get("home_id") or g_item.get("home_short"))
+            target_p_name = roster[0][0] if roster else "Lead Scorer"
+            line_val = roster[0][2] if roster else 22.5
+            side_val = "Over"
+        elif chosen_type == "Player Anytime Touchdown Scorer":
+            roster = get_live_football_roster(g_item.get("home_id") or g_item.get("home_short"), g_item.get("league"))
+            target_p_name = roster[0][0] if roster else "Top Running Back"
+            line_val = 1.0
+            side_val = "TD"
+
+        rationale_text = generate_leg_rationale(chosen_type, side_val, line_val, g_item, target_p_name)
+
+        new_generated.append({
+            "matchup_idx": pool.index(g_item),
+            "type": chosen_type,
+            "side": side_val,
+            "line": line_val,
+            "picked_team": target_p_name,
+            "matchup_str": f"{g_item['away_short']} @ {g_item['home_short']}",
+            "kickoff": g_item.get("kickoff", "Scheduled"),
+            "away_logo": g_item.get("away_logo", DEFAULT_LOGO),
+            "home_logo": g_item.get("home_logo", DEFAULT_LOGO),
+            "away_short": g_item.get("away_short", "AWAY"),
+            "home_short": g_item.get("home_short", "HOME"),
+            "league": g_item.get("league", "SPORTS"),
+            "rationale": rationale_text
+        })
+    return new_generated
+
 def render_combo_builder(curr_user, active_uname, games_data, get_current_et_time_fn):
     st.subheader("🔗 Multi-Leg Cross-Sport Combo Builder (Up to 12 Legs)")
     st.caption("Automated cross-slate parlay scanner, compound probability calculator, and slip builder.")
@@ -36,6 +109,10 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         st.session_state.combo_is_editing = False
     if "combo_slip_version" not in st.session_state:
         st.session_state.combo_slip_version = 0
+    if "combo_auto_mode" not in st.session_state:
+        st.session_state.combo_auto_mode = False
+    if "combo_last_cfg" not in st.session_state:
+        st.session_state.combo_last_cfg = None
 
     slip_ver = st.session_state.combo_slip_version
 
@@ -125,87 +202,23 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
         if q_filter.strip():
             q = q_filter.strip().lower()
-            pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g["home_short"].lower() or q in g["away_short"].lower()]
+            pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
-        if col_gen.button("⚡ Auto-Generate Combo", use_container_width=True, disabled=len(pool) == 0):
-            new_generated = []
-            selected_games = pool[:int(target_legs)]
-            for j, g_item in enumerate(selected_games):
-                is_nba = (g_item.get("league") == "NBA")
-                line_val = round_half_point(g_item.get("market_ou", 224.5 if is_nba else 47.5))
-                spread_val = round_half_point(g_item.get("market_spread", -3.5))
-
-                if "Game Totals" in target_market_type:
-                    chosen_type = "Game Total"
-                elif "Point Spreads" in target_market_type:
-                    chosen_type = "Point Spread (ATS)"
-                elif "Straight Up" in target_market_type:
-                    chosen_type = "Straight Up Winner (Moneyline)"
-                elif "NBA Player Points" in target_market_type and is_nba:
-                    chosen_type = "Player Points Prop"
-                elif "Touchdown" in target_market_type and not is_nba:
-                    chosen_type = "Player Anytime Touchdown Scorer"
-                else:
-                    if league_choice == "NBA":
-                        type_cycle = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Points Prop"]
-                    elif league_choice in ["NFL", "NCAA Football"]:
-                        type_cycle = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Anytime Touchdown Scorer"]
-                    else:
-                        type_cycle = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Points Prop" if is_nba else "Player Anytime Touchdown Scorer"]
-                    chosen_type = type_cycle[j % len(type_cycle)]
-
-                side_val = "Under"
-                target_p_name = g_item["home_team"]
-
-                if chosen_type == "Game Total":
-                    if "Safe Floor" in strat_choice:
-                        side_val = "Under"
-                        line_val = round_half_point(line_val + (6.5 if is_nba else 3.5))
-                    elif "High Profit" in strat_choice:
-                        side_val = "Over" if j % 2 == 0 else "Under"
-                        line_val = round_half_point(line_val + (-4.5 if is_nba else -2.5))
-                elif chosen_type == "Point Spread (ATS)":
-                    side_val = "Spread"
-                    line_val = spread_val
-                elif chosen_type == "Straight Up Winner (Moneyline)":
-                    side_val = "Moneyline"
-                    line_val = 0.0
-                elif chosen_type == "Player Points Prop":
-                    roster = get_live_nba_roster(g_item.get("home_id") or g_item.get("home_short"))
-                    target_p_name = roster[0][0] if roster else "Lead Scorer"
-                    line_val = roster[0][2] if roster else 22.5
-                    side_val = "Over"
-                elif chosen_type == "Player Anytime Touchdown Scorer":
-                    roster = get_live_football_roster(g_item.get("home_id") or g_item.get("home_short"), g_item.get("league"))
-                    target_p_name = roster[0][0] if roster else "Top Running Back"
-                    line_val = 1.0
-                    side_val = "TD"
-
-                rationale_text = generate_leg_rationale(chosen_type, side_val, line_val, g_item, target_p_name)
-
-                new_generated.append({
-                    "matchup_idx": pool.index(g_item),
-                    "type": chosen_type,
-                    "side": side_val,
-                    "line": line_val,
-                    "picked_team": target_p_name,
-                    "matchup_str": f"{g_item['away_short']} @ {g_item['home_short']}",
-                    "kickoff": g_item.get("kickoff", "Scheduled"),
-                    "away_logo": g_item.get("away_logo", DEFAULT_LOGO),
-                    "home_logo": g_item.get("home_logo", DEFAULT_LOGO),
-                    "away_short": g_item.get("away_short", "AWAY"),
-                    "home_short": g_item.get("home_short", "HOME"),
-                    "league": g_item.get("league", "SPORTS"),
-                    "rationale": rationale_text
-                })
-
-            st.session_state.combo_preview_legs = [dict(x) for x in new_generated]
-            st.session_state.combo_active_legs = [dict(x) for x in new_generated]
-            st.session_state.combo_is_editing = False
-            st.session_state.combo_slip_version += 1
+        # Auto-update recommendation when parameters change AFTER generation has been initiated
+        current_cfg = (league_choice, target_market_type, int(target_legs), strat_choice, t_filter, q_filter)
+        if st.session_state.combo_auto_mode and st.session_state.combo_last_cfg != current_cfg and len(pool) > 0:
+            st.session_state.combo_last_cfg = current_cfg
+            st.session_state.combo_preview_legs = build_ai_combo_legs(pool, target_legs, league_choice, target_market_type, strat_choice)
             st.rerun()
 
-    # --- AI RECOMMENDATION PREVIEW (FULL-WIDTH CARDS) ---
+        if col_gen.button("⚡ Auto-Generate Combo", use_container_width=True, disabled=len(pool) == 0):
+            st.session_state.combo_auto_mode = True
+            st.session_state.combo_last_cfg = current_cfg
+            st.session_state.combo_preview_legs = build_ai_combo_legs(pool, target_legs, league_choice, target_market_type, strat_choice)
+            st.session_state.combo_is_editing = False
+            st.rerun()
+
+    # --- AI RECOMMENDATION PREVIEW (ONLY DISPLAYED ONCE GENERATED) ---
     if st.session_state.combo_preview_legs:
         with st.container(border=True):
             prev_legs = st.session_state.combo_preview_legs
@@ -252,12 +265,24 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 </div>
                 """, unsafe_allow_html=True)
 
+            # Action controls below the recommendation list
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-            if not st.session_state.combo_is_editing:
-                if st.button("✏️ Edit selection or remove legs", key="btn_toggle_edit_mode"):
-                    st.session_state.combo_is_editing = True
+            col_load, col_edit = st.columns([2.5, 2], vertical_alignment="center")
+
+            with col_load:
+                if st.button("📥 Load Combo to Slips", type="primary", use_container_width=True, key="btn_load_combo_to_slips"):
+                    st.session_state.combo_active_legs = [dict(x) for x in prev_legs]
+                    st.session_state.combo_slip_version += 1
+                    st.toast("✅ Loaded combo into slips below!", icon="📥")
                     st.rerun()
-            else:
+
+            with col_edit:
+                if not st.session_state.combo_is_editing:
+                    if st.button("✏️ Edit selection or remove legs", key="btn_toggle_edit_mode"):
+                        st.session_state.combo_is_editing = True
+                        st.rerun()
+
+            if st.session_state.combo_is_editing:
                 st.markdown("---")
                 st.markdown("##### 📝 Edit Active Legs List")
                 st.caption("Uncheck any legs you want to discard from this slip:")
@@ -271,13 +296,10 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
                 c_save1, c_save2 = st.columns([2, 4], vertical_alignment="center")
                 with c_save1:
-                    if st.button("💾 Save & Update Slip", type="primary", use_container_width=True, key="btn_commit_edit_legs"):
+                    if st.button("💾 Save & Update", type="primary", use_container_width=True, key="btn_commit_edit_legs"):
                         updated_list = [dict(prev_legs[k]) for k in leg_indices_to_keep]
                         st.session_state.combo_preview_legs = updated_list
-                        st.session_state.combo_active_legs = [dict(x) for x in updated_list]
                         st.session_state.combo_is_editing = False
-                        st.session_state.combo_slip_version += 1
-                        st.toast("✅ Parlay slip updated and synchronized!", icon="💾")
                         st.rerun()
                 with c_save2:
                     if st.button("Cancel", key="btn_cancel_edit_legs"):
@@ -290,8 +312,9 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in pool]
 
+    # Clean empty state when visiting initially
     if not st.session_state.combo_active_legs:
-        st.info("No active parlay slip. Click **⚡ Auto-Generate Combo** above or add a leg manually below.")
+        st.info("No active ticket slip. Use **⚡ Auto-Generate Combo** above and click **📥 Load Combo to Slips**, or add a leg manually.")
         if st.button("➕ Add First Leg Manually", use_container_width=True):
             first_gm = pool[0]
             st.session_state.combo_active_legs = [{
@@ -355,8 +378,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     if ctrl3.button("🗑️ Clear Slip", use_container_width=True):
         st.session_state.combo_active_legs = []
-        st.session_state.combo_preview_legs = None
-        st.session_state.combo_is_editing = False
         st.session_state.combo_slip_version += 1
         st.rerun()
 
@@ -376,30 +397,21 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             leg["home_short"] = gm.get("home_short", "HOME")
             leg["league"] = gm.get("league", "SPORTS")
 
-            col_hdr1, col_hdr2 = st.columns([5.5, 0.5], vertical_alignment="center")
-            with col_hdr1:
-                st.markdown(f"""
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-                    <span style="font-weight:700; font-size:1.0rem;">Leg #{i+1}</span>
-                    <img src="{gm.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
-                    <strong>{gm.get('away_short')}</strong>
-                    <span style="opacity:0.4;">@</span>
-                    <img src="{gm.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
-                    <strong>{gm.get('home_short')}</strong>
-                    <span style="background:rgba(255,255,255,0.06); color:#94a3b8; padding:2px 7px; border-radius:4px; font-size:0.75rem;">
-                        🗓️ {gm.get('kickoff', 'Upcoming')}
-                    </span>
-                    <span style="opacity:0.5; font-size:0.75rem;">[{gm.get('league')}]</span>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with col_hdr2:
-                if st.button("❌", key=f"del_leg_{i}_v{slip_ver}", help="Remove leg"):
-                    st.session_state.combo_active_legs.pop(i)
-                    if st.session_state.combo_preview_legs and i < len(st.session_state.combo_preview_legs):
-                        st.session_state.combo_preview_legs.pop(i)
-                    st.session_state.combo_slip_version += 1
-                    st.rerun()
+            # Clean header with team logos and kickoff date (No 'X' delete button)
+            st.markdown(f"""
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                <span style="font-weight:700; font-size:1.0rem;">Leg #{i+1}</span>
+                <img src="{gm.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
+                <strong>{gm.get('away_short')}</strong>
+                <span style="opacity:0.4;">@</span>
+                <img src="{gm.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
+                <strong>{gm.get('home_short')}</strong>
+                <span style="background:rgba(255,255,255,0.06); color:#94a3b8; padding:2px 7px; border-radius:4px; font-size:0.75rem;">
+                    🗓️ {gm.get('kickoff', 'Upcoming')}
+                </span>
+                <span style="opacity:0.5; font-size:0.75rem;">[{gm.get('league')}]</span>
+            </div>
+            """, unsafe_allow_html=True)
 
             sel_m = st.selectbox(
                 f"Matchup Selector",
