@@ -2,6 +2,7 @@ import json
 import os
 import hashlib
 from datetime import datetime
+import streamlit as st
 
 STORAGE_FILE = "storage.json"
 
@@ -9,19 +10,38 @@ def hash_password(password: str) -> str:
     """Hashes a password with SHA-256."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
+def get_admin_credentials():
+    """Retrieves admin credentials securely from Streamlit Secrets."""
+    try:
+        cfg = st.secrets["admin"]
+        return {
+            "username": cfg["username"],
+            "password": cfg["password"],
+            "email": cfg.get("email", "admin@domain.com")
+        }
+    except Exception:
+        # Generic fallback if secrets are not configured yet
+        return {
+            "username": "admin",
+            "password": "adminpassword",
+            "email": "admin@domain.com"
+        }
+
 def get_default_users():
+    cred = get_admin_credentials()
+    u_key = cred["username"].lower()
     return {
-        "flurk": {
-            "username": "Flurk",
-            "email": "flurk@flurkstradamus.com",
-            "display_name": "Flurk",
-            "password_hash": hash_password("Loofus1993"),
+        u_key: {
+            "username": cred["username"],
+            "email": cred["email"],
+            "display_name": cred["username"],
+            "password_hash": hash_password(cred["password"]),
             "is_admin": True,
             "is_banned": False,
             "created_at": "2026-10-26",
             "last_login": "2026-10-26 12:00 PM ET",
             "favorite_team": "NFL",
-            "bio": "Lead strategist and model developer.",
+            "bio": "Lead strategist and administrator.",
             "avatar_url": "",
             "is_public": True,
             "share_feed": True,
@@ -32,8 +52,10 @@ def get_default_users():
     }
 
 def load_storage():
-    """Safely loads data from storage.json without destroying existing user state."""
+    """Safely loads data from storage.json and syncs the secure admin account."""
     default_users = get_default_users()
+    admin_cred = get_admin_credentials()
+    admin_key = admin_cred["username"].lower()
 
     if not os.path.exists(STORAGE_FILE):
         return [], [], default_users, [], {}
@@ -44,19 +66,28 @@ def load_storage():
             saved_bets = data.get("saved_bets", [])
             chat_messages = data.get("chat_messages", [])
             user_accounts = data.get("user_accounts", {})
-            
-            has_flurk = False
-            for k, u in list(user_accounts.items()):
-                if k.lower() == "flurk" or u.get("username", "").lower() == "flurk":
-                    has_flurk = True
-                    u["password_hash"] = hash_password("Loofus1993")
-                    u["is_admin"] = True
-                    u["is_banned"] = False
-                    user_accounts["flurk"] = u
-                    break
 
-            if not has_flurk:
-                user_accounts["flurk"] = default_users["flurk"]
+            # Ensure the designated admin account matches secrets
+            admin_user = user_accounts.get(admin_key, {
+                "username": admin_cred["username"],
+                "email": admin_cred["email"],
+                "display_name": admin_cred["username"],
+                "created_at": "2026-10-26",
+                "favorite_team": "NFL",
+                "bio": "Lead strategist and administrator.",
+                "avatar_url": "",
+                "is_public": True,
+                "share_feed": True,
+                "searches": [],
+                "reset_token": None,
+                "session_token": None
+            })
+            
+            admin_user["is_admin"] = True
+            admin_user["is_banned"] = False
+            admin_user["password_hash"] = hash_password(admin_cred["password"])
+            admin_user["email"] = admin_cred["email"]
+            user_accounts[admin_key] = admin_user
 
             banned_emails = data.get("banned_emails", [])
             game_snapshots = data.get("game_snapshots", {})
