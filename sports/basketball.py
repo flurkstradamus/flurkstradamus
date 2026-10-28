@@ -48,6 +48,7 @@ def get_live_nba_roster(team_id_or_abbr):
         return [("Lead Guard", "PG", 23.5), ("Lead Wing", "SF", 20.5), ("Starting Big", "C", 14.5)]
     return players[:8]
 
+@st.cache_data(ttl=30, show_spinner=False)
 def fetch_nba_scoreboard(days_range=(-2, 4)):
     games = []
     seen = set()
