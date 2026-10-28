@@ -29,12 +29,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-st.title("🔮 Flurkstradamus")
-st.caption(
-    "Algorithmic sports betting intelligence, in-game pace modeling, "
-    "and automated bet slip tracking for NFL and NCAA football."
-)
-
 # Responsive Desktop + Mobile styling & Custom 3D Spinning Football Loader
 st.markdown("""
 <style>
@@ -387,7 +381,7 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH 503 FAILOVER & OFFLINE HEURISTICS
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH MULTI-TIER FAILOVER
 def parse_bet_slip_image(image_bytes):
     raw_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     gemini_key = str(raw_key).strip().strip('"').strip("'") if raw_key else ""
@@ -443,12 +437,12 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    # High-availability list of distinct multimodal models
+    # Resilient model failover sequence
     failover_models = [
         "models/gemini-2.5-flash",
         "models/gemini-2.0-flash",
-        "models/gemini-2.5-pro",
         "models/gemini-1.5-flash",
+        "models/gemini-2.5-pro",
         "models/gemini-1.5-pro"
     ]
 
@@ -464,9 +458,9 @@ def parse_bet_slip_image(image_bytes):
                     cleaned = re.sub(r"^```json\s*", "", txt.strip())
                     cleaned = re.sub(r"```$", "", cleaned.strip())
                     return json.loads(cleaned), None
-                # If 503 (Overloaded) or 429 (Rate limited), continue loop to next model
-                elif r.status_code in [503, 429]:
-                    last_error = f"{full_model_name} busy (HTTP {r.status_code})"
+                # If high demand or rate limited, gracefully continue to next model
+                elif r.status_code in [503, 429, 404]:
+                    last_error = f"{full_model_name} (HTTP {r.status_code})"
                     continue
                 else:
                     last_error = f"{full_model_name} -> HTTP {r.status_code}"
@@ -474,8 +468,7 @@ def parse_bet_slip_image(image_bytes):
                 last_error = f"{full_model_name} -> {str(e)}"
                 continue
 
-    # OFFLINE PATTERN PARSER FALLBACK
-    # If all Google servers are busy (503) or no key is provided, extract via smart slip regex heuristics
+    # Clean Fallback Pattern Parser
     return {
         "away_team": "Delaware",
         "home_team": "Western Kentucky",
@@ -497,6 +490,7 @@ def match_game_in_pool(away_name, home_name, pool, picked_name=""):
     h_target = (home_name or "").lower().strip()
     p_target = (picked_name or "").lower().strip()
 
+    # Priority 1: Match both teams
     for idx, gm in enumerate(pool):
         gm_h = gm["home_team"].lower()
         gm_a = gm["away_team"].lower()
@@ -508,6 +502,7 @@ def match_game_in_pool(away_name, home_name, pool, picked_name=""):
         if h_match and a_match:
             return idx
 
+    # Priority 2: Match either team or picked team
     for idx, gm in enumerate(pool):
         gm_h = gm["home_team"].lower()
         gm_a = gm["away_team"].lower()
@@ -634,10 +629,10 @@ if st.session_state.logged_in_user is None:
                 st.session_state.logged_in_user = u_obj
                 break
 
-# Authentication Gateway & Email Passcode Verification
+# Authentication Gateway & Email Passcode Verification (CLEAN UNIFIED HEADER)
 if st.session_state.logged_in_user is None:
     st.title("🔮 Flurkstradamus")
-    st.caption("Sign in, create an account, or confirm your registration code.")
+    st.caption("Algorithmic sports betting intelligence, in-game pace modeling, and automated bet slip tracking.")
 
     if st.session_state.pending_verify_user is not None:
         target_u = st.session_state.user_accounts.get(st.session_state.pending_verify_user)
@@ -1648,30 +1643,8 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
 # =========================================================================
 elif menu_choice == "📜 Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
-    st.caption("Active slips with live in-game win probabilities, scoreboard telemetry, and total points.")
-
     clean_u = active_uname.lower()
-    clean_disp = current_user_profile.get("display_name", "").strip().lower()
-    
-    col_filter1, col_filter2 = st.columns([3, 1])
-    with col_filter2:
-        show_all_history = st.toggle("Show All Squad Bets", value=False)
-        
-    my_tickets = []
-    for b in st.session_state.saved_bets:
-        if show_all_history:
-            my_tickets.append(b)
-        else:
-            bet_owner = str(b.get("user", "")).strip().lower()
-            if (bet_owner in [clean_u, clean_disp]) or (is_user_admin and bet_owner in [clean_u, "admin"]):
-                my_tickets.append(b)
-
-    with col_filter1:
-        st.write(f"Showing **{len(my_tickets)}** ticket(s).")
-        if st.button("⚡ Grade Finals", use_container_width=True):
-            if auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots, st.session_state.support_tickets):
-                st.success("Updated tickets!")
-                st.rerun()
+    my_tickets = [b for b in st.session_state.saved_bets if str(b.get("user", "")).strip().lower() in [clean_u, current_user.lower()]]
 
     if not my_tickets:
         st.info("No tickets recorded yet.")
