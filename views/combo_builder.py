@@ -197,33 +197,20 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             st.session_state.combo_is_editing = False
             st.rerun()
 
-    # --- AI RECOMMENDATION PREVIEW (NO INDIVIDUAL EXPANDERS) ---
+    # --- AI RECOMMENDATION PREVIEW (FULL-WIDTH CARDS) ---
     if st.session_state.combo_preview_legs:
         with st.container(border=True):
             prev_legs = st.session_state.combo_preview_legs
-            h_col1, h_col2 = st.columns([4, 2], vertical_alignment="center")
-            with h_col1:
-                st.markdown(f"""
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:12px;">
                 <div style="display:flex; align-items:center; gap:8px;">
                     <span style="font-size:1.15rem; font-weight:700;">🎯 AI Recommended Parlay Slip ({len(prev_legs)} Legs)</span>
                     <span style="background-color:#22c55e; color:#000; font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px;">OPTIMIZED</span>
                 </div>
-                """, unsafe_allow_html=True)
-            with h_col2:
-                if not st.session_state.combo_is_editing:
-                    if st.button("✏️ Edit Legs", use_container_width=True, key="btn_start_edit_legs"):
-                        st.session_state.combo_is_editing = True
-                        st.rerun()
-                else:
-                    if st.button("💾 Save & Reload Slip", type="primary", use_container_width=True, key="btn_save_reload_legs"):
-                        st.session_state.combo_is_editing = False
-                        st.session_state.combo_active_legs = list(st.session_state.combo_preview_legs)
-                        st.toast("✅ Parlay slip updated and synchronized!", icon="💾")
-                        st.rerun()
+            </div>
+            """, unsafe_allow_html=True)
 
             for p_idx, p_leg in enumerate(prev_legs):
-                p_c1, p_c2 = st.columns([5.3, 0.7], vertical_alignment="center")
-
                 if p_leg["type"] == "Game Total":
                     leg_pick_text = f"{p_leg['side']} {p_leg['line']:.1f} pts"
                 elif p_leg["type"] == "Point Spread (ATS)":
@@ -235,42 +222,59 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 else:
                     leg_pick_text = f"{p_leg['picked_team']} Any Time TD"
 
-                with p_c1:
-                    st.markdown(f"""
-                    <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:8px 12px; border-radius:8px; margin-bottom:4px;">
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <span style="opacity:0.55; font-size:0.80rem; font-weight:600;">#{p_idx+1}</span>
-                            <img src="{p_leg.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
-                            <strong>{p_leg.get('away_short', 'AWAY')}</strong>
-                            <span style="opacity:0.4;">@</span>
-                            <img src="{p_leg.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
-                            <strong>{p_leg.get('home_short', 'HOME')}</strong>
-                            <span style="background:rgba(255,255,255,0.06); color:#94a3b8; padding:2px 7px; border-radius:4px; font-size:0.75rem;">
-                                🗓️ {p_leg.get('kickoff', 'Upcoming')}
-                            </span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <strong style="color:#4ade80; font-size:1.02rem;">{leg_pick_text}</strong>
-                            <span style="background:rgba(56,189,248,0.12); color:#38bdf8; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">
-                                {p_leg['type']}
-                            </span>
-                        </div>
+                st.markdown(f"""
+                <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:8px 12px; border-radius:8px; margin-bottom:6px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="opacity:0.55; font-size:0.80rem; font-weight:600;">#{p_idx+1}</span>
+                        <img src="{p_leg.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
+                        <strong>{p_leg.get('away_short', 'AWAY')}</strong>
+                        <span style="opacity:0.4;">@</span>
+                        <img src="{p_leg.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
+                        <strong>{p_leg.get('home_short', 'HOME')}</strong>
+                        <span style="background:rgba(255,255,255,0.06); color:#94a3b8; padding:2px 7px; border-radius:4px; font-size:0.75rem;">
+                            🗓️ {p_leg.get('kickoff', 'Upcoming')}
+                        </span>
                     </div>
-                    """, unsafe_allow_html=True)
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <strong style="color:#4ade80; font-size:1.02rem;">{leg_pick_text}</strong>
+                        <span style="background:rgba(56,189,248,0.12); color:#38bdf8; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">
+                            {p_leg['type']}
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-                with p_c2:
-                    if st.session_state.combo_is_editing:
-                        if st.button("🗑️", key=f"preview_del_{p_idx}", help=f"Remove Leg #{p_idx+1}"):
-                            st.session_state.combo_preview_legs.pop(p_idx)
-                            st.rerun()
+            # Text Link Action Underneath the Legs
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            if not st.session_state.combo_is_editing:
+                if st.button("✏️ Edit selection or remove legs", type="tertiary" if hasattr(st, "tertiary") else "secondary", key="btn_toggle_edit_mode"):
+                    st.session_state.combo_is_editing = True
+                    st.rerun()
+            else:
+                st.markdown("---")
+                st.markdown("##### 📝 Edit Active Legs List")
+                st.caption("Uncheck any legs you want to discard from this slip:")
 
-            sync_c1, sync_c2 = st.columns([4, 1.5])
-            sync_c1.caption("Click 'Save & Reload Slip' after removing legs to update your wager below.")
-            if sync_c2.button("Clear Suggestion", use_container_width=True):
-                st.session_state.combo_preview_legs = None
-                st.session_state.combo_active_legs = []
-                st.session_state.combo_is_editing = False
-                st.rerun()
+                leg_indices_to_keep = []
+                for edit_i, e_leg in enumerate(prev_legs):
+                    lbl = f"Leg #{edit_i+1}: {e_leg['matchup_str']} — {e_leg.get('picked_team', '')} {e_leg.get('side', '')} ({e_leg['type']})"
+                    is_checked = st.checkbox(lbl, value=True, key=f"edit_chk_{edit_i}")
+                    if is_checked:
+                        leg_indices_to_keep.append(edit_i)
+
+                c_save1, c_save2 = st.columns([2, 4], vertical_alignment="center")
+                with c_save1:
+                    if st.button("💾 Save & Update Slip", type="primary", use_container_width=True, key="btn_commit_edit_legs"):
+                        updated_list = [prev_legs[k] for k in leg_indices_to_keep]
+                        st.session_state.combo_preview_legs = updated_list
+                        st.session_state.combo_active_legs = list(updated_list)
+                        st.session_state.combo_is_editing = False
+                        st.toast("✅ Parlay slip updated!", icon="💾")
+                        st.rerun()
+                with c_save2:
+                    if st.button("Cancel", key="btn_cancel_edit_legs"):
+                        st.session_state.combo_is_editing = False
+                        st.rerun()
 
     if not pool:
         st.info("No matchups found matching your current filter.")
@@ -278,7 +282,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in pool]
 
-    # If no legs exist, show empty waiting state
     if not st.session_state.combo_active_legs:
         st.info("No active parlay slip. Click **⚡ Auto-Generate Combo** above or add a leg manually below.")
         if st.button("➕ Add First Leg Manually", use_container_width=True):
@@ -301,7 +304,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             st.rerun()
         return
 
-    # --- DEDICATED ACCORDION FOR ALL LEG RATIONALES BEFORE THE ACTIVE SLIP ---
+    # Dedicated Accordion for All Leg Rationales Before Active Slip
     with st.expander("🧠 AI Model Strategy & Edge Rationales", expanded=False):
         st.caption("Breakdown of algorithmic discrepancy, pace drift, and edge considerations for active selections:")
         for idx, leg_item in enumerate(st.session_state.combo_active_legs):
