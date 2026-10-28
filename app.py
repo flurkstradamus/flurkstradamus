@@ -29,7 +29,8 @@ st.set_page_config(
 # GA4 Component Injection
 def inject_google_analytics():
     ga_id = st.secrets.get("GA_MEASUREMENT_ID")
-    if not ga_id: return
+    if not ga_id: 
+        return
     import streamlit.components.v1 as components
     components.html(f"""
     <script>
@@ -49,74 +50,376 @@ def inject_google_analytics():
 
 inject_google_analytics()
 
-# CSS Layout & Left Alignment
+# CSS Layout, Mobile Optimization & Left Alignment
 st.markdown("""
 <style>
     @media (min-width: 768px) {
-        .block-container { padding-top: 4.5rem !important; padding-bottom: 3rem !important; padding-left: 2.5rem !important; padding-right: 2.5rem !important; max-width: 1200px !important; }
+        .block-container { 
+            padding-top: 4.5rem !important; 
+            padding-bottom: 3rem !important; 
+            padding-left: 2.5rem !important; 
+            padding-right: 2.5rem !important; 
+            max-width: 1200px !important; 
+        }
         .dashboard-header-desktop { display: block !important; }
         .dashboard-header-mobile { display: none !important; }
     }
     @media (max-width: 767px) {
-        .block-container { padding-top: 2.2rem !important; padding-bottom: 2rem !important; padding-left: 0.6rem !important; padding-right: 0.6rem !important; }
+        .block-container { 
+            padding-top: 2.2rem !important; 
+            padding-bottom: 2rem !important; 
+            padding-left: 0.6rem !important; 
+            padding-right: 0.6rem !important; 
+        }
         .dashboard-header-desktop { display: none !important; }
-        .dashboard-header-mobile { display: block !important; font-size: 1.45rem !important; font-weight: 700 !important; margin-bottom: 0.3rem !important; }
+        .dashboard-header-mobile { 
+            display: block !important; 
+            font-size: 1.45rem !important; 
+            font-weight: 700 !important; 
+            margin-bottom: 0.3rem !important; 
+        }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 8px !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) > div[data-testid="column"] {
+            width: 100% !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        div[data-testid="stMetric"] {
+            background: rgba(255, 255, 255, 0.03) !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
+            border-radius: 8px !important;
+            padding: 8px 12px !important;
+        }
+        div[data-testid="stMetricLabel"] p {
+            font-size: 0.78rem !important;
+            opacity: 0.8 !important;
+        }
+        div[data-testid="stMetricValue"] div {
+            font-size: 1.3rem !important;
+            font-weight: 700 !important;
+        }
+        input, select, textarea {
+            font-size: 16px !important;
+        }
     }
     a.header-anchor, a[data-testid="stHeaderAnchor"] { display: none !important; }
+    
+    /* Left-align sidebar buttons & contents */
     section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.25rem !important; }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] {
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
     section[data-testid="stSidebar"] div[data-testid="stButton"] button {
-        text-align: left !important; justify-content: flex-start !important; display: flex !important;
-        align-items: center !important; padding-left: 14px !important; min-height: 2.2rem !important;
-        font-weight: 600 !important; border-radius: 6px !important; width: 100% !important;
+        text-align: left !important; 
+        justify-content: flex-start !important; 
+        display: flex !important;
+        align-items: center !important; 
+        padding-left: 14px !important; 
+        min-height: 2.2rem !important;
+        font-weight: 600 !important; 
+        border-radius: 6px !important; 
+        width: 100% !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stButton"] button p {
-        text-align: left !important; justify-content: flex-start !important; width: 100% !important; margin: 0 !important;
+        text-align: left !important; 
+        justify-content: flex-start !important; 
+        width: 100% !important; 
+        margin: 0 !important;
     }
-    .rec-card-box { border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.025); padding: 12px; margin-bottom: 12px; }
-    .rec-header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 6px; margin-bottom: 8px; }
-    .rec-pick-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .badge-roi { background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px; }
-    .badge-prob { background-color: rgba(255, 255, 255, 0.08); padding: 2px 7px; border-radius: 4px; font-weight: 700; font-size: 0.78rem; }
+    
+    /* Sidebar user profile button link */
+    div[data-testid="stSidebar"] div[data-testid="stButton"]:has(button[key="sidebar_user_profile_link"]) button {
+        background: transparent !important;
+        border: none !important;
+        padding-left: 4px !important;
+        padding-top: 2px !important;
+        padding-bottom: 2px !important;
+        height: auto !important;
+        min-height: 1.8rem !important;
+    }
+    div[data-testid="stSidebar"] div[data-testid="stButton"]:has(button[key="sidebar_user_profile_link"]) button:hover {
+        background: rgba(255, 255, 255, 0.05) !important;
+        border-radius: 6px !important;
+    }
+
+    .rec-card-box { 
+        border-radius: 10px; 
+        border: 1px solid rgba(255, 255, 255, 0.12); 
+        background: rgba(255, 255, 255, 0.025); 
+        padding: 12px; 
+        margin-bottom: 12px; 
+    }
+    .rec-header-row { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08); 
+        padding-bottom: 6px; 
+        margin-bottom: 8px; 
+    }
+    .rec-pick-row { 
+        display: flex; 
+        align-items: center; 
+        gap: 8px; 
+        margin-bottom: 8px; 
+    }
+    .badge-roi { 
+        background-color: #22c55e; 
+        color: #000; 
+        font-weight: 800; 
+        font-size: 0.75rem; 
+        padding: 2px 7px; 
+        border-radius: 4px; 
+    }
+    .badge-prob { 
+        background-color: rgba(255, 255, 255, 0.08); 
+        padding: 2px 7px; 
+        border-radius: 4px; 
+        font-weight: 700; 
+        font-size: 0.78rem; 
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# Client-Side Mobile Behavior Controller
+import streamlit.components.v1 as components
+components.html("""
+<script>
+    function setupMobileBehaviors() {
+        const doc = window.parent.document;
+        if (!doc) return;
+        if (window.parent.innerWidth <= 768) {
+            const active = doc.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+                active.blur();
+            }
+        }
+        const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+        if (sidebar) {
+            const navButtons = sidebar.querySelectorAll('button');
+            navButtons.forEach(btn => {
+                if (!btn.dataset.mobileCloseAttached) {
+                    btn.dataset.mobileCloseAttached = "true";
+                    btn.addEventListener('click', () => {
+                        if (window.parent.innerWidth <= 768) {
+                            setTimeout(() => {
+                                const closeBtn = doc.querySelector('[data-testid="stSidebarCollapseButton"]') 
+                                              || doc.querySelector('button[kind="header"]')
+                                              || doc.querySelector('[data-testid="stSidebar"] button');
+                                if (closeBtn) closeBtn.click();
+                            }, 100);
+                        }
+                    });
+                }
+            });
+        }
+    }
+    setTimeout(setupMobileBehaviors, 300);
+</script>
+""", height=0)
 
 def get_current_et_time():
     return datetime.now(timezone.utc) - timedelta(hours=4)
 
 def calculate_live_bet_prob(bet_obj, live_m):
-    if not live_m: return bet_obj.get("win_prob", "50.0%")
+    if not live_m:
+        return bet_obj.get("win_prob", "50.0%")
     stat_val = bet_obj.get("status", "Pending")
     is_fin = live_m.get("completed", False) or "final" in live_m.get("status", "").lower()
-    if is_fin: return "100.0%" if stat_val == "Won" else "0.0%"
+    if is_fin:
+        return "100.0%" if stat_val == "Won" else "0.0%"
+
+    curr_away = live_m.get("away_score", 0)
+    curr_home = live_m.get("home_score", 0)
+    curr_tot = curr_away + curr_home
+    t_line = bet_obj.get("target_line")
+    b_side = bet_obj.get("bet_direction", "Under")
+    b_cat = bet_obj.get("bet_category", "Total")
+    period = live_m.get("period", 1)
+    is_nba = (live_m.get("league") == "NBA")
+
+    if not (live_m.get("state_text") != "pre" and period > 0):
+        return bet_obj.get("win_prob", "50.0%")
+
+    from models import calculate_win_prob, calculate_moneyline_prob, calculate_spread_prob
+    if "Total" in b_cat and t_line:
+        sigma = (8.0 if period >= 3 else 14.0) if is_nba else (3.5 if period >= 3 else 6.0)
+        rem_proj = (54.0 if period >= 3 else 110.0) if is_nba else (14.0 if period >= 3 else 24.0)
+        p = calculate_win_prob(t_line, curr_tot + rem_proj, sigma, is_under=(b_side == "Under"))
+        return f"{p * 100:.1f}%"
+    elif b_cat == "Moneyline":
+        add_pts = 40 if is_nba else 14
+        h_prob = calculate_moneyline_prob(curr_home + add_pts, curr_away + add_pts, live_m.get("home_record", "0-0"), live_m.get("away_record", "0-0"))
+        p = h_prob if bet_obj.get("picked_team") == live_m.get("home_team") else (1.0 - h_prob)
+        return f"{p * 100:.1f}%"
+    elif "Spread" in b_cat and t_line:
+        margin = curr_home - curr_away
+        diff = margin if bet_obj.get("picked_team") == live_m.get("home_team") else -margin
+        p = calculate_spread_prob(diff, t_line, std_dev=(7.5 if is_nba else 5.0))
+        return f"{p * 100:.1f}%"
     return bet_obj.get("win_prob", "52.0%")
 
 def get_numeric_prob(bet_obj, games_data):
-    live_m = find_game_for_bet(bet_obj, games_data)
-    p_str = calculate_live_bet_prob(bet_obj, live_m)
-    try: return max(0.001, min(0.999, float(str(p_str).replace("%", "").strip()) / 100.0))
-    except: return 0.50
+    is_combo = (bet_obj.get("bet_category") == "Combo" or "Leg" in bet_obj.get("type", ""))
+    if is_combo:
+        compound_p = 1.0
+        legs_list = bet_obj.get("parsed_legs", [])
+        if not legs_list:
+            raw_str = str(bet_obj.get("win_prob", "50.0%")).replace("%", "").strip()
+            try: return float(raw_str) / 100.0
+            except: return 0.50
+        for l_item in legs_list:
+            m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
+            p_str = calculate_live_bet_prob({
+                "status": bet_obj.get("status"),
+                "target_line": l_item.get("line"),
+                "bet_direction": l_item.get("side"),
+                "bet_category": l_item.get("type"),
+                "picked_team": l_item.get("picked_team"),
+                "win_prob": "65.0%"
+            }, m_g)
+            try: compound_p *= (float(p_str.replace("%", "").strip()) / 100.0)
+            except: compound_p *= 0.50
+        return max(0.001, min(0.999, compound_p))
+    else:
+        live_m = find_game_for_bet(bet_obj, games_data)
+        p_str = calculate_live_bet_prob(bet_obj, live_m)
+        try: return max(0.001, min(0.999, float(str(p_str).replace("%", "").strip()) / 100.0))
+        except: return 0.50
 
 def render_ticket_card(b, real_idx, games_data, can_delete=False):
     status_val = b.get("status", "Pending")
-    badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;'>🏆 WON</span>" if status_val == "Won" else \
-                 ("<span style='background-color:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-weight:700;'>❌ LOST</span>" if status_val == "Lost" else \
-                 "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;'>⏳ PENDING</span>")
+    is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
+
+    if is_combo:
+        compound_p = 1.0
+        legs_list = b.get("parsed_legs", [])
+        for l_item in legs_list:
+            m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
+            p_str = calculate_live_bet_prob({
+                "status": b.get("status"),
+                "target_line": l_item.get("line"),
+                "bet_direction": l_item.get("side"),
+                "bet_category": l_item.get("type"),
+                "picked_team": l_item.get("picked_team"),
+                "win_prob": "65.0%"
+            }, m_g)
+            try: compound_p *= (float(p_str.replace("%", "")) / 100.0)
+            except: compound_p *= 0.5
+        live_prob_str = f"{compound_p * 100:.1f}%"
+        live_m = None
+    else:
+        live_m = find_game_for_bet(b, games_data)
+        live_prob_str = calculate_live_bet_prob(b, live_m)
+
+    game_started = False
+    is_final = False
+    if live_m:
+        chk = live_m.get("checkpoint", "")
+        stt = live_m.get("status", "").lower()
+        game_started = ("pre" not in chk.lower()) and ("pm" not in stt and "am" not in stt)
+        is_final = live_m.get("completed", False) or "final" in stt
+
+    if status_val == "Won":
+        badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
+    elif status_val == "Lost":
+        badge_html = "<span style='background-color:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>❌ LOST</span>"
+    elif game_started:
+        badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⚡ IN PLAY</span>"
+    else:
+        badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ SCHEDULED</span>"
+
+    if is_combo:
+        header_html = f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:1.0rem; font-weight:700;">🔗 Multi-Leg Parlay ({len(b.get('parsed_legs', []))} Legs)</span>
+                <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Bettor')}</strong></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
+                    🎲 Live Win Prob: {live_prob_str}
+                </span>
+                {badge_html}
+            </div>
+        </div>
+        """
+    elif live_m:
+        a_sh = live_m.get("away_short", "AWAY")
+        h_sh = live_m.get("home_short", "HOME")
+        a_sc = live_m.get("away_score", 0)
+        h_sc = live_m.get("home_score", 0)
+        tot_pts = a_sc + h_sc
+        status_txt = live_m.get("displayClock") or live_m.get("status")
+
+        if game_started or is_final:
+            score_badge = f"<span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:6px; font-weight:700; font-size:0.82rem;'>{a_sh} {a_sc} - {h_sc} {h_sh} ({tot_pts} pts | {status_txt})</span>"
+        else:
+            score_badge = f"<span style='opacity:0.65; font-size:0.80rem;'>🗓️ {live_m.get('kickoff', status_txt)}</span>"
+
+        header_html = f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <img src="{live_m.get('away_logo', DEFAULT_LOGO)}" width="24" height="24" style="border-radius:50%; object-fit:contain;">
+                <strong>{a_sh}</strong> <span style='opacity:0.4;'>@</span>
+                <img src="{live_m.get('home_logo', DEFAULT_LOGO)}" width="24" height="24" style="border-radius:50%; object-fit:contain;">
+                <strong>{h_sh}</strong>
+                {score_badge}
+                <span style="opacity:0.55; font-size:0.80rem; margin-left:4px;">by <strong>{b.get('user', 'Bettor')}</strong></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
+                    🎲 Live Win Prob: {live_prob_str}
+                </span>
+                {badge_html}
+            </div>
+        </div>
+        """
+    else:
+        header_html = f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+            <div><strong>{b.get('matchup', 'Matchup')}</strong> <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Bettor')}</strong></span></div>
+            <div>{badge_html}</div>
+        </div>
+        """
 
     with st.container(border=True):
-        st.markdown(f"**Ticket #{real_idx+1}** | Status: {badge_html} | **{b.get('bet')}**", unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns([3.5, 3.5, 2.0, 1.2])
-        r = float(b.get("risk_dollars", 10.0))
-        p = float(b.get("payout_dollars", b.get("payout", 19.0)))
-        c1.write(f"Matchup: `{b.get('matchup', 'Game')}`\n\n🗓️ `{b.get('date', 'N/A')}`")
-        c2.write(f"Risk: **${r:.2f}** ➔ Return: **${p:.2f}**\n\nProfit: **+${b.get('locked_profit', p-r):.2f}**")
-        c3.caption(f"Type: {b.get('bet_category', 'Single')}")
-        if c4.button("🏟️ War Room", key=f"wr_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
-            st.session_state.selected_bet_id = b["id"]
-            st.rerun()
-        if can_delete and c4.button("🗑️", key=f"del_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
-            st.session_state.saved_bets.pop(real_idx)
-            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-            st.rerun()
+        st.markdown(header_html, unsafe_allow_html=True)
+        c_row1, c_row2, c_row3, c_row4 = st.columns([3.5, 3.5, 2.0, 1.2])
+        with c_row1:
+            st.write(f"**Pick:** `{b.get('bet')}`")
+            st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
+
+        with c_row2:
+            r_val = float(b.get("risk_dollars", 10.0))
+            p_val = float(b.get("payout_dollars", b.get("payout", 19.0)))
+            profit_locked = float(b.get("locked_profit", p_val - r_val))
+            roi_pct = (profit_locked / max(r_val, 0.01)) * 100
+            st.write(f"Risk: **${r_val:.2f}** ➔ Payout: **${p_val:.2f}**")
+            st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${profit_locked:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
+
+        with c_row3:
+            cat_label = b.get("bet_category", b.get("type", "Single"))
+            st.caption(f"Type: **{cat_label}**")
+            if b.get("notes"):
+                st.caption(f"*{b.get('notes')}*")
+
+        with c_row4:
+            if st.button("🏟️ War Room", key=f"open_ticket_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                st.session_state.selected_bet_id = b["id"]
+                st.rerun()
+            if can_delete:
+                if st.button("🗑️", key=f"del_ticket_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
+                    st.session_state.saved_bets.pop(real_idx)
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                    st.rerun()
 
 # State initialization
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
@@ -232,7 +535,8 @@ nav_list = [
     "💡 How It Works", "📖 Model Methodology & Math", "⚙️ Account Settings",
     "📩 Feedback & Support", "ℹ️ About Flurkstradamus"
 ]
-if is_admin: nav_list.append("🛡️ Admin")
+if is_admin: 
+    nav_list.append("🛡️ Admin")
 
 for page in nav_list:
     btn_type = "primary" if (st.session_state.active_nav_page == page and st.session_state.selected_bet_id is None) else "secondary"
@@ -250,12 +554,15 @@ if st.session_state.selected_bet_id is not None:
         st.session_state.selected_bet_id = None
         st.rerun()
     live_g = find_game_for_bet(selected_bet, games_data)
+    live_p = calculate_live_bet_prob(selected_bet, live_g)
     st.title(f"🏟️ War Room: {selected_bet.get('matchup')}")
-    st.write(f"**Pick:** `{selected_bet.get('bet')}` | Status: `{selected_bet.get('status')}`")
+    st.write(f"**Pick:** `{selected_bet.get('bet')}` | Live Probability: **{live_p}**")
     if live_g:
         c1, c2, c3 = st.columns([2, 1, 2])
+        c1.image(live_g.get("away_logo", DEFAULT_LOGO), width=45)
         c1.metric(live_g['away_short'], live_g['away_score'])
         c2.metric("Clock", live_g.get('displayClock', live_g['status']))
+        c3.image(live_g.get("home_logo", DEFAULT_LOGO), width=45)
         c3.metric(live_g['home_short'], live_g['home_score'])
     st.stop()
 
