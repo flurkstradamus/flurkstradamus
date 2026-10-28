@@ -268,6 +268,41 @@ components.html("""
 </script>
 """, height=0)
 
+# =========================================================================
+# GOOGLE ANALYTICS 4 (GA4) INJECTION
+# =========================================================================
+def inject_google_analytics():
+    ga_id = st.secrets.get("GA_MEASUREMENT_ID")
+    if not ga_id:
+        return
+
+    ga_snippet = f"""
+    <script>
+        (function() {{
+            const win = window.parent;
+            const doc = win.document;
+            if (!doc.getElementById('ga-gtag-script')) {{
+                const script = doc.createElement('script');
+                script.id = 'ga-gtag-script';
+                script.async = true;
+                script.src = 'https://www.googletagmanager.com/gtag/js?id={ga_id}';
+                doc.head.appendChild(script);
+
+                win.dataLayer = win.dataLayer || [];
+                function gtag() {{ win.dataLayer.push(arguments); }}
+                gtag('js', new Date());
+                gtag('config', '{ga_id}', {{
+                    'page_title': doc.title,
+                    'page_location': win.location.href
+                }});
+            }}
+        }})();
+    </script>
+    """
+    components.html(ga_snippet, height=0)
+
+inject_google_analytics()
+
 # LIVE ESPN ACTIVE ROSTER EXTRACTOR (ZERO HARDCODED ROSTERS)
 @st.cache_data(ttl=600)
 def get_live_team_players(team_id_or_abbr, league="nfl"):
