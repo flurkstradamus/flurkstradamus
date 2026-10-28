@@ -1,117 +1,206 @@
 import json
 import os
 import hashlib
+from datetime import datetime
 
-DATA_FILE = "storage.json"
+STORAGE_FILE = "storage.json"
 
 def hash_password(password: str) -> str:
-    """Hash password with SHA-256 and a fixed salt."""
-    salt = "flurkstradamus_salt_2026"
-    return hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
+    """Hashes a password with SHA-256."""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def load_storage():
-    """Load bets, chat messages, user accounts, banned emails, and historical projections."""
+    """Loads all data structures from storage.json with sensible defaults."""
     default_users = {
         "flurk": {
             "username": "flurk",
-            "display_name": "Flurk",
             "email": "flurk@flurkstradamus.com",
-            "password_hash": hash_password("Loofus1993"),
+            "display_name": "Flurk",
+            "password_hash": hash_password("flurk123"),
             "is_admin": True,
             "is_banned": False,
             "created_at": "2026-10-26",
+            "last_login": "2026-10-26 12:00 PM ET",
             "favorite_team": "NFL",
+            "bio": "Lead strategist and model developer.",
+            "avatar_url": "",
+            "is_public": True,
+            "share_feed": True,
+            "searches": [],
             "reset_token": None,
-            "session_token": "flurk_persistent_token_999"
+            "session_token": None
         }
     }
-    
-    if not os.path.exists(DATA_FILE):
+
+    if not os.path.exists(STORAGE_FILE):
         return [], [], default_users, [], {}
-        
+
     try:
-        with open(DATA_FILE, "r") as f:
+        with open(STORAGE_FILE, "r") as f:
             data = json.load(f)
-            bets = data.get("bets", [])
-            chat = data.get("chat", [])
-            users = data.get("users", {})
+            saved_bets = data.get("saved_bets", [])
+            chat_messages = data.get("chat_messages", [])
+            user_accounts = data.get("user_accounts", default_users)
             banned_emails = data.get("banned_emails", [])
             game_snapshots = data.get("game_snapshots", {})
-            
-            # Ensure admin account exists with proper session token
-            if "flurk" not in users or users["flurk"].get("password_hash") != hash_password("Loofus1993"):
-                users["flurk"] = default_users["flurk"]
-            else:
-                if "session_token" not in users["flurk"]:
-                    users["flurk"]["session_token"] = "flurk_persistent_token_999"
-
-            return bets, chat, users, banned_emails, game_snapshots
+            return saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots
     except Exception:
         return [], [], default_users, [], {}
 
-def save_all_storage(bets, chat, users=None, banned_emails=None, game_snapshots=None):
-    """Persist all bets, chat messages, user accounts, blacklist, and projection snapshots."""
-    if users is None or banned_emails is None or game_snapshots is None:
-        _, _, u, b_e, g_s = load_storage()
-        if users is None:
-            users = u
-        if banned_emails is None:
-            banned_emails = b_e
-        if game_snapshots is None:
-            game_snapshots = g_s
+def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots):
+    """Saves state back to storage.json."""
+    payload = {
+        "saved_bets": saved_bets,
+        "chat_messages": chat_messages,
+        "user_accounts": user_accounts,
+        "banned_emails": banned_emails,
+        "game_snapshots": game_snapshots
+    }
     try:
-        with open(DATA_FILE, "w") as f:
-            json.dump({
-                "bets": bets, 
-                "chat": chat,
-                "users": users,
-                "banned_emails": banned_emails,
-                "game_snapshots": game_snapshots
-            }, f, indent=2)
-    except Exception:
-        pass
+        with open(STORAGE_FILE, "w") as f:
+            json.dump(payload, f, indent=2)
+    except Exception as e:
+        print(f"Error saving storage: {e}")
 
 def find_game_for_bet(bet, games_data):
-    """Locate live game scoreboard data matching a ticket."""
-    if not games_data:
+    """Matches a bet ticket to an active or past ESPN game object."""
+    matchup = bet.get("matchup", "")
+    if not matchup:
         return None
-    matchup_str = bet.get("matchup", "")
+
+    # Check for direct abbreviation matches: "AWAY @ HOME"
+    parts = matchup.split("@")
+    if len(parts) == 2:
+        a_abbr = parts[0].strip().upper()
+        h_abbr = parts[1].strip().upper()
+        for g in games_data:
+            if g.get("away_short", "").upper() == a_abbr and g.get("home_short", "").upper() == h_abbr:
+                return g
+
+    # Fuzzy check by team names
     for g in games_data:
-        away = g.get("away_short", "")
-        home = g.get("home_short", "")
-        if f"{away} @ {home}" in matchup_str or f"{away} vs {home}" in matchup_str or (away in matchup_str and home in matchup_str):
+        h_team = g.get("home_team", "").lower()
+        a_team = g.get("away_team", "").lower()
+        if (h_team in matchup.lower() or g.get("home_short", "").lower() in matchup.lower()) and \
+           (a_team in matchup.lower() or g.get("away_short", "").lower() in matchup.lower()):
             return g
+
     return None
 
-def auto_resolve_bets(saved_bets, games_data, chat_messages, game_snapshots=None):
-    """Automatically grades completed tickets and preserves final snapshot."""
+def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots=None):
+    """
+    Grades completed games without ever overwriting custom entered risk or payout amounts.
+    """
     updated = False
-    for b in saved_bets:
-        if b.get("status") == "Pending":
-            game = find_game_for_bet(b, games_data)
-            if game and game.get("completed", False):
-                h_score = game.get("home_score", 0)
-                a_score = game.get("away_score", 0)
-                tot = h_score + a_score
-                cat = b.get("bet_category", "Total")
-                target = b.get("target_line")
-                side = b.get("bet_direction", "Under")
-                
-                if cat in ["Total", "2H Total"] and target is not None:
-                    if side == "Under":
-                        b["status"] = "Won" if tot < target else "Lost"
-                    else:
-                        b["status"] = "Won" if tot > target else "Lost"
-                    updated = True
-                elif cat == "Spread" and target is not None:
-                    diff = (h_score - a_score) if b.get("picked_team") == game.get("home_team") else (a_score - h_score)
-                    b["status"] = "Won" if (diff + target > 0) else "Lost"
-                    updated = True
-                elif cat == "Moneyline":
-                    winner = game.get("home_team") if h_score > a_score else game.get("away_team")
-                    b["status"] = "Won" if b.get("picked_team") == winner else "Lost"
-                    updated = True
-                    
+
+    for bet in saved_bets:
+        if bet.get("status") != "Pending":
+            continue
+
+        is_combo = (bet.get("bet_category") == "Combo" or "Leg" in bet.get("type", ""))
+
+        if is_combo:
+            legs = bet.get("parsed_legs", [])
+            if not legs:
+                continue
+
+            all_legs_final = True
+            any_leg_lost = False
+
+            for leg in legs:
+                leg_game = find_game_for_bet({"matchup": leg.get("matchup", "")}, games_data)
+                if not leg_game:
+                    all_legs_final = False
+                    continue
+
+                is_completed = leg_game.get("completed", False) or "final" in str(leg_game.get("status", "")).lower()
+                if not is_completed:
+                    all_legs_final = False
+                    continue
+
+                h_score = leg_game.get("home_score", 0)
+                a_score = leg_game.get("away_score", 0)
+                tot_score = h_score + a_score
+
+                l_type = leg.get("type", "")
+                l_side = leg.get("side", "")
+                l_line = leg.get("line")
+
+                if l_type == "Game Total" and l_line is not None:
+                    if l_side == "Under" and tot_score > float(l_line):
+                        any_leg_lost = True
+                    elif l_side == "Over" and tot_score < float(l_line):
+                        any_leg_lost = True
+                elif l_type in ["Straight Up Winner", "Moneyline"]:
+                    picked = leg.get("picked_team", "")
+                    if picked == leg_game.get("home_team") and h_score < a_score:
+                        any_leg_lost = True
+                    elif picked == leg_game.get("away_team") and a_score < h_score:
+                        any_leg_lost = True
+
+            if any_leg_lost:
+                bet["status"] = "Lost"
+                updated = True
+            elif all_legs_final and not any_leg_lost:
+                bet["status"] = "Won"
+                # STRICTLY PRESERVE ENTERED PAYOUT
+                if not bet.get("payout_dollars") or float(bet.get("payout_dollars", 0)) <= 0:
+                    bet["payout_dollars"] = float(bet.get("payout", bet.get("risk_dollars", 10.0) * 1.91))
+                updated = True
+
+        else:
+            game = find_game_for_bet(bet, games_data)
+            if not game:
+                continue
+
+            is_completed = game.get("completed", False) or "final" in str(game.get("status", "")).lower()
+            if not is_completed:
+                continue
+
+            h_score = game.get("home_score", 0)
+            a_score = game.get("away_score", 0)
+            tot_score = h_score + a_score
+            cat = bet.get("bet_category", "")
+            t_line = bet.get("target_line")
+            b_side = bet.get("bet_direction", "")
+
+            won = None
+
+            if cat in ["Total", "2H Total"] and t_line is not None:
+                t_val = float(t_line)
+                if b_side == "Under":
+                    won = (tot_score < t_val)
+                elif b_side == "Over":
+                    won = (tot_score > t_val)
+            elif cat == "Spread" and t_line is not None:
+                spread_val = float(t_line)
+                if bet.get("picked_team") == game.get("home_team"):
+                    won = ((h_score - a_score) + spread_val) > 0
+                else:
+                    won = ((a_score - h_score) + spread_val) > 0
+            elif cat == "Moneyline":
+                if bet.get("picked_team") == game.get("home_team"):
+                    won = (h_score > a_score)
+                else:
+                    won = (a_score > h_score)
+
+            if won is True:
+                bet["status"] = "Won"
+                # STRICTLY PRESERVE ENTERED PAYOUT
+                if not bet.get("payout_dollars") or float(bet.get("payout_dollars", 0)) <= 0:
+                    bet["payout_dollars"] = float(bet.get("payout", bet.get("risk_dollars", 10.0) * 1.91))
+                updated = True
+            elif won is False:
+                bet["status"] = "Lost"
+                updated = True
+
     if updated:
-        save_all_storage(saved_bets, chat_messages, game_snapshots=game_snapshots)
+        save_all_storage(
+            saved_bets, 
+            chat_messages if chat_messages is not None else [], 
+            {}, 
+            [], 
+            game_snapshots if game_snapshots is not None else {}
+        )
+
     return updated
