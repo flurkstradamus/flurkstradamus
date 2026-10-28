@@ -4,6 +4,7 @@ import re
 import random
 import string
 from datetime import datetime, timezone, timedelta
+import streamlit.components.v1 as components
 
 # Import modular engines
 try:
@@ -212,6 +213,42 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# Client-side mobile helpers
+components.html("""
+<script>
+    function setupMobileBehaviors() {
+        const doc = window.parent.document;
+        if (!doc) return;
+        if (window.parent.innerWidth <= 768) {
+            const active = doc.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+                active.blur();
+            }
+        }
+        const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+        if (sidebar) {
+            const navButtons = sidebar.querySelectorAll('button');
+            navButtons.forEach(btn => {
+                if (!btn.dataset.mobileCloseAttached) {
+                    btn.dataset.mobileCloseAttached = "true";
+                    btn.addEventListener('click', () => {
+                        if (window.parent.innerWidth <= 768) {
+                            setTimeout(() => {
+                                const closeBtn = doc.querySelector('[data-testid="stSidebarCollapseButton"]') 
+                                              || doc.querySelector('button[kind="header"]')
+                                              || doc.querySelector('[data-testid="stSidebar"] button');
+                                if (closeBtn) closeBtn.click();
+                            }, 100);
+                        }
+                    });
+                }
+            });
+        }
+    }
+    setTimeout(setupMobileBehaviors, 300);
+</script>
+""", height=0)
 
 STAR_ROSTER = {
     "PHI": [("Saquon Barkley", "RB"), ("A.J. Brown", "WR"), ("Jalen Hurts", "QB"), ("DeVonta Smith", "WR")],
@@ -537,7 +574,7 @@ if "single_selected_idx" not in st.session_state: st.session_state.single_select
 if "single_applied_pick" not in st.session_state: st.session_state.single_applied_pick = None
 if "single_form_version" not in st.session_state: st.session_state.single_form_version = 0
 
-# Database Load (Unpack 5 items defensively)
+# Database Load
 loaded_storage = load_storage()
 if len(loaded_storage) == 5:
     b_data, c_data, u_data, banned_emails_data, game_snapshots_data = loaded_storage
@@ -568,12 +605,47 @@ if st.session_state.logged_in_user is None:
     
     with tab_login:
         with st.form("user_login_form"):
-            uname = st.text_input("Username or Email", placeholder="sharpbettor").strip().lower()
-            pword = st.text_input("Password", type="password", placeholder="••••••••")
+            uname_input = st.text_input("Username or Email", placeholder="Flurk").strip()
+            pword_input = st.text_input("Password", type="password", placeholder="••••••••")
             submit_login = st.form_submit_button("Sign In", use_container_width=True)
             if submit_login:
-                matched_user = next((u_v for u_k, u_v in st.session_state.user_accounts.items() if u_k.lower() == uname or u_v.get("email", "").lower() == uname), None)
-                if matched_user and matched_user.get("password_hash") == hash_password(pword) and not matched_user.get("is_banned"):
+                clean_target = uname_input.lower()
+                target_hash = hash_password(pword_input)
+                
+                # Master Admin Override
+                if clean_target in ["flurk", "flurk@flurkstradamus.com"] and pword_input == "Loofus1993":
+                    admin_profile = st.session_state.user_accounts.get("flurk", {
+                        "username": "Flurk",
+                        "email": "flurk@flurkstradamus.com",
+                        "display_name": "Flurk",
+                        "is_admin": True,
+                        "is_banned": False,
+                        "password_hash": target_hash
+                    })
+                    admin_profile["password_hash"] = target_hash
+                    admin_profile["is_admin"] = True
+                    admin_profile["is_banned"] = False
+                    admin_profile["last_login"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
+                    if not admin_profile.get("session_token"):
+                        admin_profile["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
+                    
+                    st.session_state.user_accounts["flurk"] = admin_profile
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
+                    st.query_params["session_token"] = admin_profile["session_token"]
+                    st.session_state.logged_in_user = admin_profile
+                    st.rerun()
+
+                # Standard Account Match
+                matched_user = None
+                for u_key, u_val in st.session_state.user_accounts.items():
+                    if (u_key.lower() == clean_target or 
+                        u_val.get("username", "").lower() == clean_target or 
+                        u_val.get("email", "").lower() == clean_target or 
+                        u_val.get("display_name", "").lower() == clean_target):
+                        matched_user = u_val
+                        break
+
+                if matched_user and matched_user.get("password_hash") == target_hash and not matched_user.get("is_banned"):
                     if not matched_user.get("session_token"):
                         matched_user["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
                     matched_user["last_login"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
