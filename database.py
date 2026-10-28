@@ -10,7 +10,10 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def load_storage():
-    """Loads all data structures from storage.json with sensible defaults."""
+    """
+    Always returns exactly 5 items:
+    saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots
+    """
     default_users = {
         "flurk": {
             "username": "flurk",
@@ -48,7 +51,7 @@ def load_storage():
         return [], [], default_users, [], {}
 
 def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots):
-    """Saves state back to storage.json."""
+    """Saves state back to storage.json safely."""
     payload = {
         "saved_bets": saved_bets,
         "chat_messages": chat_messages,
@@ -65,10 +68,9 @@ def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, ga
 def find_game_for_bet(bet, games_data):
     """Matches a bet ticket to an active or past ESPN game object."""
     matchup = bet.get("matchup", "")
-    if not matchup:
+    if not matchup or not games_data:
         return None
 
-    # Check for direct abbreviation matches: "AWAY @ HOME"
     parts = matchup.split("@")
     if len(parts) == 2:
         a_abbr = parts[0].strip().upper()
@@ -77,7 +79,6 @@ def find_game_for_bet(bet, games_data):
             if g.get("away_short", "").upper() == a_abbr and g.get("home_short", "").upper() == h_abbr:
                 return g
 
-    # Fuzzy check by team names
     for g in games_data:
         h_team = g.get("home_team", "").lower()
         a_team = g.get("away_team", "").lower()
@@ -89,8 +90,11 @@ def find_game_for_bet(bet, games_data):
 
 def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots=None):
     """
-    Grades completed games without ever overwriting custom entered risk or payout amounts.
+    Grades completed games without overwriting user-entered payouts or stakes.
     """
+    if not saved_bets or not games_data:
+        return False
+
     updated = False
 
     for bet in saved_bets:
@@ -143,7 +147,6 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
                 updated = True
             elif all_legs_final and not any_leg_lost:
                 bet["status"] = "Won"
-                # STRICTLY PRESERVE ENTERED PAYOUT
                 if not bet.get("payout_dollars") or float(bet.get("payout_dollars", 0)) <= 0:
                     bet["payout_dollars"] = float(bet.get("payout", bet.get("risk_dollars", 10.0) * 1.91))
                 updated = True
@@ -186,7 +189,6 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
 
             if won is True:
                 bet["status"] = "Won"
-                # STRICTLY PRESERVE ENTERED PAYOUT
                 if not bet.get("payout_dollars") or float(bet.get("payout_dollars", 0)) <= 0:
                     bet["payout_dollars"] = float(bet.get("payout", bet.get("risk_dollars", 10.0) * 1.91))
                 updated = True
