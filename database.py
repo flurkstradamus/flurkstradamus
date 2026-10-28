@@ -1,10 +1,12 @@
 import json
 import os
+import shutil
 import hashlib
 from datetime import datetime
 import streamlit as st
 
 STORAGE_FILE = "storage.json"
+BACKUP_FILE = "storage_backup.json"
 
 def hash_password(password: str) -> str:
     """Hashes a password with SHA-256."""
@@ -20,7 +22,6 @@ def get_admin_credentials():
             "email": cfg.get("email", "admin@domain.com")
         }
     except Exception:
-        # Generic fallback if secrets are not configured yet
         return {
             "username": "admin",
             "password": "adminpassword",
@@ -52,22 +53,26 @@ def get_default_users():
     }
 
 def load_storage():
-    """Safely loads data from storage.json and syncs the secure admin account."""
+    """
+    Safely loads storage data. If storage.json is missing or corrupted,
+    recovers from storage_backup.json to prevent data loss.
+    """
     default_users = get_default_users()
     admin_cred = get_admin_credentials()
     admin_key = admin_cred["username"].lower()
 
-    if not os.path.exists(STORAGE_FILE):
+    target_path = STORAGE_FILE if os.path.exists(STORAGE_FILE) else (BACKUP_FILE if os.path.exists(BACKUP_FILE) else None)
+    if not target_path:
         return [], [], default_users, [], {}
 
     try:
-        with open(STORAGE_FILE, "r") as f:
+        with open(target_path, "r") as f:
             data = json.load(f)
             saved_bets = data.get("saved_bets", [])
             chat_messages = data.get("chat_messages", [])
             user_accounts = data.get("user_accounts", {})
 
-            # Ensure the designated admin account matches secrets
+            # Ensure admin matches st.secrets credentials without data loss
             admin_user = user_accounts.get(admin_key, {
                 "username": admin_cred["username"],
                 "email": admin_cred["email"],
@@ -82,7 +87,6 @@ def load_storage():
                 "reset_token": None,
                 "session_token": None
             })
-            
             admin_user["is_admin"] = True
             admin_user["is_banned"] = False
             admin_user["password_hash"] = hash_password(admin_cred["password"])
@@ -91,26 +95,58 @@ def load_storage():
 
             banned_emails = data.get("banned_emails", [])
             game_snapshots = data.get("game_snapshots", {})
+
+            # Ensure every bet slip preserves locked_profit
+            for b in saved_bets:
+                if "locked_profit" not in b:
+                    p = float(b.get("payout_dollars", b.get("payout", 0.0)))
+                    r = float(b.get("risk_dollars", 0.0))
+                    b["locked_profit"] = p - r
+
             return saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots
     except Exception as e:
         print(f"Error loading storage: {e}")
         return [], [], default_users, [], {}
 
 def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots):
-    """Saves state back to storage.json safely."""
-    if not user_accounts:
-        user_accounts = get_default_users()
+    """
+    Guaranteed atomic save with disk merge and automated backup creation.
+    Never wipes out accounts, bets, or chat if an empty state is received.
+    """
+    # Merge existing disk data defensively
+    disk_bets, disk_chat, disk_users, disk_banned, disk_snaps = [], [], {}, [], {}
+    if os.path.exists(STORAGE_FILE):
+        try:
+            with open(STORAGE_FILE, "r") as f:
+                d = json.load(f)
+                disk_bets = d.get("saved_bets", [])
+                disk_chat = d.get("chat_messages", [])
+                disk_users = d.get("user_accounts", {})
+                disk_banned = d.get("banned_emails", [])
+                disk_snaps = d.get("game_snapshots", {})
+            # Backup current verified file
+            shutil.copyfile(STORAGE_FILE, BACKUP_FILE)
+        except Exception:
+            pass
+
+    final_bets = saved_bets if saved_bets else disk_bets
+    final_chat = chat_messages if chat_messages else disk_chat
+    final_users = user_accounts if user_accounts else (disk_users if disk_users else get_default_users())
+    final_banned = banned_emails if banned_emails else disk_banned
+    final_snaps = game_snapshots if game_snapshots else disk_snaps
 
     payload = {
-        "saved_bets": saved_bets,
-        "chat_messages": chat_messages,
-        "user_accounts": user_accounts,
-        "banned_emails": banned_emails,
-        "game_snapshots": game_snapshots
+        "saved_bets": final_bets,
+        "chat_messages": final_chat,
+        "user_accounts": final_users,
+        "banned_emails": final_banned,
+        "game_snapshots": final_snaps
     }
     try:
-        with open(STORAGE_FILE, "w") as f:
+        temp_file = STORAGE_FILE + ".tmp"
+        with open(temp_file, "w") as f:
             json.dump(payload, f, indent=2)
+        os.replace(temp_file, STORAGE_FILE)
     except Exception as e:
         print(f"Error saving storage: {e}")
 
@@ -138,7 +174,7 @@ def find_game_for_bet(bet, games_data):
     return None
 
 def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots=None):
-    """Grades completed games without modifying entered payout or risk amounts."""
+    """Grades completed games without modifying user-entered payout or risk amounts."""
     if not saved_bets or not games_data:
         return False
 
@@ -240,20 +276,11 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
                 updated = True
 
     if updated:
-        try:
-            with open(STORAGE_FILE, "r") as f:
-                cur = json.load(f)
-                users = cur.get("user_accounts", get_default_users())
-                banned = cur.get("banned_emails", [])
-        except:
-            users = get_default_users()
-            banned = []
-            
         save_all_storage(
             saved_bets, 
             chat_messages if chat_messages is not None else [], 
-            users, 
-            banned, 
+            {}, 
+            [], 
             game_snapshots if game_snapshots is not None else {}
         )
 
