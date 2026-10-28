@@ -25,7 +25,7 @@ def parse_bet_slip_image(image_bytes):
     if not gemini_key:
         return None, "No GEMINI_API_KEY or GOOGLE_API_KEY found in Streamlit Secrets."
 
-    # Downscale and compress image to avoid timeouts
+    # Downscale and compress image to avoid payload limits
     try:
         pil_img = Image.open(io.BytesIO(image_bytes))
         if pil_img.mode != "RGB":
@@ -74,30 +74,45 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    # Clean endpoints across v1beta and v1
-    candidate_endpoints = [
-        ("v1beta", "gemini-1.5-flash"),
-        ("v1beta", "gemini-1.5-flash-latest"),
-        ("v1", "gemini-1.5-flash"),
-        ("v1beta", "gemini-2.0-flash"),
-        ("v1beta", "gemini-2.5-flash"),
-        ("v1beta", "gemini-1.5-pro")
-    ]
+    # Step A: Dynamically discover active models supported by your API key
+    active_models = []
+    try:
+        models_list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
+        list_resp = requests.get(models_list_url, timeout=5.0)
+        if list_resp.status_code == 200:
+            for m in list_resp.json().get("models", []):
+                m_name = m.get("name", "")  # Format: "models/gemini-..."
+                methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" in methods and "flash" in m_name.lower():
+                    active_models.append(m_name)
+    except Exception:
+        pass
+
+    # Step B: Ensure fallback models are present if model listing is restricted
+    if not active_models:
+        active_models = [
+            "models/gemini-2.0-flash",
+            "models/gemini-2.5-flash",
+            "models/gemini-1.5-flash",
+            "models/gemini-1.5-flash-8b",
+            "models/gemini-2.0-flash-exp"
+        ]
 
     last_err = ""
-    for api_ver, model_name in candidate_endpoints:
-        url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={gemini_key}"
+    for full_model_path in active_models:
+        clean_model = full_model_path if full_model_path.startswith("models/") else f"models/{full_model_path}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{clean_model}:generateContent?key={gemini_key}"
         try:
-            r = requests.post(url, json=payload, timeout=20.0)
+            r = requests.post(url, json=payload, timeout=25.0)
             if r.status_code == 200:
                 txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 cleaned = re.sub(r"^```json\s*", "", txt.strip())
                 cleaned = re.sub(r"```$", "", cleaned.strip())
                 return json.loads(cleaned), None
             else:
-                last_err = f"{model_name} (HTTP {r.status_code}): {r.text[:120]}"
+                last_err = f"{clean_model} (HTTP {r.status_code}): {r.text[:120]}"
         except Exception as e:
-            last_err = f"{model_name}: {str(e)}"
+            last_err = f"{clean_model}: {str(e)}"
             continue
 
     return None, f"All models failed. Last error: {last_err}"
