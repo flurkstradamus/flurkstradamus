@@ -50,7 +50,7 @@ def inject_google_analytics():
 
 inject_google_analytics()
 
-# CSS Layout, Mobile Optimization & Compact Card Styling
+# CSS Layout, Mobile Optimization & Absolute Left Alignment
 st.markdown("""
 <style>
     @media (min-width: 768px) {
@@ -145,10 +145,10 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    /* Compact container padding for bet cards */
-    div[data-testid="stVerticalBlockBorderWrapper"]:has(.compact-bet-card) {
-        padding: 10px 14px !important;
-        margin-bottom: 8px !important;
+    /* Subtle compact padding for ticket cards */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        padding: 12px 16px !important;
+        margin-bottom: 10px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -300,7 +300,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         else:
             live_prob_str = calculate_live_bet_prob(b, live_m)
 
-        live_prob_badge_html = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.75rem;white-space:nowrap;'>🎲 Win: {live_prob_str}</span>"
+        live_prob_badge_html = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.80rem;white-space:nowrap;'>🎲 Win: {live_prob_str}</span>"
 
     if status_val == "Won":
         badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:800;font-size:0.75rem;white-space:nowrap;'>🏆 WON</span>"
@@ -341,14 +341,9 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
     roi_pct = (profit_locked / max(r_val, 0.01)) * 100
     cat_label = b.get("bet_category", b.get("type", "Single"))
     bet_pick_str = str(b.get("bet", "N/A"))
-    date_str = str(b.get("date", "N/A"))
-    notes_str = f" • <em>{b.get('notes')}</em>" if b.get("notes") else ""
 
     with st.container(border=True):
-        # Marker for custom CSS padding
-        st.markdown("<div class='compact-bet-card'></div>", unsafe_allow_html=True)
-        
-        # Header Row: Matchup on Left, Badges on Right
+        # Header Row
         st.markdown(f"""
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px; border-bottom:1px solid rgba(255,255,255,0.07); padding-bottom:6px; margin-bottom:8px;">
             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">{header_title_html}</div>
@@ -356,50 +351,42 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         </div>
         """, unsafe_allow_html=True)
 
-        # Content Grid: 3 Data Columns + 1 Button Column
-        c_pick, c_money, c_meta, c_actions = st.columns([3.2, 3.2, 2.4, 1.4], vertical_alignment="center")
+        # Desktop 4-Column Layout (Generous action column prevents text clipping)
+        c1, c2, c3, c4 = st.columns([3.0, 3.0, 2.2, 1.8], vertical_alignment="center")
 
-        with c_pick:
+        with c1:
             st.markdown(f"""
-            <div style="line-height:1.35;">
-                <div style="font-size:0.75rem; opacity:0.65; text-transform:uppercase; letter-spacing:0.5px;">Pick</div>
-                <div style="font-weight:700; color:#4ade80; font-size:0.92rem; margin-top:2px;">{bet_pick_str}</div>
-                <div style="font-size:0.75rem; opacity:0.6; margin-top:2px;">🗓️ {date_str}</div>
-            </div>
+            <div style="font-size:0.88rem;"><strong>Pick:</strong> <span style="color:#4ade80;font-weight:700;">{bet_pick_str}</span></div>
+            <div style="font-size:0.76rem;opacity:0.65;margin-top:2px;">🗓️ Logged: {b.get('date', 'N/A')}</div>
             """, unsafe_allow_html=True)
 
-        with c_money:
+        with c2:
             st.markdown(f"""
-            <div style="line-height:1.35;">
-                <div style="font-size:0.75rem; opacity:0.65; text-transform:uppercase; letter-spacing:0.5px;">Risk ➔ Payout</div>
-                <div style="font-size:0.88rem; font-weight:600; margin-top:2px;">${r_val:.2f} ➔ <strong>${p_val:.2f}</strong></div>
-                <div style="color:#4ade80; font-weight:700; font-size:0.80rem; margin-top:2px;">+${profit_locked:.2f} (+{roi_pct:.1f}%)</div>
-            </div>
+            <div style="font-size:0.88rem;">Risk: <strong>${r_val:.2f}</strong> ➔ Payout: <strong>${p_val:.2f}</strong></div>
+            <div style="font-size:0.78rem;color:#4ade80;font-weight:700;margin-top:2px;">Potential Profit: +${profit_locked:.2f} (+{roi_pct:.1f}%)</div>
             """, unsafe_allow_html=True)
 
-        with c_meta:
+        with c3:
+            notes_line = f"<div style='font-size:0.74rem;opacity:0.65;'><em>{b.get('notes')}</em></div>" if b.get("notes") else ""
             st.markdown(f"""
-            <div style="line-height:1.35;">
-                <div style="font-size:0.75rem; opacity:0.65; text-transform:uppercase; letter-spacing:0.5px;">Market</div>
-                <div style="font-size:0.82rem; font-weight:600; margin-top:2px;">{cat_label}</div>
-                <div style="font-size:0.74rem; opacity:0.6; margin-top:2px;">{notes_str}</div>
-            </div>
+            <div style="font-size:0.82rem;opacity:0.85;">Type: <strong>{cat_label}</strong></div>
+            {notes_line}
             """, unsafe_allow_html=True)
 
-        with c_actions:
+        with c4:
             if can_delete:
-                b_c1, b_c2 = st.columns([3, 1], vertical_alignment="center")
-                with b_c1:
-                    if st.button("🏟️ War Room", key=f"open_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                b1, b2 = st.columns([3, 1], vertical_alignment="center")
+                with b1:
+                    if st.button("🏟️ War Room", key=f"wr_btn_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                         st.session_state.selected_bet_id = b["id"]
                         st.rerun()
-                with b_c2:
-                    if st.button("🗑️", key=f"del_ticket_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
+                with b2:
+                    if st.button("🗑️", key=f"del_btn_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
                         st.session_state.saved_bets.pop(real_idx)
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
                         st.rerun()
             else:
-                if st.button("🏟️ War Room", key=f"open_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                if st.button("🏟️ War Room", key=f"wr_btn_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                     st.session_state.selected_bet_id = b["id"]
                     st.rerun()
 
