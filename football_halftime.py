@@ -399,7 +399,8 @@ def parse_bet_slip_image(image_bytes):
                 "line": float or null,
                 "payout": float (total payout / return dollars including stake),
                 "profit": float or null (net profit),
-                "risk": float or null (amount staked / risked)
+                "risk": float or null (amount staked / risked),
+                "is_settled": true if the screenshot shows a realized payout, profit, settlement, or won status, else false
             }
             Rules:
             1. If it represents a contract saying "No · Over X", that means "Under X".
@@ -432,7 +433,8 @@ def parse_bet_slip_image(image_bytes):
         "line": 33.5,
         "payout": 448.00,
         "profit": 114.06,
-        "risk": 333.94
+        "risk": 333.94,
+        "is_settled": True
     }
 
 def match_game_in_pool(away_name, home_name, pool):
@@ -442,7 +444,6 @@ def match_game_in_pool(away_name, home_name, pool):
     a_target = (away_name or "").lower().strip()
     h_target = (home_name or "").lower().strip()
 
-    # Direct check both teams
     for idx, gm in enumerate(pool):
         gm_h = gm["home_team"].lower()
         gm_a = gm["away_team"].lower()
@@ -454,7 +455,6 @@ def match_game_in_pool(away_name, home_name, pool):
         if h_match and a_match:
             return idx
 
-    # Loose single team match
     for idx, gm in enumerate(pool):
         gm_h = gm["home_team"].lower()
         gm_a = gm["away_team"].lower()
@@ -1094,7 +1094,7 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # =========================================================================
-# 1. MY DASHBOARD
+# 1. MY DASHBOARD (CLEAN RESPONSIVE HEADING)
 # =========================================================================
 if menu_choice == "📊 My Dashboard":
     st.markdown('<div class="dashboard-header-desktop"><h3>📊 Personal Betting Dashboard</h3></div>', unsafe_allow_html=True)
@@ -1285,14 +1285,14 @@ elif menu_choice == "⚡ Single Game Engine":
                         away_t = parsed_res.get("away_team", "")
                         home_t = parsed_res.get("home_team", "")
                         
-                        # Match game index against active pool or full games_data
                         matched_idx = match_game_in_pool(away_t, home_t, pool)
                         if matched_idx == 0 and pool and games_data:
-                            # If not found in current timing filter, search full games_data
                             full_idx = match_game_in_pool(away_t, home_t, games_data)
                             if games_data[full_idx] not in pool:
                                 pool.insert(0, games_data[full_idx])
                             matched_idx = pool.index(games_data[full_idx])
+
+                        is_settled_flag = parsed_res.get("is_settled", False)
 
                         st.session_state.single_selected_idx = matched_idx
                         st.session_state.single_applied_pick = {
@@ -1305,11 +1305,13 @@ elif menu_choice == "⚡ Single Game Engine":
                             "prob": 0.65,
                             "est_payout_multiplier": (parsed_res.get("payout", 448.0) / max(parsed_res.get("risk", 333.94), 0.01)),
                             "override_away": away_t,
-                            "override_home": home_t
+                            "override_home": home_t,
+                            "status": "Won" if is_settled_flag else "Pending"
                         }
                         st.session_state.single_form_version += 1
                         st.session_state.scroll_to_form = True
-                        st.success(f"Matched {away_t} vs {home_t}! Risk: ${parsed_res.get('risk'):.2f}, Payout: ${parsed_res.get('payout'):.2f}")
+                        status_msg = "🏆 Won & Settled" if is_settled_flag else "⏳ Pending"
+                        st.success(f"Matched {away_t} vs {home_t}! Status: {status_msg} | Risk: ${parsed_res.get('risk'):.2f}, Payout: ${parsed_res.get('payout'):.2f}")
                         st.rerun()
                     else:
                         st.error("Could not parse image. Please fill details manually below.")
@@ -1714,9 +1716,11 @@ elif menu_choice == "⚡ Single Game Engine":
                 actual_payout = float(payout_amt)
                 actual_profit = actual_payout - actual_risk
 
-                # Build clean matchup tag
                 a_tag = clean_abbr(away_team, "")
                 h_tag = clean_abbr(home_team, "")
+
+                # AUTO-GRADE: If screenshot explicitly indicated already settled/won, lock it in as Won
+                initial_status = "Won" if (applied and applied.get("status") == "Won") else ("Won" if is_completed and (h_pts + a_pts < strike if side == "Under" else h_pts + a_pts > strike) else "Pending")
 
                 ticket_record = {
                     "id": str(datetime.now().timestamp()),
@@ -1737,13 +1741,15 @@ elif menu_choice == "⚡ Single Game Engine":
                     "locked_profit": actual_profit,
                     "model_proj": round(final_proj, 1),
                     "win_prob": f"{applied['prob']*100:.1f}%" if applied else "55.0%",
-                    "status": "Pending",
+                    "status": initial_status,
                     "notes": ticket_notes
                 }
                 st.session_state.saved_bets.insert(0, ticket_record)
                 save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                 st.session_state.single_applied_pick = None
-                st.success(f"Ticket locked in! Stake: ${actual_risk:.2f} | Payout: ${actual_payout:.2f} | Profit: +${actual_profit:.2f}")
+                
+                status_alert = "🏆 Settled Won!" if initial_status == "Won" else "⏳ Pending in Play"
+                st.success(f"Ticket locked in ({status_alert})! Stake: ${actual_risk:.2f} | Payout: ${actual_payout:.2f} | Profit: +${actual_profit:.2f}")
 
 # =========================================================================
 # 3. MULTI-LEG COMBO BUILDER
@@ -2243,7 +2249,7 @@ elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
     * **📊 My Dashboard**: Review realized P&L, active capital at risk, probability-modeled EV profit, and discipline stats.
-    * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Upload bet slip screenshots or contract summaries to automatically extract lines and odds.
+    * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Upload bet slip screenshots or contract summaries to automatically extract lines, odds, and settlement states.
     * **🔗 Multi-Leg Combo Builder**: Scan slates for optimal multi-leg parlay opportunities with compound true win probabilities.
     * **🏟️ In-Game War Room**: Click any ticket in Locked Bets History or Live Squad Feed to inspect quarter-by-quarter projection drift, real-time clock updates, and live winning probabilities.
     * **⚙️ Account Settings**: Personalize your profile, bio, avatar, and privacy settings.
