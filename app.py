@@ -527,19 +527,12 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
     st.rerun()
 
 st.sidebar.markdown("---")
-league_choice = st.sidebar.radio("Primary League", ["NBA", "NFL", "NCAA Football", "All Games"])
-st.sidebar.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
 
-if league_choice == "NBA":
-    games_data = fetch_nba_scoreboard()
-elif league_choice in ["NFL", "NCAA Football"]:
-    games_data = fetch_football_scoreboard(league_choice)
-else:
-    games_data = fetch_nba_scoreboard() + fetch_football_scoreboard("All Games")
-
+# Pull cross-sport data globally so views can filter on their own
+games_data = fetch_nba_scoreboard() + fetch_football_scoreboard("All Games")
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots, st.session_state.support_tickets)
 
-# Navigation Menu (Leaderboard moved directly under Live Squad Feed)
+# Navigation Menu (Leaderboard placed directly below Live Squad Feed)
 nav_list = [
     "📊 My Dashboard", 
     "⚡ Single Game Engine", 
