@@ -381,7 +381,7 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH DYNAMIC MODEL LOOKUP
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH FAST IMAGE PRE-COMPRESSION
 def parse_bet_slip_image(image_bytes):
     raw_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     if not raw_key:
@@ -439,7 +439,6 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    # Discover and query active supported multimodal models
     candidate_endpoints = [
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
@@ -897,6 +896,7 @@ with col_u1:
 
 st.sidebar.markdown("---")
 
+# Reordered navigation items
 nav_items = [
     ("📊 My Dashboard", "📊 My Dashboard"),
     ("⚡ Single Game Engine", "⚡ Single Game Engine"),
@@ -905,11 +905,11 @@ nav_items = [
     ("🏆 Leaderboard", "🏆 Leaderboard"),
     ("🔥 Live Squad Feed", "🔥 Live Squad Feed"),
     ("💬 The Locker Room", "💬 The Locker Room"),
-    ("📩 Feedback & Support", "📩 Feedback & Support"),
     ("💡 How It Works", "💡 How It Works"),
-    ("ℹ️ About Flurkstradamus", "ℹ️ About Flurkstradamus"),
     ("📖 Model Methodology & Math", "📖 Model Methodology & Math"),
-    ("⚙️ Account Settings", "⚙️ Account Settings")
+    ("⚙️ Account Settings", "⚙️ Account Settings"),
+    ("📩 Feedback & Support", "📩 Feedback & Support"),
+    ("ℹ️ About Flurkstradamus", "ℹ️ About Flurkstradamus")
 ]
 
 if is_user_admin:
@@ -1019,7 +1019,7 @@ if menu_choice == "📊 My Dashboard":
         p4.metric("Pending In Play", f"{len(pending_bets)} Slips")
 
 # =========================================================================
-# 2. SINGLE GAME ENGINE (COMPLETE WITH AI STRATEGY ENGINE & DRIFT METRICS)
+# 2. SINGLE GAME ENGINE
 # =========================================================================
 elif menu_choice == "⚡ Single Game Engine":
     st.subheader("⚡ Single Game Analytics Engine")
@@ -1394,7 +1394,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 st.rerun()
 
 # =========================================================================
-# 3. MULTI-LEG COMBO BUILDER (RESTORED COMPLETE ENGINE)
+# 3. MULTI-LEG COMBO BUILDER
 # =========================================================================
 elif menu_choice == "🔗 Multi-Leg Combo Builder":
     st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
@@ -1530,9 +1530,31 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
 # 4. LOCKED BETS HISTORY
 # =========================================================================
 elif menu_choice == "📜 Locked Bets History":
-    st.subheader("📜 Locked Bets History")
+    st.subheader(f"📜 {current_user}'s Locked Bets")
+    st.caption("Active slips with live in-game win probabilities, scoreboard telemetry, and total points.")
+
     clean_u = active_uname.lower()
-    my_tickets = [b for b in st.session_state.saved_bets if str(b.get("user", "")).strip().lower() in [clean_u, current_user.lower()]]
+    clean_disp = current_user_profile.get("display_name", "").strip().lower()
+    
+    col_filter1, col_filter2 = st.columns([3, 1])
+    with col_filter2:
+        show_all_history = st.toggle("Show All Squad Bets", value=False)
+        
+    my_tickets = []
+    for b in st.session_state.saved_bets:
+        if show_all_history:
+            my_tickets.append(b)
+        else:
+            bet_owner = str(b.get("user", "")).strip().lower()
+            if (bet_owner in [clean_u, clean_disp]) or (is_user_admin and bet_owner in [clean_u, "admin"]):
+                my_tickets.append(b)
+
+    with col_filter1:
+        st.write(f"Showing **{len(my_tickets)}** ticket(s).")
+        if st.button("⚡ Grade Finals", use_container_width=True):
+            if auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots, st.session_state.support_tickets):
+                st.success("Updated tickets!")
+                st.rerun()
 
     if not my_tickets:
         st.info("No tickets recorded yet.")
@@ -1542,33 +1564,107 @@ elif menu_choice == "📜 Locked Bets History":
             render_ticket_card(b, real_idx, games_data, can_delete=True)
 
 # =========================================================================
-# 5. LEADERBOARD
+# 5. LEADERBOARD (RESTORED COMPREHENSIVE VIEW)
 # =========================================================================
 elif menu_choice == "🏆 Leaderboard":
     st.subheader("🏆 Leaderboard")
-    st.caption("Consensus standings and profit rankings.")
+    st.caption("Consensus standings, return on investment, member tenure, and betting volume.")
+
     user_stats = {}
     for b in st.session_state.saved_bets:
         u_raw = str(b.get("user", "Bettor")).strip().lower()
         if u_raw not in user_stats:
-            user_stats[u_raw] = {"name": b.get("user"), "won": 0, "lost": 0, "net": 0.0}
-        try:
-            r = float(b.get("risk_dollars", 0))
-            p = float(b.get("payout_dollars", b.get("payout", 0)))
-            profit = float(b.get("locked_profit", p - r))
-        except:
-            profit = 0.0
+            user_stats[u_raw] = {"name": b.get("user"), "total_bets": 0, "won": 0, "lost": 0, "pending": 0, "net": 0.0, "total_staked": 0.0, "types": {}}
+        user_stats[u_raw]["total_bets"] += 1
+        try: r = float(b.get("risk_dollars", 0))
+        except: r = 0.0
+        try: p = float(b.get("payout_dollars", b.get("payout", 0)))
+        except: p = 0.0
+        try: profit_locked = float(b.get("locked_profit", p - r))
+        except: profit_locked = p - r
+
+        cat = b.get("bet_category", b.get("type", "Single"))
+        user_stats[u_raw]["types"][cat] = user_stats[u_raw]["types"].get(cat, 0) + 1
         if b.get("status") == "Won":
             user_stats[u_raw]["won"] += 1
-            user_stats[u_raw]["net"] += profit
+            user_stats[u_raw]["net"] += profit_locked
+            user_stats[u_raw]["total_staked"] += r
         elif b.get("status") == "Lost":
             user_stats[u_raw]["lost"] += 1
             user_stats[u_raw]["net"] -= r
+            user_stats[u_raw]["total_staked"] += r
+        else:
+            user_stats[u_raw]["pending"] += 1
 
-    board = sorted(user_stats.values(), key=lambda x: x["net"], reverse=True)
-    for u in board:
-        with st.container(border=True):
-            st.write(f"**{u['name']}** — Net Profit: **${u['net']:+.2f}** ({u['won']}W - {u['lost']}L)")
+    board = []
+    for u_key, stat in user_stats.items():
+        acc = st.session_state.user_accounts.get(u_key, {})
+        if not acc.get("is_public", True): continue
+        last_act = acc.get("last_login", "")
+        decided = stat["won"] + stat["lost"]
+        win_rate = (stat["won"] / decided * 100) if decided > 0 else 0.0
+        roi_val = (stat["net"] / stat["total_staked"] * 100) if stat["total_staked"] > 0 else 0.0
+        fav_market = max(stat["types"], key=stat["types"].get) if stat["types"] else "Single Play"
+        member_since = acc.get("created_at", "N/A")
+
+        if win_rate >= 65.0 and decided >= 3:
+            tier_badge = "🎯 Sniper"
+        elif stat["won"] >= 3 and stat["lost"] == 0:
+            tier_badge = "🔥 On Fire"
+        elif decided > 0:
+            tier_badge = "⚡ Contender"
+        else:
+            tier_badge = "🌱 Rookie"
+
+        board.append({
+            "name": stat["name"],
+            "online": ("ET" in last_act),
+            "total_bets": stat["total_bets"],
+            "won": stat["won"],
+            "lost": stat["lost"],
+            "pending": stat["pending"],
+            "win_rate": f"{win_rate:.1f}%",
+            "roi": f"{roi_val:+.1f}%",
+            "total_staked": stat["total_staked"],
+            "fav_market": fav_market,
+            "member_since": member_since,
+            "tier_badge": tier_badge,
+            "net": stat["net"]
+        })
+
+    board.sort(key=lambda x: x["net"], reverse=True)
+    if not board:
+        st.info("No public tickets on leaderboard.")
+    else:
+        for idx, u in enumerate(board):
+            medal = "🥇" if idx == 0 else ("🥈" if idx == 1 else ("🥉" if idx == 2 else f"#{idx+1}"))
+            status_dot = "🟢 Online" if u["online"] else "⚪ Offline"
+            status_color = "#22c55e" if u["online"] else "#94a3b8"
+
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([4, 4, 2])
+                with c1:
+                    st.markdown(f"""
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+                        <span style="font-size:1.20rem; font-weight:700;">{medal} {u['name']}</span>
+                        <span style="font-size:0.75rem; font-weight:600; color:{status_color}; background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:12px; user-select:none;">
+                            {status_dot}
+                        </span>
+                        <span style="font-size:0.75rem; font-weight:700; background:rgba(56,189,248,0.12); color:#38bdf8; padding:2px 7px; border-radius:4px;">
+                            {u['tier_badge']}
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.caption(f"🗓️ Member Since: **{u['member_since']}** | Top Market: **{u['fav_market']}**")
+
+                with c2:
+                    st.write(f"📊 **{u['won']}W - {u['lost']}L** ({u['win_rate']} Win Rate) | **{u['total_bets']}** Total Slips ({u['pending']} in play)")
+                    st.caption(f"Volume Risked: **${u['total_staked']:.2f}** | Return ROI: **{u['roi']}**")
+
+                with c3:
+                    color = "#4ade80" if u['net'] >= 0 else "#f87171"
+                    st.markdown(f"<div style='text-align:right;'><span style='color:{color};font-size:1.35rem;font-weight:700;'>${u['net']:+.2f}</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align:right;opacity:0.65;font-size:0.80rem;'>Net Profit</div>", unsafe_allow_html=True)
 
 # =========================================================================
 # 6. LIVE SQUAD FEED
@@ -1584,7 +1680,7 @@ elif menu_choice == "🔥 Live Squad Feed":
 elif menu_choice == "💬 The Locker Room":
     st.subheader("💬 The Locker Room")
     with st.form("locker_room_chat"):
-        msg_in = st.text_input("Message")
+        msg_in = st.text_input("Message", placeholder="Share your insights...")
         if st.form_submit_button("Post") and msg_in.strip():
             st.session_state.chat_messages.insert(0, {
                 "user": current_user, "text": msg_in.strip(), "time": get_current_et_time().strftime("%I:%M %p ET")
@@ -1596,12 +1692,114 @@ elif menu_choice == "💬 The Locker Room":
         st.write(f"**{m.get('user')}** ({m.get('time')}): {m.get('text')}")
 
 # =========================================================================
-# 8. FEEDBACK & SUPPORT
+# 8. HOW IT WORKS
+# =========================================================================
+elif menu_choice == "💡 How It Works":
+    st.subheader("💡 How It Works: The Comprehensive User Guide")
+    st.markdown("""
+    Welcome to **Flurkstradamus** — the algorithmic sports betting dashboard built for live second-half modeling, positive expectation (+EV) market exploitation, and automated bankroll tracking.
+    
+    ---
+    ### 🔑 Core Features & System Architecture
+    
+    * **📸 Universal Screenshot & Slip Parser**: Upload screenshots from any major sportsbook (DraftKings, FanDuel, BetMGM, Caesars, Kalshi, or Robinhood Derivatives)[cite: 5]. Our multimodal vision engine automatically matches competing teams, wager type, covering spread or total, stake, and payout, automatically grading settled tickets as **Won** without manual entry.
+    * **📊 Bankroll & Telemetry Dashboard**: Complete visibility across your betting portfolio:
+        * **Settled Realized P&L**: Tracks pure cash won, money lost, and net return on investment (ROI).
+        * **Capital at Risk**: Real-time dollar volume of all active, in-flight tickets.
+        * **Probability-Adjusted EV Profit**: True mathematical return calculated from live Bayesian quarter-by-quarter score decay.
+    * **⚡ Single Game Analytics Engine**: Scan full NFL and NCAA slates with live Bayesian pace regression. Tracks scoring momentum, second-half total drift, and ATS cover probabilities across quarters.
+    * **🔗 Multi-Leg Combo Builder**: Scan cross-slate parlay combinations with automated compound true probability modeling and cross-game line cushion optimization.
+    * **🏟️ In-Game War Room**: Click any ticket in your history to enter the live game operations room. View projection drift history, real-time possession clock updates, and dynamically shifting cover odds.
+    * **🛡️ Immutable Slip Protection**: Your risk stake and entered payout amounts are locked at entry and preserved permanently against container restarts.
+    """)
+
+# =========================================================================
+# 9. MODEL METHODOLOGY & MATH (COMPREHENSIVE RESTORED)
+# =========================================================================
+elif menu_choice == "📖 Model Methodology & Math":
+    st.subheader("📖 Flurkstradamus Machine Learning & Mathematical Architecture")
+    st.caption("How our proprietary in-game Bayesian pace models uncover market mispricings.")
+
+    with st.container(border=True):
+        st.markdown("### 🏆 Why Flurkstradamus Outperforms Traditional Sportsbooks")
+        st.write(
+            "Traditional sportsbooks rely heavily on static opening numbers and rigid algorithms that simply divide full-game lines in half "
+            "or adjust lines by flat linear formulas. When unexpected game scripts occur—such as sudden defensive turnovers, torrential weather, "
+            "or fast hurry-up offenses—sportsbook live lines lag behind real pace changes."
+        )
+        st.markdown("""
+        * **Dynamic Tempo Learning:** Flurkstradamus adjusts scoring projections continuously by evaluating drive success, yards per play, and quarter-by-quarter pace deviations rather than relying on stale pre-game consensus.
+        * **Pace-Shock Variance Insulation:** When shootouts or defensive slogs emerge, our engine dynamically widens or compresses standard deviation ($\sigma$) brackets, ensuring bets are never forced back toward bad pre-game numbers.
+        * **Real Value Margins:** The AI compares its derived mathematical probability against implied sportsbook breakeven lines to surface only positive expected value (+EV) tickets.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### ⚙️ How Bets Are Made: The 4-Step Analytical Pipeline")
+        st.markdown("""
+        1. **Live Scoreboard & Odds Ingestion:** Real-time play-by-play telemetry, game clock, and open/current odds lines are pulled directly from live feeds.
+        2. **Bayesian Halftime & Quarter Regression:** Scoring pace is compared against baseline expectations to generate in-game projections for second-half scoring, full-game totals, and adjusted point spread margins.
+        3. **Cumulative Probability Distribution Modeling:** Projections are evaluated against market lines using continuous normal cumulative distributions (CDF) and logistic sigmoid curves to calculate true cover probabilities.
+        4. **Multi-Objective Strategy Filtering:** Bettors select their risk profile (`🛡️ Safe Floor`, `⚖️ Balanced Edge`, or `🚀 High Profit`), and the engine selects the highest-discrepancy lines meeting that objective.
+        """)
+
+    with st.container(border=True):
+        st.markdown("### 📐 Mathematical Formulas & Core Distribution Functions")
+        st.markdown("##### 1. Over/Under Win Expectancy (Gaussian Error Function)")
+        st.write("Over/Under win probabilities are calculated via continuous cumulative normal distributions:")
+        st.latex(r"Z = \frac{\text{Line} - \mu_{\text{in-game}}}{\sigma_{\text{decay}}}")
+        st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right], \quad P(\text{Over}) = 1 - P(\text{Under})")
+
+        st.markdown("##### 2. Point Spread (ATS) Cover Probability")
+        st.write("Point spread cover expectations pass projected score differentials through a logistic sigmoid distribution:")
+        st.latex(r"\Delta_{\text{margin}} = (\text{Home Proj} - \text{Away Proj}) + \text{Line}")
+        st.latex(r"P(\text{Home Cover}) = \frac{1}{1 + e^{-\frac{\Delta_{\text{margin}}}{5.0}}}")
+
+        st.markdown("##### 3. Straight-Up Moneyline Logistic Expectancy")
+        st.write("Calculates straight-up win probability based on projected team scoring volume and historical win-percentage differentials:")
+        st.latex(r"P(\text{Home Win}) = \frac{1}{1 + 10^{-\frac{\Delta_{\text{pts}} + (\text{Win\% Diff} \times 7.0)}{14.5}}}")
+
+        st.markdown("##### 4. Player Anytime Touchdown Scorer Prop Engine")
+        st.write("Touchdown probability models red-zone goal-line rush share ($< 5$ yards), red-zone target volume, and defensive efficiency:")
+        st.latex(r"P(\text{TD}) = 1 - e^{-\left(\lambda_{\text{Team TD}} \times \text{Player Share} \times \text{Defensive Modifier}\right)}")
+
+# =========================================================================
+# 10. ACCOUNT SETTINGS
+# =========================================================================
+elif menu_choice == "⚙️ Account Settings":
+    st.subheader("⚙️ Account Settings & Profile Management")
+    with st.form("account_settings_form"):
+        new_display = st.text_input("Display Name", value=current_user_profile.get("display_name", ""))
+        new_email = st.text_input("Email Address", value=current_user_profile.get("email", ""))
+        new_team = st.text_input("Favorite Team", value=current_user_profile.get("favorite_team", "NFL"))
+        new_avatar = st.text_input("Profile Avatar URL", value=current_user_profile.get("avatar_url", ""))
+        new_bio = st.text_area("Short Bio", value=current_user_profile.get("bio", "Football strategist."))
+        pub_lead = st.toggle("Show My Profile on Public Leaderboard", value=current_user_profile.get("is_public", True))
+        share_fd = st.toggle("Publish My Slips to Live Squad Feed", value=current_user_profile.get("share_feed", True))
+        p_change1 = st.text_input("New Password", type="password")
+        p_change2 = st.text_input("Confirm New Password", type="password")
+
+        if st.form_submit_button("Save Account Settings", use_container_width=True):
+            if new_display.strip(): current_user_profile["display_name"] = new_display.strip()
+            if new_email.strip(): current_user_profile["email"] = new_email.strip()
+            current_user_profile["favorite_team"] = new_team.strip()
+            current_user_profile["avatar_url"] = new_avatar.strip()
+            current_user_profile["bio"] = new_bio.strip()
+            current_user_profile["is_public"] = pub_lead
+            current_user_profile["share_feed"] = share_fd
+            if p_change1 and p_change1 == p_change2 and len(p_change1) >= 4:
+                current_user_profile["password_hash"] = hash_password(p_change1)
+            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+            st.success("Settings updated!")
+            st.rerun()
+
+# =========================================================================
+# 11. FEEDBACK & SUPPORT (AT BOTTOM OF NAV)
 # =========================================================================
 elif menu_choice == "📩 Feedback & Support":
-    st.subheader("📩 Feedback & Support")
+    st.subheader("📩 Feedback, Support & Ticket Desk")
+    st.caption("Submit bug reports, feature suggestions, or account assistance requests directly to the team.")
+
     tab_sub, tab_view = st.tabs(["📝 Submit a Ticket", "📂 My Ticket History"])
-    
     with tab_sub:
         with st.form("new_support_ticket_form"):
             t_category = st.selectbox("Category", ["🐛 Bug Report / Broken Line", "💡 Feature Suggestion", "📸 OCR Vision Parser Issue", "💼 Account Assistance", "💬 General Feedback"])
@@ -1641,19 +1839,7 @@ elif menu_choice == "📩 Feedback & Support":
                         st.info(f"Team Response: {tkt.get('admin_reply')}")
 
 # =========================================================================
-# 9. HOW IT WORKS
-# =========================================================================
-elif menu_choice == "💡 How It Works":
-    st.subheader("💡 How It Works: User Manual")
-    st.markdown("""
-    * **📸 Slip & Contract Vision Parser**: Upload screenshots from any sportsbook (Robinhood, DraftKings, FanDuel, BetMGM, Kalshi) to extract line, direction, stake, and payout without manual entry.
-    * **📊 Bankroll Telemetry**: Realized performance calculates your exact dollar P&L and ROI. Capital at Risk and Expected Profit (EV) show in-flight statistical value.
-    * **⚡ Single Game Engine**: Analyzes in-game scoring momentum, live half-time projections, point spread drift, and touchdown props with active rosters.
-    * **🔗 Multi-Leg Combo Builder**: Compound true probability model with automated cross-game parlay optimization up to 12 legs.
-    """)
-
-# =========================================================================
-# 10. ABOUT THIS APP
+# 12. ABOUT THIS APP (AT BOTTOM OF NAV)
 # =========================================================================
 elif menu_choice == "ℹ️ About Flurkstradamus":
     st.subheader("ℹ️ About Flurkstradamus")
@@ -1671,44 +1857,93 @@ elif menu_choice == "ℹ️ About Flurkstradamus":
         """)
 
 # =========================================================================
-# 11. MODEL METHODOLOGY & MATH
-# =========================================================================
-elif menu_choice == "📖 Model Methodology & Math":
-    st.subheader("📖 Machine Learning Architecture & Core Math")
-    st.latex(r"Z = \frac{\text{Line} - \mu_{\text{in-game}}}{\sigma_{\text{decay}}}")
-    st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
-
-# =========================================================================
-# 12. ACCOUNT SETTINGS
-# =========================================================================
-elif menu_choice == "⚙️ Account Settings":
-    st.subheader("⚙️ Account Settings")
-    with st.form("settings_form"):
-        dname = st.text_input("Display Name", value=current_user_profile.get("display_name", ""))
-        fav_team = st.text_input("Favorite Team", value=current_user_profile.get("favorite_team", "NFL"))
-        if st.form_submit_button("Save Settings"):
-            current_user_profile["display_name"] = dname
-            current_user_profile["favorite_team"] = fav_team
-            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-            st.success("Settings updated!")
-            st.rerun()
-
-# =========================================================================
-# 13. ADMIN CONSOLE
+# 13. ENHANCED COMMISSIONER ADMIN SUITE
 # =========================================================================
 elif menu_choice == "🛡️ Admin" and is_user_admin:
     st.subheader("🛡️ Commissioner Admin Console")
-    st.write(f"Total Users: **{len(st.session_state.user_accounts)}**")
-    
-    for tkt in st.session_state.support_tickets:
-        with st.container(border=True):
-            st.write(f"**[{tkt.get('id')}] {tkt.get('subject')}** by `{tkt.get('user')}`")
-            with st.form(f"reply_{tkt.get('id')}"):
-                reply = st.text_input("Response", value=tkt.get("admin_reply") or "")
-                status_sel = st.selectbox("Status", ["Open", "In Review", "Resolved"], index=0 if tkt.get("status") == "Open" else (1 if tkt.get("status") == "In Review" else 2))
-                if st.form_submit_button("Save Reply"):
-                    tkt["admin_reply"] = reply
-                    tkt["status"] = status_sel
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-                    st.success("Reply saved!")
-                    st.rerun()
+    st.caption("Inspect user activity, audit bet tickets, review search logs, manage accounts, and reply to support tickets.")
+
+    users = st.session_state.user_accounts
+    st.write(f"Total Registered Users: **{len(users)}**")
+
+    tab_admin_users, tab_admin_tickets = st.tabs(["👤 User Accounts & Bet Management", "📩 Inbound Support Tickets"])
+
+    with tab_admin_users:
+        user_list = list(users.keys())
+        selected_u = st.selectbox(
+            "Select User to Inspect Activity & Dossier",
+            options=user_list,
+            format_func=lambda x: f"{users[x].get('display_name', users[x].get('username', x))} (@{x})"
+        )
+
+        if selected_u:
+            u_info = users[selected_u]
+            with st.container(border=True):
+                st.markdown(f"### 👤 User Dossier: **{u_info.get('display_name')}** (`@{selected_u}`)")
+                
+                c_a1, c_a2, c_a3 = st.columns(3)
+                c_a1.write(f"📧 **Email:** `{u_info.get('email', 'N/A')}`\n\n🏈 **Fav Team:** `{u_info.get('favorite_team', 'NFL')}`")
+                c_a2.write(f"🗓️ **Joined:** `{u_info.get('created_at', 'N/A')}`\n\n⏱️ **Last Login:** `{u_info.get('last_login', 'N/A')}`")
+                c_a3.write(f"Status: **{'🚫 BANNED' if u_info.get('is_banned') else '✅ Active'}**\n\nVerified: **{'✅ Yes' if u_info.get('is_verified', True) else '❌ Unverified'}**")
+
+                searches = u_info.get("searches", [])
+                st.markdown("##### 🔍 Recent Searches:")
+                if searches:
+                    st.write(", ".join([f"`{s}`" for s in searches[-15:]]))
+                else:
+                    st.caption("No search queries logged.")
+
+                u_clean = selected_u.lower()
+                u_display_clean = u_info.get("display_name", "").strip().lower()
+                u_bets = [b for b in st.session_state.saved_bets if str(b.get("user", "")).strip().lower() in [u_clean, u_display_clean]]
+                
+                u_won = [b for b in u_bets if b.get("status") == "Won"]
+                u_lost = [b for b in u_bets if b.get("status") == "Lost"]
+                u_profit = sum(float(b.get("locked_profit", float(b.get("payout_dollars", b.get("payout", 0))) - float(b.get("risk_dollars", 0)))) for b in u_won) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
+                
+                p_col1, p_col2, p_col3 = st.columns(3)
+                p_col1.metric("Tickets Placed", len(u_bets))
+                p_col2.metric("Record", f"{len(u_won)}W - {len(u_lost)}L")
+                p_col3.metric("Net P&L", f"${u_profit:+.2f}")
+
+                with st.expander(f"📜 View All Tickets Placed by {u_info.get('display_name')}"):
+                    if not u_bets:
+                        st.info("No tickets locked in yet.")
+                    else:
+                        for ub in u_bets:
+                            st.markdown(f"• **{ub.get('date')}** — `{ub.get('matchup')}`: **{ub.get('bet')}** | Stake: ${float(ub.get('risk_dollars', 10)):.2f} | Status: `{ub.get('status')}`")
+
+                admin_cred = get_admin_credentials()
+                if selected_u != admin_cred["username"].lower():
+                    st.markdown("##### ⚙️ Administrative Actions:")
+                    act1, act2 = st.columns(2)
+                    with act1:
+                        ban_label = "✅ Unban Account" if u_info.get("is_banned") else "🚫 Ban Account"
+                        if st.button(ban_label, key=f"ban_btn_{selected_u}"):
+                            u_info["is_banned"] = not u_info.get("is_banned", False)
+                            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, users, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                            st.rerun()
+                    with act2:
+                        if st.button("🗑️ Delete User Permanently", key=f"del_user_btn_{selected_u}"):
+                            users.pop(selected_u)
+                            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, users, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                            st.rerun()
+
+    with tab_admin_tickets:
+        if not st.session_state.support_tickets:
+            st.info("No support tickets currently pending.")
+        else:
+            for t_idx, tkt in enumerate(st.session_state.support_tickets):
+                with st.container(border=True):
+                    st.write(f"**[{tkt.get('id')}] {tkt.get('subject')}** by `{tkt.get('user')}`")
+                    st.write(f"Category: **{tkt.get('category')}** | Priority: **{tkt.get('priority')}** | Status: **{tkt.get('status')}**")
+                    st.write(tkt.get("description"))
+                    with st.form(f"admin_reply_{tkt.get('id')}"):
+                        reply = st.text_input("Response", value=tkt.get("admin_reply") or "")
+                        status_sel = st.selectbox("Status", ["Open", "In Review", "Resolved"], index=0 if tkt.get("status") == "Open" else (1 if tkt.get("status") == "In Review" else 2))
+                        if st.form_submit_button("Save Reply & Status"):
+                            tkt["admin_reply"] = reply
+                            tkt["status"] = status_sel
+                            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, users, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                            st.success("Reply saved!")
+                            st.rerun()
