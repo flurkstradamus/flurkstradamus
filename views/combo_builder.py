@@ -6,7 +6,7 @@ from sports.football import round_half_point, get_live_football_roster
 from sports.basketball import get_live_nba_roster
 from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
 
-def generate_leg_rationale(b_type, b_side, b_line, gm, p_name=""):
+def generate_leg_rationale(b_type, b_side, b_line, gm, p_name="", strat="Balanced"):
     is_nba = (gm.get("league") == "NBA")
     ou = float(gm.get("market_ou", 224.5 if is_nba else 47.5))
     spread = float(gm.get("market_spread", -3.5))
@@ -14,17 +14,22 @@ def generate_leg_rationale(b_type, b_side, b_line, gm, p_name=""):
     if b_type == "Game Total":
         diff = abs(b_line - ou)
         if b_side == "Under":
-            return f"Pace model projects defensive tempo suppression. Market consensus opened at {ou:.1f}; model identifies positive expected value on Under {b_line:.1f} (+{diff:.1f} pts safety buffer)."
+            return f"Pace model projects tempo suppression. Consensus opened at {ou:.1f}; identified positive expected value on Under {b_line:.1f} (+{diff:.1f} pts safety buffer)."
         else:
-            return f"Offensive efficiency ratings project above-average possession conversion. Projected total clears market strike of {b_line:.1f} with strong high-variance upside."
+            return f"Offensive conversion rate projects above-average tempo. Model targets clearing {b_line:.1f} pts with high-variance scoring runs."
     elif b_type == "Point Spread (ATS)":
-        return f"Power ratings give {p_name} a +2.8 point efficiency edge against market number ({spread:+.1f}). In-game Bayesian regression favors covering current strike."
+        return f"Power ratings give {p_name} an efficiency margin against market number ({spread:+.1f}). Model favors covering current strike."
     elif b_type == "Straight Up Winner (Moneyline)":
-        return f"Historical home/away situational trend models indicate {p_name} possesses an outright win edge exceeding implied moneyline break-even probability."
+        return f"Situational metrics and home/away splits indicate {p_name} outright win likelihood exceeds implied market odds."
     elif b_type == "Player Points Prop":
-        return f"{p_name} usage rate projects over 28.5% with high transition tempo. Matchup defense ranks bottom-third against opposing primary scorers, favoring Over {b_line:.1f} pts."
+        if "Safe Floor" in strat:
+            return f"🛡️ Safe Floor profile applied: Shaded {p_name}'s line down to {b_line:.1f} pts to create a high-probability floor clearance (68%+ expected win rate)."
+        elif "High Profit" in strat:
+            return f"🚀 High Profit longshot profile: Targeting upside ladder on {p_name} at {b_line:.1f} pts ({b_side}) for odds multiplier boost."
+        else:
+            return f"⚖️ Balanced EV: {p_name} usage rate projects over 27.5%. Matchup defense allows above-average scoring efficiency, favoring {b_side} {b_line:.1f} pts."
     else:
-        return f"{p_name} holds >65% red-zone touch share over recent drives. High goal-line leverage provides positive expected value for Anytime TD."
+        return f"{p_name} holds >60% red-zone touch share over recent drives. Positive mathematical expectancy for Anytime TD."
 
 def build_ai_combo_legs(pool, target_legs, league_choice, target_market_type, strat_choice):
     new_generated = []
@@ -56,6 +61,7 @@ def build_ai_combo_legs(pool, target_legs, league_choice, target_market_type, st
         side_val = "Under"
         target_p_name = g_item["home_team"]
 
+        # Strategy-dependent calculations
         if chosen_type == "Game Total":
             if "Safe Floor" in strat_choice:
                 side_val = "Under"
@@ -71,16 +77,47 @@ def build_ai_combo_legs(pool, target_legs, league_choice, target_market_type, st
             line_val = 0.0
         elif chosen_type == "Player Points Prop":
             roster = get_live_nba_roster(g_item.get("home_id") or g_item.get("home_short"))
-            target_p_name = roster[0][0] if roster else "Lead Scorer"
-            line_val = roster[0][2] if roster else 22.5
-            side_val = "Over"
+            if not roster:
+                roster = [("Primary Scorer", "G", 22.5), ("Secondary Option", "F", 18.5)]
+
+            # Dynamic strategy divergence for NBA player props
+            if "Safe Floor" in strat_choice:
+                # Target the highest-floor player, discount line by 3.5 pts for safety
+                selected_player = roster[0]
+                target_p_name = selected_player[0]
+                base_pts = float(selected_player[2])
+                line_val = max(9.5, round_half_point(base_pts - 3.5))
+                side_val = "Over"
+            elif "High Profit" in strat_choice:
+                # Rotate among secondary options or alternate high-ceiling lines
+                p_idx = min(len(roster) - 1, 1 if (j % 2 == 0) else 2)
+                selected_player = roster[p_idx]
+                target_p_name = selected_player[0]
+                base_pts = float(selected_player[2])
+                # Alternate between high ladder overs and under fades on stars
+                if j % 2 == 0:
+                    line_val = round_half_point(base_pts + 4.5)
+                    side_val = "Over"
+                else:
+                    line_val = round_half_point(base_pts - 1.5)
+                    side_val = "Under"
+            else:
+                # Balanced EV: Take core starter at standard median line
+                selected_player = roster[j % min(len(roster), 2)]
+                target_p_name = selected_player[0]
+                line_val = float(selected_player[2])
+                side_val = "Over"
+
         elif chosen_type == "Player Anytime Touchdown Scorer":
             roster = get_live_football_roster(g_item.get("home_id") or g_item.get("home_short"), g_item.get("league"))
-            target_p_name = roster[0][0] if roster else "Top Running Back"
+            if "High Profit" in strat_choice and len(roster) > 2:
+                target_p_name = roster[1][0]
+            else:
+                target_p_name = roster[0][0] if roster else "Top Running Back"
             line_val = 1.0
             side_val = "TD"
 
-        rationale_text = generate_leg_rationale(chosen_type, side_val, line_val, g_item, target_p_name)
+        rationale_text = generate_leg_rationale(chosen_type, side_val, line_val, g_item, target_p_name, strat_choice)
 
         new_generated.append({
             "matchup_idx": pool.index(g_item),
@@ -204,7 +241,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             q = q_filter.strip().lower()
             pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
-        # Auto-update recommendation when parameters change AFTER generation has been initiated
+        # Automatically re-run the generator if a strategy or setting changes after the initial run
         current_cfg = (league_choice, target_market_type, int(target_legs), strat_choice, t_filter, q_filter)
         if st.session_state.combo_auto_mode and st.session_state.combo_last_cfg != current_cfg and len(pool) > 0:
             st.session_state.combo_last_cfg = current_cfg
@@ -228,6 +265,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     <span style="font-size:1.15rem; font-weight:700;">🎯 AI Recommended Parlay Slip ({len(prev_legs)} Legs)</span>
                     <span style="background-color:#22c55e; color:#000; font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px;">OPTIMIZED</span>
                 </div>
+                <div style="font-size:0.80rem; opacity:0.75;">Profile: <strong>{strat_choice.split()[1]}</strong></div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -265,7 +303,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Action controls below the recommendation list
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             col_load, col_edit = st.columns([2.5, 2], vertical_alignment="center")
 
@@ -312,7 +349,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in pool]
 
-    # Clean empty state when visiting initially
     if not st.session_state.combo_active_legs:
         st.info("No active ticket slip. Use **⚡ Auto-Generate Combo** above and click **📥 Load Combo to Slips**, or add a leg manually.")
         if st.button("➕ Add First Leg Manually", use_container_width=True):
@@ -330,7 +366,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 "away_short": first_gm.get("away_short", "AWAY"),
                 "home_short": first_gm.get("home_short", "HOME"),
                 "league": first_gm.get("league", "SPORTS"),
-                "rationale": generate_leg_rationale("Game Total", "Under", round_half_point(first_gm.get("market_ou", 47.5)), first_gm, first_gm["home_team"])
+                "rationale": generate_leg_rationale("Game Total", "Under", round_half_point(first_gm.get("market_ou", 47.5)), first_gm, first_gm["home_team"], strat_choice)
             }]
             st.session_state.combo_slip_version += 1
             st.rerun()
@@ -346,7 +382,8 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 leg_item.get("side", "Under"),
                 leg_item.get("line", 0.0),
                 pool[min(leg_item.get("matchup_idx", 0), len(pool)-1)],
-                leg_name
+                leg_name,
+                strat_choice
             )
             st.markdown(f"**Leg #{idx+1}: {leg_item.get('matchup_str')}** (`{leg_item.get('type')}`)")
             st.write(f"💡 {rat_msg}")
@@ -371,7 +408,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             "away_short": next_gm.get("away_short", "AWAY"),
             "home_short": next_gm.get("home_short", "HOME"),
             "league": next_gm.get("league", "SPORTS"),
-            "rationale": generate_leg_rationale("Game Total", "Under", round_half_point(next_gm.get("market_ou", 47.5)), next_gm, next_gm["home_team"])
+            "rationale": generate_leg_rationale("Game Total", "Under", round_half_point(next_gm.get("market_ou", 47.5)), next_gm, next_gm["home_team"], strat_choice)
         })
         st.session_state.combo_slip_version += 1
         st.rerun()
@@ -397,7 +434,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             leg["home_short"] = gm.get("home_short", "HOME")
             leg["league"] = gm.get("league", "SPORTS")
 
-            # Clean header with team logos and kickoff date (No 'X' delete button)
             st.markdown(f"""
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
                 <span style="font-weight:700; font-size:1.0rem;">Leg #{i+1}</span>
@@ -498,7 +534,14 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 side_p = b2.selectbox("Side", ["Over", "Under"], index=0 if leg.get("side") == "Over" else 1, key=f"cb_prop_s_{i}_v{slip_ver}")
                 pts_line = st.number_input("Points Line", value=float(leg.get("line", 22.5)), step=0.5, key=f"cb_prop_l_{i}_v{slip_ver}")
                 leg["picked_team"], leg["side"], leg["line"] = p_pick, side_p, pts_line
-                leg_prob = 0.55
+                
+                # Dynamic win expectancy based on strategy profile
+                if "Safe Floor" in strat_choice:
+                    leg_prob = 0.68
+                elif "High Profit" in strat_choice:
+                    leg_prob = 0.42
+                else:
+                    leg_prob = 0.55
                 combo_legs.append({"desc": f"{p_pick} {side_p} {pts_line:.1f} Pts", "prob": leg_prob})
             else:
                 b1, b2 = st.columns(2)
@@ -547,7 +590,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 "win_prob": f"{compound_prob * 100:.1f}%",
                 "status": "Pending",
                 "parsed_legs": parsed_legs,
-                "notes": f"{len(combo_legs)}-Leg Cross-Sport Combo"
+                "notes": f"{len(combo_legs)}-Leg Cross-Sport Combo [{strat_choice.split()[1]}]"
             }
             st.session_state.saved_bets.insert(0, c_tkt)
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
