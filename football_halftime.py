@@ -380,7 +380,7 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH MULTI-MODEL FALLBACK & DIAGNOSTICS
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH DYNAMIC MODEL RESOLUTION
 def parse_bet_slip_image(image_bytes):
     gemini_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     
@@ -389,12 +389,13 @@ def parse_bet_slip_image(image_bytes):
 
     b64_img = base64.b64encode(image_bytes).decode("utf-8")
     prompt = """
-    You are an expert sports betting OCR analyzer. Analyze this sports betting slip or event contract screenshot (from Robinhood, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
-    Extract the following data into a strictly valid JSON object:
+    You are an expert sports betting and event contracts OCR parser.
+    Analyze this bet slip or event contract screenshot (Robinhood, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
+    Extract the bet parameters into a strictly valid JSON object:
     {
         "away_team": "string or null (e.g. Delaware, Sam Houston)",
         "home_team": "string or null (e.g. Western Kentucky, Missouri State)",
-        "picked_team": "string or null (team name picked if spread or moneyline)",
+        "picked_team": "string or null (team name chosen if spread or moneyline)",
         "wager_type": "Point Spread" | "Game Total" | "Moneyline" | "Anytime TD",
         "side": "Under" | "Over" | "Spread" | "Moneyline",
         "line": float or null (e.g. 77.5, 33.5, -7.5),
@@ -403,14 +404,14 @@ def parse_bet_slip_image(image_bytes):
         "risk": float or null (amount staked / risked in dollars),
         "is_settled": true if the screenshot indicates a payout, settlement, or won status, else false
     }
-    Rules to follow:
-    1. If the headline says "Over X points Payout" and the pick says "No · Over X", that contract is UNDER X points on Game Total.
-    2. If the pick says "Yes · Over X", that is an OVER X Game Total bet.
+    Rules:
+    1. If the headline says "Over X points Payout" and the pick says "No · Over X", side is "Under", line is X, wager_type is "Game Total".
+    2. If the pick says "Yes · Over X", side is "Over", line is X, wager_type is "Game Total".
     3. If the headline says "Will Team -X.X points win?" or "Team -X.X points Payout", this is a Point Spread bet on that team covering -X.X.
     4. In "Event", extract both competing teams (e.g. "Delaware vs Western Kentucky" -> away_team: "Delaware", home_team: "Western Kentucky").
     5. If profit is present but risk is missing: risk = payout - profit.
     6. If both risk and payout are present: profit = payout - risk.
-    Return ONLY the raw JSON object without markdown fences.
+    Return ONLY raw JSON without markdown formatting.
     """
 
     payload = {
@@ -423,12 +424,16 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    # Try gemini-1.5-flash first, then gemini-2.0-flash
-    models = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
-    last_error = ""
+    # Discover and query active supported multimodal models
+    candidate_endpoints = [
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent"
+    ]
 
-    for model_name in models:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
+    last_error = ""
+    for endpoint_url in candidate_endpoints:
+        url = f"{endpoint_url}?key={gemini_key}"
         try:
             r = requests.post(url, json=payload, timeout=12.0)
             if r.status_code == 200:
@@ -437,11 +442,32 @@ def parse_bet_slip_image(image_bytes):
                 cleaned = re.sub(r"```$", "", cleaned.strip())
                 return json.loads(cleaned), None
             else:
-                last_error = f"{model_name} returned HTTP {r.status_code}: {r.text[:200]}"
+                last_error = f"{r.status_code}: {r.text[:180]}"
         except Exception as e:
-            last_error = f"{model_name} request failed: {str(e)}"
+            last_error = str(e)
 
-    return None, f"Vision API error: {last_error}"
+    # If static candidates fail, query Google's listModels to find the exact available vision model for this key
+    try:
+        list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
+        lr = requests.get(list_url, timeout=5.0)
+        if lr.status_code == 200:
+            available_models = [
+                m["name"] for m in lr.json().get("models", [])
+                if "generateContent" in m.get("supportedGenerationMethods", [])
+            ]
+            for m_name in available_models:
+                if "flash" in m_name or "pro" in m_name:
+                    dyn_url = f"https://generativelanguage.googleapis.com/v1beta/{m_name}:generateContent?key={gemini_key}"
+                    r = requests.post(dyn_url, json=payload, timeout=12.0)
+                    if r.status_code == 200:
+                        txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                        cleaned = re.sub(r"^```json\s*", "", txt.strip())
+                        cleaned = re.sub(r"```$", "", cleaned.strip())
+                        return json.loads(cleaned), None
+    except Exception as e:
+        last_error = f"{last_error} | ListModels fallback failed: {str(e)}"
+
+    return None, f"Could not connect to Gemini models ({last_error}). Please check your API key in Streamlit Secrets."
 
 def match_game_in_pool(away_name, home_name, pool, picked_name=""):
     """Finds the index of a game in pool based on partial team name matches."""
