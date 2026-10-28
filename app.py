@@ -50,25 +50,23 @@ def inject_google_analytics():
 
 inject_google_analytics()
 
-# CSS Layout, Mobile Optimization & Responsive Cards
+# CSS Layout, Mobile Optimization & Compact Card Styling
 st.markdown("""
 <style>
     @media (min-width: 768px) {
         .block-container { 
-            padding-top: 4.5rem !important; 
-            padding-bottom: 3rem !important; 
+            padding-top: 4.0rem !important; 
+            padding-bottom: 2.5rem !important; 
             padding-left: 2.5rem !important; 
             padding-right: 2.5rem !important; 
             max-width: 1200px !important; 
         }
         .dashboard-header-desktop { display: block !important; }
         .dashboard-header-mobile { display: none !important; }
-        .ticket-card-desktop { display: block !important; }
-        .ticket-card-mobile { display: none !important; }
     }
     @media (max-width: 767px) {
         .block-container { 
-            padding-top: 2.2rem !important; 
+            padding-top: 2.0rem !important; 
             padding-bottom: 2rem !important; 
             padding-left: 0.6rem !important; 
             padding-right: 0.6rem !important; 
@@ -80,8 +78,6 @@ st.markdown("""
             font-weight: 700 !important; 
             margin-bottom: 0.3rem !important; 
         }
-        .ticket-card-desktop { display: none !important; }
-        .ticket-card-mobile { display: block !important; }
 
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
             display: grid !important;
@@ -114,7 +110,7 @@ st.markdown("""
     }
     a.header-anchor, a[data-testid="stHeaderAnchor"] { display: none !important; }
     
-    /* ENFORCE STRICT LEFT ALIGNMENT ON ALL SIDEBAR BUTTONS & WRAPPERS */
+    /* Strict left alignment on sidebar */
     section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { 
         gap: 0.25rem !important; 
     }
@@ -148,57 +144,11 @@ st.markdown("""
         width: 100% !important; 
         margin: 0 !important;
     }
-    
-    /* Sidebar user profile button link */
-    div[data-testid="stSidebar"] div[data-testid="stButton"]:has(button[key="sidebar_user_profile_link"]) button {
-        background: transparent !important;
-        border: none !important;
-        padding-left: 4px !important;
-        padding-top: 2px !important;
-        padding-bottom: 2px !important;
-        height: auto !important;
-        min-height: 1.8rem !important;
-    }
-    div[data-testid="stSidebar"] div[data-testid="stButton"]:has(button[key="sidebar_user_profile_link"]) button:hover {
-        background: rgba(255, 255, 255, 0.05) !important;
-        border-radius: 6px !important;
-    }
 
-    .rec-card-box { 
-        border-radius: 10px; 
-        border: 1px solid rgba(255, 255, 255, 0.12); 
-        background: rgba(255, 255, 255, 0.025); 
-        padding: 12px; 
-        margin-bottom: 12px; 
-    }
-    .rec-header-row { 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08); 
-        padding-bottom: 6px; 
-        margin-bottom: 8px; 
-    }
-    .rec-pick-row { 
-        display: flex; 
-        align-items: center; 
-        gap: 8px; 
-        margin-bottom: 8px; 
-    }
-    .badge-roi { 
-        background-color: #22c55e; 
-        color: #000; 
-        font-weight: 800; 
-        font-size: 0.75rem; 
-        padding: 2px 7px; 
-        border-radius: 4px; 
-    }
-    .badge-prob { 
-        background-color: rgba(255, 255, 255, 0.08); 
-        padding: 2px 7px; 
-        border-radius: 4px; 
-        font-weight: 700; 
-        font-size: 0.78rem; 
+    /* Compact container padding for bet cards */
+    div[data-testid="stVerticalBlockBorderWrapper"]:has(.compact-bet-card) {
+        padding: 10px 14px !important;
+        margin-bottom: 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -350,7 +300,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         else:
             live_prob_str = calculate_live_bet_prob(b, live_m)
 
-        live_prob_badge_html = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.78rem;white-space:nowrap;'>🎲 Win: {live_prob_str}</span>"
+        live_prob_badge_html = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.75rem;white-space:nowrap;'>🎲 Win: {live_prob_str}</span>"
 
     if status_val == "Won":
         badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:800;font-size:0.75rem;white-space:nowrap;'>🏆 WON</span>"
@@ -363,7 +313,6 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
 
     user_name = b.get('user', 'Bettor')
 
-    # Common Header Information
     if is_combo:
         header_title_html = f"<span style='font-size:0.95rem;font-weight:700;'>🔗 {len(b.get('parsed_legs', []))}-Leg Parlay</span><span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span>"
     elif live_m:
@@ -386,87 +335,73 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         m_txt = b.get('matchup', 'Matchup')
         header_title_html = f"<strong>{m_txt}</strong> <span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span>"
 
-    header_html = (
-        "<div style='display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:8px;margin-bottom:8px;'>"
-        f"<div style='display:flex;align-items:center;gap:6px;flex-wrap:wrap;'>{header_title_html}</div>"
-        f"<div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>{live_prob_badge_html}{badge_html}</div>"
-        "</div>"
-    )
-
     r_val = float(b.get("risk_dollars", 10.0))
     p_val = float(b.get("payout_dollars", b.get("payout", 19.0)))
     profit_locked = float(b.get("locked_profit", p_val - r_val))
     roi_pct = (profit_locked / max(r_val, 0.01)) * 100
     cat_label = b.get("bet_category", b.get("type", "Single"))
     bet_pick_str = str(b.get("bet", "N/A"))
+    date_str = str(b.get("date", "N/A"))
+    notes_str = f" • <em>{b.get('notes')}</em>" if b.get("notes") else ""
 
     with st.container(border=True):
-        st.markdown(header_html, unsafe_allow_html=True)
+        # Marker for custom CSS padding
+        st.markdown("<div class='compact-bet-card'></div>", unsafe_allow_html=True)
         
-        # 1. DESKTOP VIEW CONTAINER (Class: ticket-card-desktop -> 4-Column Layout)
-        st.markdown("<div class='ticket-card-desktop'>", unsafe_allow_html=True)
-        d_col1, d_col2, d_col3, d_col4 = st.columns([3.5, 3.5, 2.0, 1.2])
-        with d_col1:
-            st.write(f"**Pick:** `{bet_pick_str}`")
-            st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
-        with d_col2:
-            st.write(f"Risk: **${r_val:.2f}** ➔ Payout: **${p_val:.2f}**")
-            st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${profit_locked:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
-        with d_col3:
-            st.caption(f"Type: **{cat_label}**")
-            if b.get("notes"):
-                st.caption(f"*{b.get('notes')}*")
-        with d_col4:
-            if st.button("🏟️ War Room", key=f"open_war_d_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
-                st.session_state.selected_bet_id = b["id"]
-                st.rerun()
-            if can_delete:
-                if st.button("🗑️", key=f"del_ticket_d_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
-                    st.session_state.saved_bets.pop(real_idx)
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-                    st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # 2. MOBILE VIEW CONTAINER (Class: ticket-card-mobile -> Clean Stacked Layout)
+        # Header Row: Matchup on Left, Badges on Right
         st.markdown(f"""
-        <div class="ticket-card-mobile" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-size:0.85rem;opacity:0.7;">Pick</span>
-                <span style="background:rgba(255,255,255,0.06);color:#4ade80;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.9rem;">{bet_pick_str}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-size:0.85rem;opacity:0.7;">Risk ➔ Payout</span>
-                <span style="font-size:0.88rem;font-weight:600;">${r_val:.2f} ➔ <strong style="color:#f8fafc;">${p_val:.2f}</strong></span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-size:0.85rem;opacity:0.7;">Potential Profit</span>
-                <span style="color:#4ade80;font-weight:700;font-size:0.88rem;">+${profit_locked:.2f} (+{roi_pct:.1f}%)</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;opacity:0.65;border-top:1px solid rgba(255,255,255,0.04);padding-top:4px;">
-                <span>Type: {cat_label}</span>
-                <span>Logged: {b.get('date', 'N/A')}</span>
-            </div>
+        <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px; border-bottom:1px solid rgba(255,255,255,0.07); padding-bottom:6px; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">{header_title_html}</div>
+            <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">{live_prob_badge_html}{badge_html}</div>
         </div>
         """, unsafe_allow_html=True)
 
-        # Mobile Buttons (only render inside mobile layout block)
-        st.markdown("<div class='ticket-card-mobile'>", unsafe_allow_html=True)
-        if can_delete:
-            m_btn1, m_btn2 = st.columns([4, 1])
-            with m_btn1:
-                if st.button("🏟️ War Room", key=f"open_war_m_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+        # Content Grid: 3 Data Columns + 1 Button Column
+        c_pick, c_money, c_meta, c_actions = st.columns([3.2, 3.2, 2.4, 1.4], vertical_alignment="center")
+
+        with c_pick:
+            st.markdown(f"""
+            <div style="line-height:1.35;">
+                <div style="font-size:0.75rem; opacity:0.65; text-transform:uppercase; letter-spacing:0.5px;">Pick</div>
+                <div style="font-weight:700; color:#4ade80; font-size:0.92rem; margin-top:2px;">{bet_pick_str}</div>
+                <div style="font-size:0.75rem; opacity:0.6; margin-top:2px;">🗓️ {date_str}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with c_money:
+            st.markdown(f"""
+            <div style="line-height:1.35;">
+                <div style="font-size:0.75rem; opacity:0.65; text-transform:uppercase; letter-spacing:0.5px;">Risk ➔ Payout</div>
+                <div style="font-size:0.88rem; font-weight:600; margin-top:2px;">${r_val:.2f} ➔ <strong>${p_val:.2f}</strong></div>
+                <div style="color:#4ade80; font-weight:700; font-size:0.80rem; margin-top:2px;">+${profit_locked:.2f} (+{roi_pct:.1f}%)</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with c_meta:
+            st.markdown(f"""
+            <div style="line-height:1.35;">
+                <div style="font-size:0.75rem; opacity:0.65; text-transform:uppercase; letter-spacing:0.5px;">Market</div>
+                <div style="font-size:0.82rem; font-weight:600; margin-top:2px;">{cat_label}</div>
+                <div style="font-size:0.74rem; opacity:0.6; margin-top:2px;">{notes_str}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with c_actions:
+            if can_delete:
+                b_c1, b_c2 = st.columns([3, 1], vertical_alignment="center")
+                with b_c1:
+                    if st.button("🏟️ War Room", key=f"open_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                        st.session_state.selected_bet_id = b["id"]
+                        st.rerun()
+                with b_c2:
+                    if st.button("🗑️", key=f"del_ticket_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
+                        st.session_state.saved_bets.pop(real_idx)
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                        st.rerun()
+            else:
+                if st.button("🏟️ War Room", key=f"open_war_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                     st.session_state.selected_bet_id = b["id"]
                     st.rerun()
-            with m_btn2:
-                if st.button("🗑️", key=f"del_ticket_m_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
-                    st.session_state.saved_bets.pop(real_idx)
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-                    st.rerun()
-        else:
-            if st.button("🏟️ War Room", key=f"open_war_m_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
-                st.session_state.selected_bet_id = b["id"]
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
 
 # State initialization
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
