@@ -331,7 +331,36 @@ def calculate_live_bet_prob(bet_obj, live_m):
         return f"{p * 100:.1f}%"
     return bet_obj.get("win_prob", "52.0%")
 
-# TOP-LEVEL RENDER FUNCTION FOR CARDS
+def get_numeric_prob(bet_obj, games_data):
+    """Returns probability as a decimal float (0.0 to 1.0) for EV calculations."""
+    is_combo = (bet_obj.get("bet_category") == "Combo" or "Leg" in bet_obj.get("type", ""))
+    if is_combo:
+        compound_p = 1.0
+        legs_list = bet_obj.get("parsed_legs", [])
+        if not legs_list:
+            raw_str = bet_obj.get("win_prob", "50.0%").replace("%", "").strip()
+            try: return float(raw_str) / 100.0
+            except: return 0.50
+        for l_item in legs_list:
+            m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
+            p_str = calculate_live_bet_prob({
+                "status": bet_obj.get("status"),
+                "target_line": l_item.get("line"),
+                "bet_direction": l_item.get("side"),
+                "bet_category": l_item.get("type"),
+                "picked_team": l_item.get("picked_team"),
+                "win_prob": "65.0%"
+            }, m_g)
+            try: compound_p *= (float(p_str.replace("%", "").strip()) / 100.0)
+            except: compound_p *= 0.50
+        return max(0.001, min(0.999, compound_p))
+    else:
+        live_m = find_game_for_bet(bet_obj, games_data)
+        p_str = calculate_live_bet_prob(bet_obj, live_m)
+        try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
+        except: return 0.50
+
+# Global Card Renderer
 def render_ticket_card(b, real_idx, games_data, can_delete=False):
     status_val = b.get("status", "Pending")
     is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
@@ -349,10 +378,8 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
                 "picked_team": l_item.get("picked_team"),
                 "win_prob": "65.0%"
             }, m_g)
-            try:
-                compound_p *= (float(p_str.replace("%", "")) / 100.0)
-            except Exception:
-                compound_p *= 0.5
+            try: compound_p *= (float(p_str.replace("%", "")) / 100.0)
+            except: compound_p *= 0.5
         live_prob_str = f"{compound_p * 100:.1f}%"
         live_m = None
     else:
@@ -749,10 +776,9 @@ def sync_game_snapshot(game, proj_total, proj_spread):
         }
         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
 
-# Sidebar with Clickable Profile Link
+# Sidebar
 st.sidebar.markdown(f"## 🔮 Flurkstradamus")
 
-# USERNAME LINK TO ACCOUNT SETTINGS
 if st.sidebar.button(f"👤 {current_user} (@{current_user_profile.get('username')})", key="sidebar_user_profile_link", help="View and edit your profile settings"):
     st.session_state.selected_bet_id = None
     st.session_state.active_nav_page = "⚙️ Account Settings"
@@ -839,10 +865,8 @@ if st.session_state.selected_bet_id is not None:
                 "picked_team": l_item.get("picked_team"),
                 "win_prob": "65.0%"
             }, m_g)
-            try:
-                compound_p *= (float(p_str.replace("%", "")) / 100.0)
-            except Exception:
-                compound_p *= 0.5
+            try: compound_p *= (float(p_str.replace("%", "")) / 100.0)
+            except: compound_p *= 0.5
         live_ticket_win_prob = f"{compound_p * 100:.1f}%"
     else:
         live_g = find_game_for_bet(selected_bet, games_data)
@@ -926,11 +950,11 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # =========================================================================
-# 1. MY DASHBOARD
+# 1. MY DASHBOARD (EXPANDED WITH PENDING BET ANALYTICS & PROBABILITY EV)
 # =========================================================================
 if menu_choice == "📊 My Dashboard":
     st.subheader(f"📊 {current_user}'s Personal Betting Dashboard")
-    st.caption("Personal portfolio overview: money won, money lost, ROI, and performance breakdown.")
+    st.caption("Complete portfolio telemetry: settled P&L, live pending stakes, and probability-modeled expected returns.")
 
     curr_user_clean = current_user.strip().lower()
     my_bets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() == curr_user_clean or (curr_user_clean == "flurk" and b.get("user", "").strip().lower() in ["flurk", "admin"])]
@@ -948,6 +972,7 @@ if menu_choice == "📊 My Dashboard":
                 st.session_state.active_nav_page = "🔗 Multi-Leg Combo Builder"
                 st.rerun()
 
+    # Settled metrics
     won_bets = [b for b in my_bets if b.get("status") == "Won"]
     lost_bets = [b for b in my_bets if b.get("status") == "Lost"]
     pending_bets = [b for b in my_bets if b.get("status") == "Pending"]
@@ -959,19 +984,103 @@ if menu_choice == "📊 My Dashboard":
     roi = (net_pl / tot_risk * 100) if tot_risk > 0 else 0.0
     avg_stake = (sum(float(b.get("risk_dollars", 0)) for b in my_bets) / tot_placed) if tot_placed > 0 else 0.0
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("My Bets Placed", tot_placed)
-    k2.metric("Money Won", f"${tot_won_dollars:.2f}")
-    k3.metric("Money Lost", f"${tot_lost_dollars:.2f}")
-    k4.metric("Net P&L", f"${net_pl:+.2f}", delta=f"{roi:+.1f}% ROI")
+    # Advanced Pending Analytics & Probability-Adjusted Value
+    pending_risk_dollars = sum(float(b.get("risk_dollars", 0)) for b in pending_bets)
+    pending_max_profit = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in pending_bets)
+    
+    # Expected Value (Probability-Adjusted Profit)
+    pending_expected_profit = 0.0
+    sum_weighted_prob = 0.0
+    pending_live_count = 0
+    pending_sched_count = 0
 
+    for b in pending_bets:
+        r_amt = float(b.get("risk_dollars", 0))
+        p_amt = float(b.get("payout_dollars", 0))
+        net_win = p_amt - r_amt
+        prob = get_numeric_prob(b, games_data)
+        
+        # EV = (Prob * Profit) - ((1 - Prob) * Risk)
+        ev_ticket = (prob * net_win) - ((1.0 - prob) * r_amt)
+        pending_expected_profit += ev_ticket
+        sum_weighted_prob += (prob * r_amt)
+
+        # Check if currently live
+        m_check = find_game_for_bet(b, games_data)
+        if m_check and m_check.get("state_text") != "pre" and m_check.get("period", 0) > 0 and not m_check.get("completed", False):
+            pending_live_count += 1
+        else:
+            pending_sched_count += 1
+
+    weighted_avg_prob = (sum_weighted_prob / max(pending_risk_dollars, 0.01)) * 100 if pending_risk_dollars > 0 else 0.0
+
+    # SECTION 1: SETTLED PORTFOLIO PERFORMANCE
+    st.markdown("##### 💼 Realized Performance (Settled Slips)")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total Bets Logged", tot_placed, help="All slips created under your profile.")
+    k2.metric("Money Won", f"${tot_won_dollars:.2f}", help="Total net profit from settled winners.")
+    k3.metric("Money Lost", f"${tot_lost_dollars:.2f}", help="Total stake lost on graded losses.")
+    k4.metric("Net Profit / Loss", f"${net_pl:+.2f}", delta=f"{roi:+.1f}% ROI", help="Realized bankroll net profit/loss and return on investment.")
+
+    # SECTION 2: EXPANDED PENDING SLIPS & PROBABILITY-ADJUSTED PROFIT
+    st.markdown("##### ⏳ Active Book & Pending Analytics (In Play & Scheduled)")
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric(
+        "Capital at Risk", 
+        f"${pending_risk_dollars:.2f}", 
+        f"{len(pending_bets)} Slips Active", 
+        help="Total dollars currently staked on open tickets."
+    )
+    p2.metric(
+        "Max Potential Profit", 
+        f"+${pending_max_profit:.2f}", 
+        help="Maximum possible net profit if 100% of your open bets win."
+    )
+    p3.metric(
+        "Expected Profit (EV)", 
+        f"${pending_expected_profit:+.2f}", 
+        delta=f"Prob-Adjusted Return",
+        help="True statistical expected return calculated from real-time live game probabilities minus drawdown risk."
+    )
+    p4.metric(
+        "Portfolio Win Expectancy", 
+        f"{weighted_avg_prob:.1f}%", 
+        f"{pending_live_count} Live | {pending_sched_count} Upcoming",
+        help="Dollar-weighted true win probability across your active tickets."
+    )
+
+    # SECTION 3: WIN RATE & DISCIPLINE
+    st.markdown("##### 📈 Historical Discipline & Records")
     k5, k6, k7, k8 = st.columns(4)
     decided = len(won_bets) + len(lost_bets)
     win_pct = (len(won_bets) / decided * 100) if decided > 0 else 0.0
-    k5.metric("Win Rate", f"{win_pct:.1f}%", f"{len(won_bets)}W - {len(lost_bets)}L")
+    k5.metric("Graded Win Rate", f"{win_pct:.1f}%", f"{len(won_bets)}W - {len(lost_bets)}L")
     k6.metric("Average Stake", f"${avg_stake:.2f}")
-    k7.metric("Pending In Play", len(pending_bets))
-    k8.metric("Active Bets", len(my_bets))
+    k7.metric("Pending In Play", f"{len(pending_bets)} tickets")
+    types_count = {}
+    for b in my_bets:
+        t = b.get("bet_category", b.get("type", "Single"))
+        types_count[t] = types_count.get(t, 0) + 1
+    most_common_type = max(types_count, key=types_count.get) if types_count else "None"
+    k8.metric("Favorite Market", most_common_type)
+
+    st.markdown("---")
+    h1, h2 = st.columns(2)
+    with h1:
+        st.markdown("##### 🚀 Top Winner")
+        if won_bets:
+            best_win = max(won_bets, key=lambda x: float(x.get("payout_dollars", 0)) - float(x.get("risk_dollars", 0)))
+            profit = float(best_win.get("payout_dollars", 0)) - float(best_win.get("risk_dollars", 0))
+            st.success(f"{best_win.get('bet')} on `{best_win.get('matchup')}`\n\nProfit: **+${profit:.2f}** | Return: ${best_win.get('payout_dollars'):.2f}")
+        else:
+            st.info("No graded winning slips yet.")
+    with h2:
+        st.markdown("##### 💀 Toughest Beat")
+        if lost_bets:
+            worst_loss = max(lost_bets, key=lambda x: float(x.get("risk_dollars", 0)))
+            st.error(f"{worst_loss.get('bet')} on `{worst_loss.get('matchup')}`\n\nStake Lost: **-${worst_loss.get('risk_dollars'):.2f}**")
+        else:
+            st.info("No recorded losses.")
 
 # =========================================================================
 # 2. SINGLE GAME ENGINE
@@ -1263,7 +1372,6 @@ elif menu_choice == "⚡ Single Game Engine":
         else:
             strat_candidates = [spread_bets[0], full_totals_bets[0], touchdown_bets[0]]
 
-        # Render AI Cards
         for idx, sc in enumerate(strat_candidates[:3]):
             tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
             st.markdown(f"""
@@ -1719,7 +1827,16 @@ elif menu_choice == "🏆 Leaderboard":
     for b in st.session_state.saved_bets:
         u_raw = b.get("user", "Flurk").strip().lower()
         if u_raw not in user_stats:
-            user_stats[u_raw] = {"name": b.get("user"), "total_bets": 0, "won": 0, "lost": 0, "pending": 0, "net": 0.0, "total_staked": 0.0, "types": {}}
+            user_stats[u_raw] = {
+                "name": b.get("user"),
+                "total_bets": 0,
+                "won": 0,
+                "lost": 0,
+                "pending": 0,
+                "net": 0.0,
+                "total_staked": 0.0,
+                "types": {}
+            }
         user_stats[u_raw]["total_bets"] += 1
         r, p = float(b.get("risk_dollars", 0)), float(b.get("payout_dollars", 0))
         cat = b.get("bet_category", b.get("type", "Single"))
@@ -1885,7 +2002,7 @@ elif menu_choice == "💬 The Locker Room":
 elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
-    * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, and top winners.
+    * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, active capital at risk, and probability-adjusted expected profit.
     * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Model projections, point spreads, anytime touchdown props with guaranteed real player names, and auto-scrolling form loading.
     * **🔗 Multi-Leg Combo Builder**: Scan slates for optimal multi-leg parlay opportunities with compound true win probabilities.
     * **🏟️ In-Game War Room**: Click any single or multi-leg combo ticket in Locked Bets History or Live Squad Feed to evaluate live score updates, all team logos, and live probability chances of winning.
