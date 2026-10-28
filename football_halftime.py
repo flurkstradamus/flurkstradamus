@@ -67,6 +67,13 @@ st.markdown("""
         }
     }
 
+    /* DISABLE HOVER COPY LINK ICONS GLOBALLY */
+    a.header-anchor, a[data-testid="stHeaderAnchor"] {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+
     /* FORCED LEFT ALIGNMENT FOR NAVIGATION BUTTONS */
     section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
         gap: 0.2rem !important;
@@ -274,10 +281,8 @@ def round_half_point(val):
     return round(float(val) * 2.0) / 2.0
 
 def calculate_live_bet_prob(bet_obj, live_m):
-    """Computes exact real-time winning probability percentage for a bet."""
     if not live_m:
         return bet_obj.get("win_prob", "50.0%")
-    
     stat_val = bet_obj.get("status", "Pending")
     is_fin = live_m.get("completed", False) or "final" in live_m.get("status", "").lower()
     if is_fin:
@@ -309,9 +314,7 @@ def calculate_live_bet_prob(bet_obj, live_m):
         diff = margin if bet_obj.get("picked_team") == live_m.get("home_team") else -margin
         p = calculate_spread_prob(diff, t_line, std_dev=5.0)
         return f"{p * 100:.1f}%"
-    elif b_cat == "Anytime TD":
-        return bet_obj.get("win_prob", "52.0%")
-    return bet_obj.get("win_prob", "50.0%")
+    return bet_obj.get("win_prob", "52.0%")
 
 # Session State Keys
 if "logged_in_user" not in st.session_state:
@@ -620,9 +623,7 @@ if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True):
 games_data = get_extended_games(league)
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots)
 
-# =========================================================================
-# WAR ROOM VIEW (WITH LIVE WIN PROBABILITY % ENGINE)
-# =========================================================================
+# WAR ROOM VIEW
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
     if st.button("⬅️ Back to Locked Bets History", use_container_width=True):
@@ -635,7 +636,6 @@ if st.session_state.selected_bet_id is not None:
 
     is_combo = (selected_bet.get("bet_category") == "Combo" or "Leg" in selected_bet.get("type", ""))
     
-    # Calculate live ticket probability
     if is_combo:
         compound_p = 1.0
         legs_list = selected_bet.get("parsed_legs", [])
@@ -667,8 +667,8 @@ if st.session_state.selected_bet_id is not None:
     wm1.metric("Risk", f"${r_val:.2f}")
     wm2.metric("Payout", f"${p_val:.2f}")
     wm3.metric("Profit Potential", f"+${p_val - r_val:.2f}")
-    wm4.metric("Ticket Status", selected_bet.get("status", "Pending"))
-    wm5.metric("🎲 Live Chance to Win", live_ticket_win_prob, help="Continuous real-time calculation of your chances of winning this bet based on live game state, in-game pace decay, and logistic scoring margin models.")
+    wm4.metric("Status", selected_bet.get("status", "Pending"))
+    wm5.metric("🎲 Live Win Prob", live_ticket_win_prob)
 
     if is_combo:
         legs = selected_bet.get("parsed_legs", [])
@@ -697,7 +697,7 @@ if st.session_state.selected_bet_id is not None:
                         </div>
                         <div>
                             <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
-                                Live Leg Win Prob: {leg_live_prob}
+                                Live Win Prob: {leg_live_prob}
                             </span>
                         </div>
                     </div>
@@ -1073,7 +1073,6 @@ elif menu_choice == "⚡ Single Game Engine":
         else:
             strat_candidates = [spread_bets[0], full_totals_bets[0], touchdown_bets[0]]
 
-        # RENDER SUGGESTED CARDS WITH VERIFIED REAL PLAYER NAMES
         for idx, sc in enumerate(strat_candidates[:3]):
             tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
             st.markdown(f"""
@@ -1183,8 +1182,6 @@ elif menu_choice == "⚡ Single Game Engine":
             risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
             mult = applied.get("est_payout_multiplier", 1.91) if applied else 1.91
             payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=round(risk_amt * mult, 2))
-            
-            # Form notes dynamically update based on selections in Section 3
             ticket_notes = st.text_input("Notes", value=dynamic_note, help="Context-rich rationale dynamically updated for this wager.")
 
             if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
@@ -1274,9 +1271,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             active_candidate_games = c_pool
         max_possible_legs = min(12, max(2, len(active_candidate_games)))
 
-        # 1. Target Legs First
         suggest_legs_count = col_strat1.number_input("Target Legs (Up to 12)", min_value=2, max_value=max_possible_legs, value=min(max(len(st.session_state.combo_active_legs), 3), max_possible_legs))
-        # 2. Strategy Objective Second
         strategy_mode = col_strat2.selectbox("Strategy Objective", [
             "🎯 Maximum Win Probability (Safest Floor)",
             "🔥 High Expected Value (+EV Total Edge)",
@@ -1534,17 +1529,26 @@ elif menu_choice == "📜 Locked Bets History":
                         st.rerun()
 
 # =========================================================================
-# 5. LEADERBOARD
+# 5. LEADERBOARD (NO HOVER COPY ICONS & RICH SUMMARY ANALYTICS)
 # =========================================================================
 elif menu_choice == "🏆 Leaderboard":
     st.subheader("🏆 Leaderboard")
-    st.caption("Consensus standings, return on investment, and betting volume.")
+    st.caption("Consensus standings, return on investment, member tenure, and betting volume.")
 
     user_stats = {}
     for b in st.session_state.saved_bets:
         u_raw = b.get("user", "Flurk").strip().lower()
         if u_raw not in user_stats:
-            user_stats[u_raw] = {"name": b.get("user"), "total_bets": 0, "won": 0, "lost": 0, "pending": 0, "net": 0.0, "total_staked": 0.0, "types": {}}
+            user_stats[u_raw] = {
+                "name": b.get("user"),
+                "total_bets": 0,
+                "won": 0,
+                "lost": 0,
+                "pending": 0,
+                "net": 0.0,
+                "total_staked": 0.0,
+                "types": {}
+            }
         user_stats[u_raw]["total_bets"] += 1
         r, p = float(b.get("risk_dollars", 0)), float(b.get("payout_dollars", 0))
         cat = b.get("bet_category", b.get("type", "Single"))
@@ -1568,15 +1572,32 @@ elif menu_choice == "🏆 Leaderboard":
         decided = stat["won"] + stat["lost"]
         win_rate = (stat["won"] / decided * 100) if decided > 0 else 0.0
         roi_val = (stat["net"] / stat["total_staked"] * 100) if stat["total_staked"] > 0 else 0.0
+        fav_market = max(stat["types"], key=stat["types"].get) if stat["types"] else "Single Play"
+        member_since = acc.get("created_at", "N/A")
+
+        # Analytical Bettor Tier Badge
+        if win_rate >= 65.0 and decided >= 3:
+            tier_badge = "🎯 Sniper"
+        elif stat["won"] >= 3 and stat["lost"] == 0:
+            tier_badge = "🔥 On Fire"
+        elif decided > 0:
+            tier_badge = "⚡ Contender"
+        else:
+            tier_badge = "🌱 Rookie"
 
         board.append({
             "name": stat["name"],
-            "online": "🟢 Online" if ("ET" in last_act) else "⚪ Offline",
+            "online": ("ET" in last_act),
             "total_bets": stat["total_bets"],
             "won": stat["won"],
             "lost": stat["lost"],
+            "pending": stat["pending"],
             "win_rate": f"{win_rate:.1f}%",
             "roi": f"{roi_val:+.1f}%",
+            "total_staked": stat["total_staked"],
+            "fav_market": fav_market,
+            "member_since": member_since,
+            "tier_badge": tier_badge,
             "net": stat["net"]
         })
 
@@ -1586,12 +1607,35 @@ elif menu_choice == "🏆 Leaderboard":
     else:
         for idx, u in enumerate(board):
             medal = "🥇" if idx == 0 else ("🥈" if idx == 1 else ("🥉" if idx == 2 else f"#{idx+1}"))
+            status_dot = "🟢 Online" if u["online"] else "⚪ Offline"
+            status_color = "#22c55e" if u["online"] else "#94a3b8"
+
             with st.container(border=True):
                 c1, c2, c3 = st.columns([4, 4, 2])
-                c1.markdown(f"### {medal} **{u['name']}** &nbsp; <span style='font-size:0.8rem;'>{u['online']}</span>", unsafe_allow_html=True)
-                c2.write(f"📊 **{u['won']}W - {u['lost']}L** ({u['win_rate']}) | ROI: **{u['roi']}**")
-                color = "#4ade80" if u['net'] >= 0 else "#f87171"
-                c3.markdown(f"<div style='text-align:right;'><span style='color:{color};font-size:1.4rem;font-weight:700;'>${u['net']:+.2f}</span></div>", unsafe_allow_html=True)
+                
+                with c1:
+                    # Clean div avoids Streamlit heading hover anchor link detection
+                    st.markdown(f"""
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+                        <span style="font-size:1.20rem; font-weight:700;">{medal} {u['name']}</span>
+                        <span style="font-size:0.75rem; font-weight:600; color:{status_color}; background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:12px; user-select:none;">
+                            {status_dot}
+                        </span>
+                        <span style="font-size:0.75rem; font-weight:700; background:rgba(56,189,248,0.12); color:#38bdf8; padding:2px 7px; border-radius:4px;">
+                            {u['tier_badge']}
+                        </span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.caption(f"🗓️ Member Since: **{u['member_since']}** | Top Market: **{u['fav_market']}**")
+
+                with c2:
+                    st.write(f"📊 **{u['won']}W - {u['lost']}L** ({u['win_rate']} Win Rate) | **{u['total_bets']}** Total Slips ({u['pending']} in play)")
+                    st.caption(f"Volume Risked: **${u['total_staked']:.2f}** | Return ROI: **{u['roi']}**")
+
+                with c3:
+                    color = "#4ade80" if u['net'] >= 0 else "#f87171"
+                    st.markdown(f"<div style='text-align:right;'><span style='color:{color};font-size:1.35rem;font-weight:700;'>${u['net']:+.2f}</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align:right;opacity:0.65;font-size:0.80rem;'>Net Profit</div>", unsafe_allow_html=True)
 
 # =========================================================================
 # 6. SQUAD FEED, THE LOCKER ROOM, SETTINGS, HOW IT WORKS, ADMIN
@@ -1731,6 +1775,7 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
             u_lost = [b for b in u_bets if b.get("status") == "Lost"]
             u_profit = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in u_won) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
             
+            st.markdown(f"##### 📊 Betting Portfolio ({len(u_bets)} Tickets Locked In):")
             p_col1, p_col2, p_col3 = st.columns(3)
             p_col1.metric("Tickets Placed", len(u_bets))
             p_col2.metric("Record", f"{len(u_won)}W - {len(u_lost)}L")
