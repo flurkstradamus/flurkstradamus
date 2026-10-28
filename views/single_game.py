@@ -25,7 +25,6 @@ def parse_bet_slip_image(image_bytes):
     if not gemini_key:
         return None, "No GEMINI_API_KEY or GOOGLE_API_KEY found in Streamlit Secrets."
 
-    # Downscale and compress image to avoid payload limits
     try:
         pil_img = Image.open(io.BytesIO(image_bytes))
         if pil_img.mode != "RGB":
@@ -74,21 +73,19 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    # Step A: Dynamically discover active models supported by your API key
     active_models = []
     try:
         models_list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
         list_resp = requests.get(models_list_url, timeout=5.0)
         if list_resp.status_code == 200:
             for m in list_resp.json().get("models", []):
-                m_name = m.get("name", "")  # Format: "models/gemini-..."
+                m_name = m.get("name", "")
                 methods = m.get("supportedGenerationMethods", [])
                 if "generateContent" in methods and "flash" in m_name.lower():
                     active_models.append(m_name)
     except Exception:
         pass
 
-    # Step B: Ensure fallback models are present if model listing is restricted
     if not active_models:
         active_models = [
             "models/gemini-2.0-flash",
@@ -124,7 +121,6 @@ def match_game_in_pool(away_name, home_name, pool, picked_name=""):
     h_target = (home_name or "").lower().strip()
     p_target = (picked_name or "").lower().strip()
 
-    # Match both teams
     for idx, gm in enumerate(pool):
         gm_h = gm["home_team"].lower()
         gm_a = gm["away_team"].lower()
@@ -135,7 +131,6 @@ def match_game_in_pool(away_name, home_name, pool, picked_name=""):
         if h_ok and a_ok and (h_target or a_target):
             return idx
 
-    # Match single team or player
     for idx, gm in enumerate(pool):
         gm_h = gm["home_team"].lower()
         gm_a = gm["away_team"].lower()
@@ -153,6 +148,8 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         st.session_state.single_selected_idx = 0
     if "single_applied_pick" not in st.session_state:
         st.session_state.single_applied_pick = None
+    if "scroll_to_form" not in st.session_state:
+        st.session_state.scroll_to_form = False
 
     form_ver = st.session_state.single_form_version
 
@@ -194,7 +191,6 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                         w_risk = float(parsed_res.get("risk") or max(1.0, w_payout - w_profit))
                         is_settled_flag = parsed_res.get("is_settled", False)
 
-                        # Increment version to force input re-render with new defaults
                         new_v = st.session_state.single_form_version + 1
                         st.session_state.single_form_version = new_v
                         st.session_state.single_selected_idx = matched_idx
@@ -210,15 +206,14 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                             "picked_team": picked_t,
                             "status": "Won" if is_settled_flag else "Pending"
                         }
-                        # Pre-populate specific input keys for Section 3
                         st.session_state[f"in_h_{new_v}"] = home_t
                         st.session_state[f"in_a_{new_v}"] = away_t
                         st.session_state["extracted_banner_msg"] = f"✅ Extracted: {wager_side} {w_line} ({away_t} vs {home_t}) | Risk: ${w_risk:.2f}, Payout: ${w_payout:.2f}"
+                        st.session_state["scroll_to_form"] = True
                         st.rerun()
                     else:
                         st.error(f"❌ Analysis failed: {err_msg}")
 
-    # Display status banner if recently extracted
     if "extracted_banner_msg" in st.session_state and st.session_state["extracted_banner_msg"]:
         st.success(st.session_state["extracted_banner_msg"])
         st.session_state["extracted_banner_msg"] = None
@@ -330,9 +325,28 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                 "category": rec_type, "side": rec_side, "target_line": rec_line,
                 "risk": 10.0, "payout": 19.10, "picked_team": rec_team, "status": "Pending"
             }
+            st.session_state["scroll_to_form"] = True
             st.rerun()
 
     applied = st.session_state.single_applied_pick
+
+    # Anchor point for automatic smooth scrolling
+    st.markdown("<div id='bet-slip-anchor'></div>", unsafe_allow_html=True)
+    if st.session_state.get("scroll_to_form", False):
+        st.session_state["scroll_to_form"] = False
+        import streamlit.components.v1 as components
+        components.html("""
+        <script>
+            setTimeout(function() {
+                const doc = window.parent.document;
+                const el = doc.getElementById('bet-slip-anchor');
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 300);
+        </script>
+        """, height=0)
+
     with st.expander("📝 Section 3: Wager Type & Lock In Bet Slip", expanded=True):
         c1, c2 = st.columns(2)
         home_def = (applied.get("override_home") if applied and applied.get("override_home") else g["home_team"])
