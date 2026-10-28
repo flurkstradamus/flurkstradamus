@@ -32,6 +32,8 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     if "combo_preview_legs" not in st.session_state:
         st.session_state.combo_preview_legs = None
+    if "combo_is_editing" not in st.session_state:
+        st.session_state.combo_is_editing = False
 
     # Top-Level AI Automation & Strategy Controls
     with st.container(border=True):
@@ -45,7 +47,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             key="combo_league_scope_select"
         )
 
-        # Dynamic market options based on league selected
         if league_choice == "NBA":
             market_filter_options = [
                 "⚡ Let the System Pick (Best NBA Discrepancies)",
@@ -80,13 +81,11 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         )
 
         c_sub1, c_sub2 = st.columns(2)
-        
-        current_len = len(st.session_state.combo_active_legs) if st.session_state.combo_active_legs else 3
         target_legs = c_sub1.number_input(
             "Target Number of Legs",
             min_value=2,
             max_value=12,
-            value=max(2, min(current_len, 12)),
+            value=3,
             step=1,
             key="combo_target_legs_num"
         )
@@ -122,7 +121,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
         if q_filter.strip():
             q = q_filter.strip().lower()
-            pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g["home_short"].lower() or q in g["away_short"].lower()]
+            pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
         if col_gen.button("⚡ Auto-Generate Combo", use_container_width=True, disabled=len(pool) == 0):
             new_generated = []
@@ -194,25 +193,36 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 })
 
             st.session_state.combo_preview_legs = new_generated
-            st.session_state.combo_active_legs = new_generated
+            st.session_state.combo_active_legs = list(new_generated)
+            st.session_state.combo_is_editing = False
             st.rerun()
 
-    # --- RESTORED: INTERACTIVE AI RECOMMENDATION PREVIEW (LOGOS + DATES + RATIONALE) ---
+    # --- AI RECOMMENDATION PREVIEW WITH EDIT & SAVE CONTROLS ---
     if st.session_state.combo_preview_legs:
         with st.container(border=True):
             prev_legs = st.session_state.combo_preview_legs
-            st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:12px;">
+            h_col1, h_col2 = st.columns([4, 2], vertical_alignment="center")
+            with h_col1:
+                st.markdown(f"""
                 <div style="display:flex; align-items:center; gap:8px;">
                     <span style="font-size:1.15rem; font-weight:700;">🎯 AI Recommended Parlay Slip ({len(prev_legs)} Legs)</span>
                     <span style="background-color:#22c55e; color:#000; font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px;">OPTIMIZED</span>
                 </div>
-                <div style="font-size:0.80rem; opacity:0.75;">Click ❌ to remove any leg</div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            with h_col2:
+                if not st.session_state.combo_is_editing:
+                    if st.button("✏️ Edit Legs", use_container_width=True, key="btn_start_edit_legs"):
+                        st.session_state.combo_is_editing = True
+                        st.rerun()
+                else:
+                    if st.button("💾 Save & Reload Slip", type="primary", use_container_width=True, key="btn_save_reload_legs"):
+                        st.session_state.combo_is_editing = False
+                        st.session_state.combo_active_legs = list(st.session_state.combo_preview_legs)
+                        st.toast("✅ Parlay slip updated and synchronized!", icon="💾")
+                        st.rerun()
 
             for p_idx, p_leg in enumerate(prev_legs):
-                p_c1, p_c2 = st.columns([5.5, 0.5], vertical_alignment="center")
+                p_c1, p_c2 = st.columns([5.3, 0.7], vertical_alignment="center")
 
                 if p_leg["type"] == "Game Total":
                     leg_pick_text = f"{p_leg['side']} {p_leg['line']:.1f} pts"
@@ -253,16 +263,17 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                             st.caption(f"💡 **Model Edge Insight:** {p_leg['rationale']}")
 
                 with p_c2:
-                    if st.button("❌", key=f"preview_del_{p_idx}", help=f"Remove Leg #{p_idx+1}"):
-                        st.session_state.combo_preview_legs.pop(p_idx)
-                        st.session_state.combo_active_legs = list(st.session_state.combo_preview_legs)
-                        st.rerun()
+                    if st.session_state.combo_is_editing:
+                        if st.button("🗑️", key=f"preview_del_{p_idx}", help=f"Remove Leg #{p_idx+1}"):
+                            st.session_state.combo_preview_legs.pop(p_idx)
+                            st.rerun()
 
             sync_c1, sync_c2 = st.columns([4, 1.5])
-            sync_c1.caption("All changes made in this green preview box automatically update the detailed form below.")
-            if sync_c2.button("🗑️ Clear AI Suggestion", use_container_width=True):
+            sync_c1.caption("Click 'Save & Reload Slip' after removing legs to update your wager below.")
+            if sync_c2.button("Clear Suggestion", use_container_width=True):
                 st.session_state.combo_preview_legs = None
                 st.session_state.combo_active_legs = []
+                st.session_state.combo_is_editing = False
                 st.rerun()
 
     if not pool:
@@ -271,25 +282,28 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in pool]
 
+    # If no legs exist, show empty waiting state with an option to start manually
     if not st.session_state.combo_active_legs:
-        st.session_state.combo_active_legs = []
-        for j in range(min(int(target_legs), len(pool))):
-            gm = pool[j]
-            st.session_state.combo_active_legs.append({
-                "matchup_idx": j,
+        st.info("No active parlay slip. Click **⚡ Auto-Generate Combo** above or add a leg manually below.")
+        if st.button("➕ Add First Leg Manually", use_container_width=True):
+            first_gm = pool[0]
+            st.session_state.combo_active_legs = [{
+                "matchup_idx": 0,
                 "type": "Game Total",
                 "side": "Under",
-                "line": round_half_point(gm.get("market_ou", 47.5)),
-                "picked_team": gm["home_team"],
-                "matchup_str": f"{gm['away_short']} @ {gm['home_short']}",
-                "kickoff": gm.get("kickoff", "Scheduled"),
-                "away_logo": gm.get("away_logo", DEFAULT_LOGO),
-                "home_logo": gm.get("home_logo", DEFAULT_LOGO),
-                "away_short": gm.get("away_short", "AWAY"),
-                "home_short": gm.get("home_short", "HOME"),
-                "league": gm.get("league", "SPORTS"),
-                "rationale": generate_leg_rationale("Game Total", "Under", round_half_point(gm.get("market_ou", 47.5)), gm, gm["home_team"])
-            })
+                "line": round_half_point(first_gm.get("market_ou", 47.5)),
+                "picked_team": first_gm["home_team"],
+                "matchup_str": f"{first_gm['away_short']} @ {first_gm['home_short']}",
+                "kickoff": first_gm.get("kickoff", "Scheduled"),
+                "away_logo": first_gm.get("away_logo", DEFAULT_LOGO),
+                "home_logo": first_gm.get("home_logo", DEFAULT_LOGO),
+                "away_short": first_gm.get("away_short", "AWAY"),
+                "home_short": first_gm.get("home_short", "HOME"),
+                "league": first_gm.get("league", "SPORTS"),
+                "rationale": generate_leg_rationale("Game Total", "Under", round_half_point(first_gm.get("market_ou", 47.5)), first_gm, first_gm["home_team"])
+            }]
+            st.rerun()
+        return
 
     ctrl1, ctrl2, ctrl3 = st.columns([3, 1, 1], vertical_alignment="center")
     ctrl1.markdown(f"#### Active Ticket Slip ({len(st.session_state.combo_active_legs)} Legs)")
@@ -313,9 +327,10 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         })
         st.rerun()
 
-    if ctrl3.button("🗑️ Clear All", use_container_width=True):
+    if ctrl3.button("🗑️ Clear Slip", use_container_width=True):
         st.session_state.combo_active_legs = []
         st.session_state.combo_preview_legs = None
+        st.session_state.combo_is_editing = False
         st.rerun()
 
     combo_legs = []
