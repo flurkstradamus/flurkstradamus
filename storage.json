@@ -1,0 +1,26 @@
+{
+  "saved_bets": [],
+  "chat_messages": [],
+  "user_accounts": {
+    "flurk": {
+      "username": "flurk",
+      "email": "adamflurk@gmail.com",
+      "display_name": "Flurk",
+      "password_hash": "f6ee84c172280d0d8fe47e70ea5bf15b9c24097486f0224256eb281eb081b833",
+      "is_admin": true,
+      "is_banned": false,
+      "created_at": "2026-10-26",
+      "last_login": "2026-10-26 12:00 PM ET",
+      "favorite_team": "NFL",
+      "bio": "Lead strategist and model developer.",
+      "avatar_url": "",
+      "is_public": true,
+      "share_feed": true,
+      "searches": [],
+      "reset_token": null,
+      "session_token": null
+    }
+  },
+  "banned_emails": [],
+  "game_snapshots": {}
+}
