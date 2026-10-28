@@ -18,10 +18,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Professional Mobile-First & Desktop CSS Design System
+# Responsive Desktop + Mobile styling & Bootstrap-style full row stacking
 st.markdown("""
 <style>
-    /* GLOBAL CONTAINER SPACING */
     @media (min-width: 768px) {
         .block-container {
             padding-top: 4.5rem !important;
@@ -38,8 +37,6 @@ st.markdown("""
             padding-left: 0.6rem !important;
             padding-right: 0.6rem !important;
         }
-
-        /* 2-COLUMN KPI METRIC CARDS ON MOBILE */
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
             display: grid !important;
             grid-template-columns: 1fr 1fr !important;
@@ -65,8 +62,6 @@ st.markdown("""
             font-size: 1.3rem !important;
             font-weight: 700 !important;
         }
-
-        /* MOBILE INPUT ZOOM PREVENTION */
         input, select, textarea {
             font-size: 16px !important;
         }
@@ -107,7 +102,6 @@ st.markdown("""
         justify-content: flex-start !important;
     }
 
-    /* CARD STYLING */
     .rec-card-box {
         border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.12);
@@ -153,29 +147,21 @@ st.markdown("""
         font-weight: 700;
         font-size: 0.78rem;
     }
-    .clean-subtext {
-        font-size: 0.85rem !important;
-        color: rgba(255, 255, 255, 0.75) !important;
-        margin-top: 2px !important;
-        display: block !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# CLIENT-SIDE SCRIPTS: AUTO-CLOSE SIDEBAR ON MOBILE & DISMISS KEYBOARD
+# Client-side mobile helpers
 components.html("""
 <script>
     function setupMobileBehaviors() {
         const doc = window.parent.document;
         if (!doc) return;
-
         if (window.parent.innerWidth <= 768) {
             const active = doc.activeElement;
             if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
                 active.blur();
             }
         }
-
         const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
         if (sidebar) {
             const navButtons = sidebar.querySelectorAll('button');
@@ -197,23 +183,42 @@ components.html("""
         }
     }
     setTimeout(setupMobileBehaviors, 300);
-    setTimeout(setupMobileBehaviors, 800);
 </script>
 """, height=0)
 
-STAR_TD_PLAYERS = {
-    "PHI": [("Saquon Barkley", "RB"), ("A.J. Brown", "WR"), ("Jalen Hurts", "QB")],
-    "DAL": [("CeeDee Lamb", "WR"), ("Rico Dowdle", "RB"), ("Jake Ferguson", "TE")],
-    "KC": [("Travis Kelce", "TE"), ("Isiah Pacheco", "RB"), ("Xavier Worthy", "WR")],
-    "BAL": [("Derrick Henry", "RB"), ("Lamar Jackson", "QB"), ("Zay Flowers", "WR")],
-    "BUF": [("Josh Allen", "QB"), ("James Cook", "RB"), ("Khalil Shakir", "WR")],
-    "MIA": [("De'Von Achane", "RB"), ("Tyreek Hill", "WR"), ("Jaylen Waddle", "WR")],
-    "SF": [("Christian McCaffrey", "RB"), ("George Kittle", "TE"), ("Deebo Samuel", "WR")],
-    "DET": [("Jahmyr Gibbs", "RB"), ("David Montgomery", "RB"), ("Amon-Ra St. Brown", "WR")],
-    "GB": [("Josh Jacobs", "RB"), ("Jayden Reed", "WR"), ("Tucker Kraft", "TE")],
+STAR_ROSTER = {
+    "PHI": [("Saquon Barkley", "RB"), ("A.J. Brown", "WR"), ("Jalen Hurts", "QB"), ("DeVonta Smith", "WR")],
+    "DAL": [("CeeDee Lamb", "WR"), ("Rico Dowdle", "RB"), ("Jake Ferguson", "TE"), ("Dak Prescott", "QB")],
+    "CAR": [("Chuba Hubbard", "RB"), ("Diontae Johnson", "WR"), ("Xavier Legette", "WR")],
+    "GB": [("Josh Jacobs", "RB"), ("Jayden Reed", "WR"), ("Tucker Kraft", "TE"), ("Jordan Love", "QB")],
+    "KC": [("Travis Kelce", "TE"), ("Isiah Pacheco", "RB"), ("Xavier Worthy", "WR"), ("Patrick Mahomes", "QB")],
+    "BAL": [("Derrick Henry", "RB"), ("Lamar Jackson", "QB"), ("Zay Flowers", "WR"), ("Mark Andrews", "TE")],
+    "BUF": [("Josh Allen", "QB"), ("James Cook", "RB"), ("Khalil Shakir", "WR"), ("Dalton Kincaid", "TE")],
+    "MIA": [("De'Von Achane", "RB"), ("Tyreek Hill", "WR"), ("Jaylen Waddle", "WR"), ("Raheem Mostert", "RB")],
+    "SF": [("Christian McCaffrey", "RB"), ("George Kittle", "TE"), ("Deebo Samuel", "WR"), ("Jordan Mason", "RB")],
+    "DET": [("Jahmyr Gibbs", "RB"), ("David Montgomery", "RB"), ("Amon-Ra St. Brown", "WR"), ("Sam LaPorta", "TE")],
     "MIN": [("Justin Jefferson", "WR"), ("Aaron Jones", "RB"), ("Jordan Addison", "WR")],
-    "CIN": [("Ja'Marr Chase", "WR"), ("Chase Brown", "RB"), ("Tee Higgins", "WR")],
-    "HOU": [("Joe Mixon", "RB"), ("Nico Collins", "WR"), ("Stefon Diggs", "WR")],
+    "CIN": [("Ja'Marr Chase", "WR"), ("Chase Brown", "RB"), ("Tee Higgins", "WR"), ("Zack Moss", "RB")],
+    "HOU": [("Joe Mixon", "RB"), ("Nico Collins", "WR"), ("Stefon Diggs", "WR"), ("Tank Dell", "WR")],
+    "NYG": [("Tyrone Tracy Jr.", "RB"), ("Malik Nabers", "WR"), ("Wan'Dale Robinson", "WR")],
+    "WAS": [("Brian Robinson Jr.", "RB"), ("Jayden Daniels", "QB"), ("Terry McLaurin", "WR")],
+    "CHI": [("D'Andre Swift", "RB"), ("DJ Moore", "WR"), ("Rome Odunze", "WR"), ("Caleb Williams", "QB")],
+    "ATL": [("Bijan Robinson", "RB"), ("Drake London", "WR"), ("Kyle Pitts", "TE"), ("Tyler Allgeier", "RB")],
+    "NO": [("Alvin Kamara", "RB"), ("Chris Olave", "WR"), ("Rashid Shaheed", "WR")],
+    "TB": [("Bucky Irving", "RB"), ("Rachaad White", "RB"), ("Mike Evans", "WR"), ("Chris Godwin", "WR")],
+    "LAR": [("Kyren Williams", "RB"), ("Cooper Kupp", "WR"), ("Puka Nacua", "WR")],
+    "SEA": [("Kenneth Walker III", "RB"), ("DK Metcalf", "WR"), ("Jaxon Smith-Njigba", "WR")],
+    "ARI": [("James Conner", "RB"), ("Marvin Harrison Jr.", "WR"), ("Kyler Murray", "QB"), ("Trey McBride", "TE")],
+    "DEN": [("Javonte Williams", "RB"), ("Courtland Sutton", "WR"), ("Bo Nix", "QB")],
+    "LV": [("Alexander Mattison", "RB"), ("Jakobi Meyers", "WR"), ("Brock Bowers", "TE")],
+    "LAC": [("J.K. Dobbins", "RB"), ("Ladd McConkey", "WR"), ("Justin Herbert", "QB")],
+    "IND": [("Jonathan Taylor", "RB"), ("Michael Pittman Jr.", "WR"), ("Anthony Richardson", "QB")],
+    "JAX": [("Travis Etienne Jr.", "RB"), ("Brian Thomas Jr.", "WR"), ("Evan Engram", "TE")],
+    "TEN": [("Tony Pollard", "RB"), ("Calvin Ridley", "WR"), ("Tyjae Spears", "RB")],
+    "NYJ": [("Breece Hall", "RB"), ("Garrett Wilson", "WR"), ("Davante Adams", "WR")],
+    "NE": [("Rhamondre Stevenson", "RB"), ("Hunter Henry", "TE"), ("DeMario Douglas", "WR")],
+    "CLE": [("Nick Chubb", "RB"), ("Jerry Jeudy", "WR"), ("David Njoku", "TE")],
+    "PIT": [("Najee Harris", "RB"), ("George Pickens", "WR"), ("Jaylen Warren", "RB")],
     "ALA": [("Jalen Milroe", "QB"), ("Jam Miller", "RB"), ("Ryan Williams", "WR")],
     "UGA": [("Trevor Etienne", "RB"), ("Dillon Bell", "WR"), ("Dominic Lovett", "WR")],
     "OSU": [("Quinshon Judkins", "RB"), ("TreVeyon Henderson", "RB"), ("Jeremiah Smith", "WR")],
@@ -222,14 +227,15 @@ STAR_TD_PLAYERS = {
     "ORE": [("Jordan James", "RB"), ("Tez Johnson", "WR"), ("Dillon Gabriel", "QB")]
 }
 
-def get_star_scorers_for_team(abbr, team_name):
-    clean_a = abbr.upper()
-    if clean_a in STAR_TD_PLAYERS:
-        return STAR_TD_PLAYERS[clean_a]
-    for key, players in STAR_TD_PLAYERS.items():
-        if key in clean_a or key in team_name.upper():
-            return players
-    return [("Lead Starting RB", "RB"), ("Primary WR1", "WR"), ("Red Zone TE", "TE")]
+def get_real_players_for_team(team_abbr, team_name):
+    clean_a = team_abbr.strip().upper()
+    if clean_a in STAR_ROSTER:
+        return STAR_ROSTER[clean_a]
+    for k, v in STAR_ROSTER.items():
+        if k in clean_a or k in team_name.upper():
+            return v
+    city = team_name.split()[0] if team_name else "Team"
+    return [(f"{city} Lead RB", "RB"), (f"{city} WR1", "WR"), (f"{city} Starting TE", "TE")]
 
 def get_current_et_time():
     utc_now = datetime.utcnow()
@@ -258,7 +264,7 @@ def format_espn_kickoff(date_str, fallback_status):
 def round_half_point(val):
     return round(float(val) * 2.0) / 2.0
 
-# Session Initializations
+# Session State Keys
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 if "selected_bet_id" not in st.session_state:
@@ -280,7 +286,7 @@ if "selected_admin_user" not in st.session_state:
 if "scroll_to_form" not in st.session_state:
     st.session_state.scroll_to_form = False
 
-# Single Game State Keys
+# Form state
 if "single_selected_idx" not in st.session_state:
     st.session_state.single_selected_idx = 0
 if "single_applied_pick" not in st.session_state:
@@ -288,7 +294,7 @@ if "single_applied_pick" not in st.session_state:
 if "single_form_version" not in st.session_state:
     st.session_state.single_form_version = 0
 
-# Load Database
+# Database Load
 b_data, c_data, u_data, banned_emails_data, game_snapshots_data = load_storage()
 if "saved_bets" not in st.session_state:
     st.session_state.saved_bets = b_data
@@ -301,7 +307,7 @@ if "banned_emails" not in st.session_state:
 if "game_snapshots" not in st.session_state:
     st.session_state.game_snapshots = game_snapshots_data
 
-# Persistent browser session
+# URL token persistence
 query_params = st.query_params
 if st.session_state.logged_in_user is None:
     token_in_url = query_params.get("session_token")
@@ -311,79 +317,52 @@ if st.session_state.logged_in_user is None:
                 st.session_state.logged_in_user = u_obj
                 break
 
-# Authentication Portal
+# Authentication Gateway
 if st.session_state.logged_in_user is None:
     st.title("🔮 Flurkstradamus")
     st.caption("Sign in, create an account, or recover your password.")
-    
     tab_login, tab_signup, tab_forgot = st.tabs(["🔐 Sign In", "📝 Create Account", "🔑 Forgot Password"])
     
     with tab_login:
         with st.form("user_login_form"):
-            uname = st.text_input("Username or Email", placeholder="e.g. sharpbettor or email@domain.com").strip().lower()
+            uname = st.text_input("Username or Email", placeholder="sharpbettor").strip().lower()
             pword = st.text_input("Password", type="password", placeholder="••••••••")
-            submit_login = st.form_submit_button("Sign In to Flurkstradamus", use_container_width=True)
-            
+            submit_login = st.form_submit_button("Sign In", use_container_width=True)
             if submit_login:
-                matched_user = None
-                for u_k, u_v in st.session_state.user_accounts.items():
-                    if u_k.lower() == uname or u_v.get("email", "").lower() == uname:
-                        matched_user = u_v
-                        break
-
-                if matched_user:
-                    if matched_user.get("is_banned", False):
-                        st.error("This account has been banned by the administrator.")
-                    elif matched_user.get("password_hash") == hash_password(pword):
-                        if not matched_user.get("session_token"):
-                            matched_user["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
-                        matched_user["last_login"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                        st.query_params["session_token"] = matched_user["session_token"]
-                        st.session_state.logged_in_user = matched_user
-                        st.success(f"Welcome back, {matched_user.get('display_name')}!")
-                        st.rerun()
-                    else:
-                        st.error("Incorrect password.")
+                matched_user = next((u_v for u_k, u_v in st.session_state.user_accounts.items() if u_k.lower() == uname or u_v.get("email", "").lower() == uname), None)
+                if matched_user and matched_user.get("password_hash") == hash_password(pword) and not matched_user.get("is_banned"):
+                    if not matched_user.get("session_token"):
+                        matched_user["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
+                    matched_user["last_login"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
+                    st.query_params["session_token"] = matched_user["session_token"]
+                    st.session_state.logged_in_user = matched_user
+                    st.rerun()
                 else:
-                    st.error("Account not found.")
+                    st.error("Invalid credentials or banned account.")
                     
     with tab_signup:
         with st.form("user_signup_form"):
-            new_uname = st.text_input("Choose Username (Login ID)", placeholder="e.g. gridiron_guru").strip().lower()
-            new_email = st.text_input("Email Address", placeholder="e.g. bettor@example.com").strip().lower()
-            new_dname = st.text_input("Display Name", placeholder="e.g. Gridiron Guru")
-            new_pword = st.text_input("Choose Password", type="password", placeholder="••••••••")
-            new_pword_confirm = st.text_input("Confirm Password", type="password", placeholder="••••••••")
-            fav_team = st.text_input("Favorite Team (Optional)", placeholder="e.g. Philadelphia Eagles")
-            submit_signup = st.form_submit_button("Create My Account", use_container_width=True)
-            
-            if submit_signup:
-                if not new_uname or not new_email or not new_pword or not new_dname:
-                    st.error("Username, email, display name, and password are all required.")
-                elif "@" not in new_email or "." not in new_email:
-                    st.error("Please provide a valid email address.")
-                elif new_email in st.session_state.banned_emails:
-                    st.error("This email address has been banned.")
-                elif len(new_uname) < 3:
-                    st.error("Username must be at least 3 characters.")
-                elif new_pword != new_pword_confirm:
-                    st.error("Passwords do not match.")
-                elif new_uname in st.session_state.user_accounts:
-                    st.error("This username is taken.")
-                else:
+            new_uname = st.text_input("Username", placeholder="gridiron_guru").strip().lower()
+            new_email = st.text_input("Email", placeholder="bettor@example.com").strip().lower()
+            new_dname = st.text_input("Display Name", placeholder="Gridiron Guru")
+            new_pword = st.text_input("Password", type="password")
+            new_pword_confirm = st.text_input("Confirm Password", type="password")
+            fav_team = st.text_input("Favorite Team (Optional)", placeholder="Philadelphia Eagles")
+            if st.form_submit_button("Create My Account", use_container_width=True):
+                if new_uname and new_email and new_pword == new_pword_confirm and len(new_pword) >= 4:
                     new_token = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
                     new_user = {
                         "username": new_uname,
                         "email": new_email,
-                        "display_name": new_dname.strip(),
+                        "display_name": new_dname or new_uname,
                         "password_hash": hash_password(new_pword),
                         "is_admin": False,
                         "is_banned": False,
                         "created_at": get_current_et_time().strftime("%Y-%m-%d"),
                         "last_login": get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET"),
-                        "favorite_team": fav_team.strip() if fav_team else "NFL",
-                        "bio": "Football strategist and value seeker.",
+                        "favorite_team": fav_team or "NFL",
+                        "bio": "Bettor.",
                         "avatar_url": "",
                         "is_public": True,
                         "share_feed": True,
@@ -395,55 +374,36 @@ if st.session_state.logged_in_user is None:
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                     st.query_params["session_token"] = new_token
                     st.session_state.logged_in_user = new_user
-                    st.success("Account created successfully!")
                     st.rerun()
+                else:
+                    st.error("Please fill all required fields and verify password.")
 
     with tab_forgot:
-        st.markdown("#### 🔑 Password Recovery")
         with st.form("request_reset_form"):
-            recover_email = st.text_input("Registered Email Address", placeholder="user@example.com").strip().lower()
+            recover_email = st.text_input("Registered Email").strip().lower()
             if st.form_submit_button("Request Reset Code", use_container_width=True):
                 target_user = next((u for u in st.session_state.user_accounts.values() if u.get("email", "").lower() == recover_email), None)
                 if target_user:
                     token = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
                     target_user["reset_token"] = token
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                    st.success(f"✅ Recovery Code Generated: **`{token}`**")
+                    st.success(f"Recovery Code: **`{token}`**")
                 else:
-                    st.error("No account found with that email address.")
-
-        with st.form("complete_reset_form"):
-            c_email = st.text_input("Confirm Your Email").strip().lower()
-            code_input = st.text_input("6-Character Reset Code").strip().upper()
-            new_pass1 = st.text_input("New Password", type="password")
-            new_pass2 = st.text_input("Confirm New Password", type="password")
-            if st.form_submit_button("Update Password", use_container_width=True):
-                target_user = next((u for u in st.session_state.user_accounts.values() if u.get("email", "").lower() == c_email), None)
-                if target_user and target_user.get("reset_token") == code_input and new_pass1 == new_pass2 and len(new_pass1) >= 4:
-                    target_user["password_hash"] = hash_password(new_pass1)
-                    target_user["reset_token"] = None
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                    st.success("🎉 Password updated! Please sign in.")
-                else:
-                    st.error("Invalid reset code or password mismatch.")
+                    st.error("Account not found.")
     st.stop()
 
-# Active User Context
+# Active Context
 current_user_profile = st.session_state.logged_in_user
 active_uname = current_user_profile.get("username", "").strip().lower()
 current_user = "Flurk" if active_uname == "flurk" else current_user_profile.get("display_name", current_user_profile.get("username", "Bettor"))
 is_user_admin = current_user_profile.get("is_admin", False)
-
 current_user_profile["last_active"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
 
-# =========================================================================
-# LIVE SCHEDULE INGESTION (RANGE-BASED, STRICTLY MATCHES ROBINHOOD/SPORTSBOOKS)
-# =========================================================================
+# ESPN Ingestion
 @st.cache_data(ttl=30)
 def get_extended_games(selected_league="All Games"):
     all_games = []
     seen_ids = set()
-    
     now_et = get_current_et_time()
     
     date_queries = [""]
@@ -553,7 +513,7 @@ def sync_game_snapshot(game, proj_total, proj_spread):
         }
         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
 
-# Sidebar UI
+# Sidebar
 st.sidebar.markdown(f"## 🔮 Flurkstradamus")
 st.sidebar.markdown(f"👤 **{current_user}** (`@{current_user_profile.get('username')}`)")
 if current_user_profile.get("favorite_team"):
@@ -561,7 +521,7 @@ if current_user_profile.get("favorite_team"):
 
 col_u1, _ = st.sidebar.columns(2)
 with col_u1:
-    if st.button("🚪 Logout", key="logout_btn", use_container_width=True, help="End your session and clear saved tokens."):
+    if st.button("🚪 Logout", key="logout_btn", use_container_width=True):
         st.session_state.logged_in_user = None
         st.query_params.clear()
         st.rerun()
@@ -595,10 +555,10 @@ for label, page_key in nav_items:
 menu_choice = st.session_state.active_nav_page
 
 st.sidebar.markdown("---")
-league = st.sidebar.radio("Primary League", ["NFL", "NCAA Football", "All Games"], help="Filter scoreboard feeds between Pro, College, or all games combined.")
-auto_refresh = st.sidebar.toggle("Auto-Refresh Live Scores", value=True, help="Sync live ESPN scoreboards every 15 seconds.")
+league = st.sidebar.radio("Primary League", ["NFL", "NCAA Football", "All Games"])
+auto_refresh = st.sidebar.toggle("Auto-Refresh Live Scores", value=True)
 refresh_interval = st.sidebar.slider("Interval (seconds)", 10, 60, 15, 5)
-if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True, help="Force refresh live lines and scores immediately."):
+if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True):
     st.cache_data.clear()
     b_data, c_data, u_data, b_e_data, g_s_data = load_storage()
     st.session_state.saved_bets = b_data
@@ -611,21 +571,20 @@ if st.sidebar.button("🔄 Manual Scoreboard Sync", use_container_width=True, he
 games_data = get_extended_games(league)
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots)
 
-# WAR ROOM ROUTE
+# WAR ROOM VIEW
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
-    
     if st.button("⬅️ Back to Locked Bets History", use_container_width=True):
         st.session_state.selected_bet_id = None
         st.rerun()
 
     if selected_bet is None:
-        st.error("Selected ticket could not be found.")
+        st.error("Ticket not found.")
         st.stop()
 
     is_combo = (selected_bet.get("bet_category") == "Combo" or "Leg" in selected_bet.get("type", ""))
     st.title(f"🏟️ War Room: {selected_bet.get('matchup', 'Football Ticket')}")
-    st.caption(f"Bettor: **{selected_bet.get('user', 'Flurk')}** | Pick: `{selected_bet['bet']}` | Logged: {selected_bet.get('date', 'N/A')} | Status: `{selected_bet.get('status')}`")
+    st.caption(f"Pick: `{selected_bet['bet']}` | Status: `{selected_bet.get('status')}`")
 
     wm1, wm2, wm3, wm4 = st.columns(4)
     r_val = float(selected_bet.get('risk_dollars', 10.0))
@@ -633,112 +592,60 @@ if st.session_state.selected_bet_id is not None:
     wm1.metric("Risk", f"${r_val:.2f}")
     wm2.metric("Payout", f"${p_val:.2f}")
     wm3.metric("Profit Potential", f"+${p_val - r_val:.2f}")
-    wm4.metric("Live Ticket Status", selected_bet.get("status", "Pending"))
+    wm4.metric("Status", selected_bet.get("status", "Pending"))
 
     if is_combo:
-        st.markdown("### 📋 Multi-Leg Parlay Breakdown (All Teams & Logos)")
-        st.caption("Game-by-game live scoreboard tracking, team logos, and quarter projection evolution:")
         legs = selected_bet.get("parsed_legs", [])
-        
-        if not legs:
-            st.info("Parsed leg data not stored for older tickets.")
-        else:
-            for l_idx, leg in enumerate(legs):
-                leg_matchup = leg.get("matchup", "")
-                m_g = find_game_for_bet({"matchup": leg_matchup}, games_data)
-                
-                with st.container(border=True):
-                    if m_g:
-                        col_lg1, col_lg2 = st.columns([7, 3])
-                        with col_lg1:
-                            st.markdown(f"""
-                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-                                <span style="background-color:#38bdf8; color:#000; font-weight:800; font-size:0.75rem; padding:2px 7px; border-radius:4px;">LEG {l_idx+1}</span>
-                                <img src="{m_g['away_logo']}" width="26" height="26" style="border-radius:50%;">
-                                <strong style="font-size:1.0rem;">{m_g['away_short']}</strong> @
-                                <img src="{m_g['home_logo']}" width="26" height="26" style="border-radius:50%;">
-                                <strong style="font-size:1.0rem;">{m_g['home_short']}</strong>
-                                <span style="opacity:0.6; font-size:0.85rem;">({m_g.get('kickoff', m_g['status'])})</span>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        with col_lg2:
-                            st.markdown(f"<div style='text-align:right;'><strong style='color:#4ade80;'>{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}</strong></div>", unsafe_allow_html=True)
-
-                        lc1, lc2, lc3 = st.columns([2, 1, 2])
-                        lc1.metric(f"Away ({m_g['away_short']})", m_g['away_score'])
-                        lc2.write(f"**Status:** {m_g['status']}\n\nClock: `{m_g.get('displayClock', 'Live')}`")
-                        lc3.metric(f"Home ({m_g['home_short']})", m_g['home_score'])
-                        
-                        gid = m_g["id"]
-                        snap = st.session_state.game_snapshots.get(gid)
-                        if snap and "stages" in snap:
-                            st.markdown("##### 📈 Projection Evolution (Initial vs In-Game Shifts)")
-                            t_rows = []
-                            for stg, s_val in snap["stages"].items():
-                                t_rows.append({
-                                    "Stage": stg,
-                                    "Score": f"{s_val['away_score']} - {s_val['home_score']}",
-                                    "Projected Total": f"{s_val['proj_total']} pts",
-                                    "Total Shift": f"{s_val['proj_total'] - snap['open_ou']:+.1f} pts",
-                                    "Projected Spread Margin": f"{s_val['proj_spread']:+.1f} pts"
-                                })
-                            st.table(t_rows)
-                    else:
-                        st.markdown(f"#### Leg {l_idx+1}: **{leg_matchup}**")
-                        st.write(f"**Pick:** `{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}` ({leg.get('type')})")
-                        st.caption("Scoreboard feed for this leg is scheduled or inactive.")
-
-                    st.markdown("##### 💡 Strategic Insights & What to Watch:")
-                    st.write(f"• **Why Suggested:** High compound equity model selected `{leg.get('side', '')} {leg.get('line', '')}` based on opening defensive pace ratings.")
-                    st.write("• **What to Watch For:** Monitor third-quarter turnover margins and clock-bleed drives. If point pacing stalls, hedge opportunity opens up on live totals.")
-
+        for l_idx, leg in enumerate(legs):
+            leg_matchup = leg.get("matchup", "")
+            m_g = find_game_for_bet({"matchup": leg_matchup}, games_data)
+            with st.container(border=True):
+                if m_g:
+                    st.markdown(f"""
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="background-color:#38bdf8; color:#000; font-weight:800; font-size:0.75rem; padding:2px 7px; border-radius:4px;">LEG {l_idx+1}</span>
+                        <img src="{m_g['away_logo']}" width="22" height="22" style="border-radius:50%;">
+                        <strong>{m_g['away_short']}</strong> @
+                        <img src="{m_g['home_logo']}" width="22" height="22" style="border-radius:50%;">
+                        <strong>{m_g['home_short']}</strong>
+                        <span style="opacity:0.6; font-size:0.8rem;">({m_g.get('kickoff', m_g['status'])})</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.write(f"**Pick:** `{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}`")
+                    lc1, lc2, lc3 = st.columns(3)
+                    lc1.metric(f"{m_g['away_short']} Score", m_g['away_score'])
+                    lc2.metric("Clock", m_g.get('displayClock', m_g['status']))
+                    lc3.metric(f"{m_g['home_short']} Score", m_g['home_score'])
+                else:
+                    st.markdown(f"#### Leg {l_idx+1}: **{leg_matchup}**")
+                    st.write(f"**Pick:** `{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}`")
     else:
         live_game_info = find_game_for_bet(selected_bet, games_data)
         if live_game_info:
-            with st.container(border=True):
-                col_s1, col_s2, col_s3 = st.columns([2, 1, 2])
-                with col_s1:
-                    st.image(live_game_info["away_logo"], width=45)
-                    st.markdown(f"**{live_game_info['away_short']}**\n# **{live_game_info['away_score']}**")
-                with col_s2:
-                    st.caption(f"{live_game_info.get('kickoff', live_game_info['status'])}")
-                    st.caption(f"Clock: `{live_game_info.get('displayClock', 'Live')}`")
-                with col_s3:
-                    st.image(live_game_info["home_logo"], width=45)
-                    st.markdown(f"**{live_game_info['home_short']}**\n# **{live_game_info['home_score']}**")
+            c1, c2, c3 = st.columns([2, 1, 2])
+            c1.image(live_game_info["away_logo"], width=45)
+            c1.metric(live_game_info['away_short'], live_game_info['away_score'])
+            c2.metric("Clock", live_game_info.get('displayClock', live_game_info['status']))
+            c3.image(live_game_info["home_logo"], width=45)
+            c3.metric(live_game_info['home_short'], live_game_info['home_score'])
 
             gid = live_game_info["id"]
             snap = st.session_state.game_snapshots.get(gid)
-
-            st.markdown("### 📈 Projection Evolution & Drift Timeline")
-            st.caption("Machine-learning trajectory: how projections adapted as quarter scores evolved:")
-
-            timeline_data = []
             if snap and "stages" in snap:
+                st.markdown("##### 📈 Projection Evolution")
+                t_rows = []
                 for stg, s_val in snap["stages"].items():
-                    timeline_data.append({
-                        "Stage / Period": stg,
-                        "Live Score": f"{s_val['away_score']} - {s_val['home_score']} ({s_val['total_pts']} pts)",
-                        "Projected Full Total": f"{s_val['proj_total']} pts",
-                        "Total Drift vs Open": f"{s_val['proj_total'] - snap['open_ou']:+.1f} pts",
-                        "Projected Spread Margin": f"{s_val['proj_spread']:+.1f} pts",
-                        "Logged At": s_val["timestamp"]
+                    t_rows.append({
+                        "Stage": stg,
+                        "Score": f"{s_val['away_score']} - {s_val['home_score']}",
+                        "Projected Total": f"{s_val['proj_total']} pts",
+                        "Total Drift": f"{s_val['proj_total'] - snap['open_ou']:+.1f} pts"
                     })
-            
-            if timeline_data:
-                st.table(timeline_data)
-            else:
-                st.info("Live checkpoints will record as the matchup transitions between Pre-Game, Q1, Halftime, and Q3.")
-
-            st.markdown("### 💡 Game Script Intelligence:")
-            st.write(f"• **Model Rationale:** Ticket locked with initial probability expectation of **{selected_bet.get('win_prob', 'N/A')}**.")
-            st.write("• **Live Tactical Edge:** Watch for hurry-up packages and red zone turnover variance.")
-        else:
-            st.warning("Live scoreboard feed for this matchup is currently inactive.")
+                st.table(t_rows)
     st.stop()
 
 # =========================================================================
-# 1. MY DASHBOARD (WITH TWO-COLUMN MOBILE KPI CARDS)
+# 1. MY DASHBOARD
 # =========================================================================
 if menu_choice == "📊 My Dashboard":
     st.subheader(f"📊 {current_user}'s Personal Betting Dashboard")
@@ -751,32 +658,14 @@ if menu_choice == "📊 My Dashboard":
     if tot_placed == 0:
         with st.container(border=True):
             st.markdown("### 👋 Welcome to Flurkstradamus! Let's Lock In Your First Edge")
-            st.write(
-                "You haven't locked in any bet slips yet. Flurkstradamus continuously tracks live line drift and models scoring pace to identify mispriced sportsbook lines. "
-                "Follow these simple steps to get started:"
-            )
-            st.markdown("""
-            1. **Navigate to the Single Game Engine or Combo Builder**:
-               * Use the **Single Game Engine** for point spreads, totals, moneylines, and player anytime touchdowns.
-               * Use the **Multi-Leg Combo Builder** if you want to compound true win probabilities on a multi-team parlay.
-            2. **Select a Matchup or Let the System Pick**:
-               * Select your game from the dropdown or toggle **Scan Full Slate for Highest Discrepancy**.
-            3. **Choose Your Strategy Objective**:
-               * Slide the model dial to **🛡️ Safe Floor** (insulating cushion with high win rates), **⚖️ Balanced Edge** (+EV sweet spot), or **🚀 High Profit** (max multiplier upside).
-            4. **Load & Lock In**:
-               * Click **'📥 Load to Form'** on any recommended card. It scrolls down and immediately populates the slip for you!
-               * Review your stake and click **Lock In Bet Slip** to save it to your history and leaderboard standing!
-            """)
-
+            st.write("You haven't locked in any bet slips yet. Choose an engine below to start scanning:")
             ob_c1, ob_c2 = st.columns(2)
-            with ob_c1:
-                if st.button("⚡ Go to Single Game Engine", use_container_width=True):
-                    st.session_state.active_nav_page = "⚡ Single Game Engine"
-                    st.rerun()
-            with ob_c2:
-                if st.button("🔗 Go to Multi-Leg Combo Builder", use_container_width=True):
-                    st.session_state.active_nav_page = "🔗 Multi-Leg Combo Builder"
-                    st.rerun()
+            if ob_c1.button("⚡ Go to Single Game Engine", use_container_width=True):
+                st.session_state.active_nav_page = "⚡ Single Game Engine"
+                st.rerun()
+            if ob_c2.button("🔗 Go to Multi-Leg Combo Builder", use_container_width=True):
+                st.session_state.active_nav_page = "🔗 Multi-Leg Combo Builder"
+                st.rerun()
 
     won_bets = [b for b in my_bets if b.get("status") == "Won"]
     lost_bets = [b for b in my_bets if b.get("status") == "Lost"]
@@ -789,45 +678,19 @@ if menu_choice == "📊 My Dashboard":
     roi = (net_pl / tot_risk * 100) if tot_risk > 0 else 0.0
     avg_stake = (sum(float(b.get("risk_dollars", 0)) for b in my_bets) / tot_placed) if tot_placed > 0 else 0.0
 
-    types_count = {}
-    for b in my_bets:
-        t = b.get("bet_category", b.get("type", "Single"))
-        types_count[t] = types_count.get(t, 0) + 1
-    most_common_type = max(types_count, key=types_count.get) if types_count else "None"
-
-    # KPI ROW 1: Auto-converts to 2x2 grid on mobile via CSS
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("My Bets Placed", tot_placed, help="Total tickets placed under your profile.")
-    k2.metric("Money Won", f"${tot_won_dollars:.2f}", help="Total net profit from settled winning slips.")
-    k3.metric("Money Lost", f"${tot_lost_dollars:.2f}", help="Total stake lost on settled losing slips.")
-    k4.metric("Net Profit / Loss", f"${net_pl:+.2f}", delta=f"{roi:+.1f}% ROI", help="Net dollars won/lost and overall return on investment percentage.")
+    k1.metric("My Bets Placed", tot_placed)
+    k2.metric("Money Won", f"${tot_won_dollars:.2f}")
+    k3.metric("Money Lost", f"${tot_lost_dollars:.2f}")
+    k4.metric("Net P&L", f"${net_pl:+.2f}", delta=f"{roi:+.1f}% ROI")
 
-    # KPI ROW 2: Auto-converts to 2x2 grid on mobile via CSS
     k5, k6, k7, k8 = st.columns(4)
     decided = len(won_bets) + len(lost_bets)
     win_pct = (len(won_bets) / decided * 100) if decided > 0 else 0.0
     k5.metric("Win Rate", f"{win_pct:.1f}%", f"{len(won_bets)}W - {len(lost_bets)}L")
     k6.metric("Average Stake", f"${avg_stake:.2f}")
     k7.metric("Pending In Play", len(pending_bets))
-    k8.metric("Favorite Market", most_common_type)
-
-    st.markdown("---")
-    h1, h2 = st.columns(2)
-    with h1:
-        st.markdown("##### 🚀 Top Winner")
-        if won_bets:
-            best_win = max(won_bets, key=lambda x: float(x.get("payout_dollars", 0)) - float(x.get("risk_dollars", 0)))
-            profit = float(best_win.get("payout_dollars", 0)) - float(best_win.get("risk_dollars", 0))
-            st.success(f"{best_win.get('bet')} on `{best_win.get('matchup')}`\n\nProfit: **+${profit:.2f}** | Return: ${best_win.get('payout_dollars'):.2f}")
-        else:
-            st.info("No graded winning slips yet.")
-    with h2:
-        st.markdown("##### 💀 Toughest Beat")
-        if lost_bets:
-            worst_loss = max(lost_bets, key=lambda x: float(x.get("risk_dollars", 0)))
-            st.error(f"{worst_loss.get('bet')} on `{worst_loss.get('matchup')}`\n\nStake Lost: **-${worst_loss.get('risk_dollars'):.2f}**")
-        else:
-            st.info("No recorded losses.")
+    k8.metric("Active Bets", len(my_bets))
 
 # =========================================================================
 # 2. SINGLE GAME ENGINE
@@ -841,17 +704,10 @@ elif menu_choice == "⚡ Single Game Engine":
     with f_col1:
         timing_view = st.selectbox(
             "Game Status Filter",
-            ["⏳ Upcoming Games", "⚡ Live Games", "📜 Past / Completed Games", "🌐 All Matchups"],
-            help="Filter between upcoming future games, live active games, or past completed games."
+            ["⏳ Upcoming Games", "⚡ Live Games", "📜 Past / Completed Games", "🌐 All Matchups"]
         )
     with f_col2:
-        search_query = st.text_input("🔍 Search Matchup or Team", placeholder="e.g. Eagles, Dallas, Ohio State...", help="Search any team name, city, or matchup.")
-        if search_query.strip():
-            if "searches" not in current_user_profile:
-                current_user_profile["searches"] = []
-            if search_query.strip() not in current_user_profile["searches"]:
-                current_user_profile["searches"].append(search_query.strip())
-                save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
+        search_query = st.text_input("🔍 Search Matchup or Team", placeholder="e.g. Eagles, Dallas, Ohio State...")
 
     pool = games_data
     if timing_view == "⏳ Upcoming Games":
@@ -870,14 +726,7 @@ elif menu_choice == "⚡ Single Game Engine":
         if st.session_state.single_selected_idx >= len(game_options):
             st.session_state.single_selected_idx = 0
             
-        selected_idx = st.selectbox(
-            "Select Matchup", 
-            range(len(game_options)), 
-            index=st.session_state.single_selected_idx, 
-            format_func=lambda x: game_options[x],
-            key=f"single_matchup_dropdown_v{form_ver}",
-            help="Choose the specific matchup you want to model and analyze."
-        )
+        selected_idx = st.selectbox("Select Matchup", range(len(game_options)), index=st.session_state.single_selected_idx, format_func=lambda x: game_options[x], key=f"single_matchup_dropdown_v{form_ver}")
         st.session_state.single_selected_idx = selected_idx
         
         g = pool[selected_idx]
@@ -886,7 +735,7 @@ elif menu_choice == "⚡ Single Game Engine":
         espn_ou = round_half_point(g["market_ou"])
         espn_spread = round_half_point(g["market_spread"])
     else:
-        st.info("No matchups found matching your status filter. Switch to '⏳ Upcoming Games' or '🌐 All Matchups'.")
+        st.info("No matchups found matching your filter.")
         st.stop()
 
     h_pts = g["home_score"]
@@ -905,14 +754,11 @@ elif menu_choice == "⚡ Single Game Engine":
         period_weight = 0.25 if detected_stage == "1st Quarter" else (0.50 if detected_stage == "Halftime" else 0.75)
         expected_pts_so_far = pregame_tot * period_weight
         pace_shock_ratio = pts_scored / max(expected_pts_so_far, 1.0)
-
         if pace_shock_ratio > 1.25:
-            surge_pts = (pts_scored - expected_pts_so_far) * 0.85
-            final_proj = pregame_tot + surge_pts
+            final_proj = pregame_tot + ((pts_scored - expected_pts_so_far) * 0.85)
             std_bracket = 9.5
         else:
-            decay_factor = 0.40 if detected_stage == "1st Quarter" else (0.30 if detected_stage == "Halftime" else 0.20)
-            final_proj = pregame_tot + ((pts_scored - expected_pts_so_far) * decay_factor)
+            final_proj = pregame_tot + ((pts_scored - expected_pts_so_far) * 0.30)
             std_bracket = 6.0 if detected_stage == "Halftime" else 4.0
 
     final_proj = round_half_point(final_proj)
@@ -934,47 +780,31 @@ elif menu_choice == "⚡ Single Game Engine":
 
     sync_game_snapshot(g, final_proj, live_proj_margin)
 
-    # ACCORDION 1: 2-COLUMN GRID METRICS ON MOBILE
+    # Section 1: Overview
     with st.expander("📊 Section 1: Matchup Overview & Live Drift Projections", expanded=True):
-        st.markdown(
-            "> **What this section does:** Compares opening sportsbook lines against in-game scoring volume to calculate live line drift, "
-            "second-half pace projections, and effective ATS margin deviations."
-        )
         b1, b2, b3 = st.columns([1, 4, 1])
         b1.image(g.get("away_logo", DEFAULT_LOGO), width=45)
         b2.markdown(f"### **{g['away_short']}** @ **{g['home_short']}**\n{g['kickoff']}")
         b3.image(g.get("home_logo", DEFAULT_LOGO), width=45)
 
         m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        m_col1.metric("Full Game Total", f"{final_proj:.1f} pts", delta=f"{delta_full:+.1f} vs open ({pregame_tot:.1f})", help="Pace-shock full game projection.")
-        m_col2.metric("2nd Half Total", f"{live_2h_proj:.1f} pts", delta=f"{delta_2h:+.1f} vs 2H base ({pregame_2h:.1f})", help="Expected scoring volume in the second half.")
-        m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%", help="Logistic straight-up win expectancy.")
-        m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+.1f})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line", help="Expected point spread margin differential.")
+        m_col1.metric("Full Game Total", f"{final_proj:.1f} pts", delta=f"{delta_full:+.1f} vs open ({pregame_tot:.1f})")
+        m_col2.metric("2nd Half Total", f"{live_2h_proj:.1f} pts", delta=f"{delta_2h:+.1f} vs 2H base ({pregame_2h:.1f})")
+        m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%")
+        m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+.1f})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line")
 
-    # ACCORDION 2: AI STRATEGY ENGINE WITH MODERN MOBILE CARDS
+    # Section 2: AI Strategy Engine
     with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
-        st.markdown(
-            "> **What this section does:** Evaluates betting opportunities across Totals, Spreads, Moneylines, and **Player Anytime Touchdown Scorers**. "
-            "Adjusting the Model Objective dynamically changes line thresholds, payouts, and win probabilities."
-        )
         col_scope, col_type_filter = st.columns(2)
-        scope_choice = col_scope.selectbox(
-            "Target Slate", 
-            ["🎯 Focus on Selected Game Above", "⚡ Scan Full Slate for Highest Discrepancy"],
-            help="Analyze the currently selected matchup or scan across all active games."
-        )
-        filter_choice = col_type_filter.selectbox(
-            "Type of Bet", 
-            [
-                "⚡ Let the System Pick (All Markets Combined)", 
-                "📊 Full Game Total Score Over/Under", 
-                "⏱️ 2nd Half Total Points", 
-                "🛡️ Spread (ATS Cover)",
-                "🏆 Team Win/Loser (Moneyline)", 
-                "🏈 Player Anytime Touchdown Scorer"
-            ],
-            help="Choose the specific wagering market you wish to generate recommendations for."
-        )
+        scope_choice = col_scope.selectbox("Target Slate", ["🎯 Focus on Selected Game Above", "⚡ Scan Full Slate for Highest Discrepancy"])
+        filter_choice = col_type_filter.selectbox("Type of Bet", [
+            "⚡ Let the System Pick (All Markets Combined)", 
+            "📊 Full Game Total Score Over/Under", 
+            "⏱️ 2nd Half Total Points", 
+            "🛡️ Spread (ATS Cover)",
+            "🏆 Team Win/Loser (Moneyline)", 
+            "🏈 Player Anytime Touchdown Scorer"
+        ])
         
         strategy_dial = st.select_slider(
             "Model Objective", 
@@ -983,8 +813,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 "⚖️ Balanced Edge (+EV Sweet Spot)", 
                 "🚀 High Profit (Max Multiplier & Value Underdogs)"
             ], 
-            value="⚖️ Balanced Edge (+EV Sweet Spot)",
-            help="Slide to adjust safety margin: Safe Floor buys points for high win probability, while High Profit seeks plus-money returns."
+            value="⚖️ Balanced Edge (+EV Sweet Spot)"
         )
 
         active_game_for_strat = g
@@ -1039,7 +868,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 "est_payout_multiplier": p_mult,
                 "roi_label": f"+{int((p_mult-1)*100)}% Profit",
                 "drift_info": f"Pace Projection: {final_proj:.1f} pts ({delta_full:+.1f} vs open)",
-                "rationale": f"Selected because in-game scoring volume indicates {final_proj:.1f} total points vs opening line of {pregame_tot:.1f}."
+                "rationale": f"Selected because scoring tempo indicates {final_proj:.1f} pts vs open line of {pregame_tot:.1f}."
             },
             {
                 "type": f"Full Game Total ({obj_tag} Alternate Buffer)",
@@ -1053,21 +882,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 "est_payout_multiplier": 1.50,
                 "roi_label": "+50% Profit",
                 "drift_info": "Alternate safety line buffer",
-                "rationale": "Selected to insulate against sudden late fourth-quarter garbage time touchdowns by expanding the line."
-            },
-            {
-                "type": f"Full Game Total ({obj_tag} Aggressive Margin)",
-                "pick": f"{tot_dir} {round_half_point(base_tot_1 - (2.5 if tot_dir == 'Under' else 2.5)):.1f}",
-                "prob": max(p_tot_1 - 0.12, 0.44),
-                "category": "Total",
-                "side": tot_dir,
-                "target_line": round_half_point(base_tot_1 - (2.5 if tot_dir == 'Under' else 2.5)),
-                "picked_team": None,
-                "game_index": strat_game_index,
-                "est_payout_multiplier": 2.40,
-                "roi_label": "+140% Profit (2.4x)",
-                "drift_info": "Plus-money pace undercut",
-                "rationale": "Selected for maximum profit multiplier where team drive efficiency models show severe stalling."
+                "rationale": "Selected to insulate against sudden fourth-quarter scoring bursts by buying line cushion."
             }
         ]
 
@@ -1101,72 +916,61 @@ elif menu_choice == "⚡ Single Game Engine":
                 "est_payout_multiplier": 1.55,
                 "roi_label": "+55% Profit",
                 "drift_info": "+3.0 pts bought buffer",
-                "rationale": f"Selected to provide an insulated cover floor for {s_abbr} by adding extra cushion."
-            },
-            {
-                "type": f"Spread ({obj_tag} Aggressive)",
-                "pick": f"{s_abbr} {round_half_point(line_spd_1 - 3.0):+.1f}",
-                "prob": max(p_spd_1 - 0.14, 0.46),
-                "category": "Spread",
-                "side": "Spread",
-                "target_line": round_half_point(line_spd_1 - 3.0),
-                "picked_team": s_team,
-                "game_index": strat_game_index,
-                "est_payout_multiplier": 2.45,
-                "roi_label": "+145% Profit (2.45x)",
-                "drift_info": "Blowout expansion play",
-                "rationale": f"Selected for plus-money return where talent and yardage advantages indicate blowout separation."
+                "rationale": f"Selected to provide an insulated cover floor for {s_abbr}."
             }
         ]
 
-        # Touchdown Props with Real Player Names
-        home_scorers = get_star_scorers_for_team(tg_home_short, active_game_for_strat["home_team"])
-        away_scorers = get_star_scorers_for_team(tg_away_short, active_game_for_strat["away_team"])
+        # Touchdowns: Real Player Names Guaranteed
+        home_players = get_real_players_for_team(tg_home_short, active_game_for_strat["home_team"])
+        away_players = get_real_players_for_team(tg_away_short, active_game_for_strat["away_team"])
 
-        p1_name, p1_pos = home_scorers[0]
-        p2_name, p2_pos = away_scorers[0]
-        p3_name, p3_pos = home_scorers[1] if len(home_scorers) > 1 else ("Primary Target", "WR")
-
-        td_candidates = [
-            {
-                "player": f"{p1_name} ({p1_pos} - {tg_home_short})",
-                "p_td": 0.58 if "Safe Floor" in strategy_dial else 0.52,
-                "mult": 1.85,
-                "label": "+85% Profit (-115)",
-                "reason": f"{p1_name} commands {tg_home_short}'s goal-line share inside the 5-yard line with unmatched red-zone touch volume."
-            },
-            {
-                "player": f"{p2_name} ({p2_pos} - {tg_away_short})",
-                "p_td": 0.45 if "Safe Floor" in strategy_dial else 0.41,
-                "mult": 2.25,
-                "label": "+125% Profit (+125)",
-                "reason": f"{p2_name} is {tg_away_short}'s premier red-zone option facing an opponent allowing frequent goal-to-go opportunities."
-            },
-            {
-                "player": f"{p3_name} ({p3_pos} - {tg_home_short})",
-                "p_td": 0.36 if "Safe Floor" in strategy_dial else 0.33,
-                "mult": 3.10,
-                "label": "+210% Profit (+210)",
-                "reason": f"{p3_name} serves as the primary situational target on play-action passing concepts in high-scoring scripts."
-            }
-        ]
+        p1_name, p1_pos = home_players[0]
+        p2_name, p2_pos = away_players[0]
+        p3_name, p3_pos = home_players[1] if len(home_players) > 1 else ("Primary Target", "WR")
 
         touchdown_bets = [
             {
                 "type": f"Anytime Touchdown ({obj_tag})",
-                "pick": f"{c['player']} Any Time TD",
-                "prob": c["p_td"],
+                "pick": f"{p1_name} ({p1_pos} - {tg_home_short}) Any Time TD",
+                "prob": 0.58 if "Safe Floor" in strategy_dial else 0.52,
                 "category": "Anytime TD",
                 "side": "TD",
                 "target_line": 1.0,
-                "picked_team": c["player"],
+                "picked_team": p1_name,
                 "game_index": strat_game_index,
-                "est_payout_multiplier": c["mult"],
-                "roi_label": c["label"],
-                "drift_info": "Red-zone touch volume & defensive matchup efficiency",
-                "rationale": c["reason"]
+                "est_payout_multiplier": 1.85,
+                "roi_label": "+85% Profit (-115)",
+                "drift_info": "Red-zone share & offensive goal-line touches",
+                "rationale": f"{p1_name} commands {tg_home_short}'s goal-line touches inside the 5-yard line."
+            },
+            {
+                "type": f"Anytime Touchdown ({obj_tag})",
+                "pick": f"{p2_name} ({p2_pos} - {tg_away_short}) Any Time TD",
+                "prob": 0.46 if "Safe Floor" in strategy_dial else 0.41,
+                "category": "Anytime TD",
+                "side": "TD",
+                "target_line": 1.0,
+                "picked_team": p2_name,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": 2.25,
+                "roi_label": "+125% Profit (+125)",
+                "drift_info": "Primary red-zone target volume",
+                "rationale": f"{p2_name} is {tg_away_short}'s lead red-zone target in high-scoring game scripts."
+            },
+            {
+                "type": f"Anytime Touchdown ({obj_tag})",
+                "pick": f"{p3_name} ({p3_pos} - {tg_home_short}) Any Time TD",
+                "prob": 0.36 if "Safe Floor" in strategy_dial else 0.32,
+                "category": "Anytime TD",
+                "side": "TD",
+                "target_line": 1.0,
+                "picked_team": p3_name,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": 3.10,
+                "roi_label": "+210% Profit (+210)",
+                "drift_info": "High-value situational red zone threat",
+                "rationale": f"{p3_name} serves as a key red-zone target on goal-line play-action passing."
             }
-            for c in td_candidates
         ]
 
         if filter_choice == "📊 Full Game Total Score Over/Under":
@@ -1178,11 +982,8 @@ elif menu_choice == "⚡ Single Game Engine":
         else:
             strat_candidates = [spread_bets[0], full_totals_bets[0], touchdown_bets[0]]
 
-        # RENDER SUGGESTED BETS WITH RESPONSIVE MOBILE CONTAINERS
         for idx, sc in enumerate(strat_candidates[:3]):
             tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
-            
-            # Responsive HTML Card Structure
             st.markdown(f"""
             <div class="rec-card-box">
                 <div class="rec-header-row">
@@ -1210,7 +1011,7 @@ elif menu_choice == "⚡ Single Game Engine":
             """, unsafe_allow_html=True)
 
             st.info(f"💡 **Why This Bet Was Selected:** {sc['rationale']}")
-            if st.button("📥 Load to Form", key=f"apply_{idx}_{sc['pick']}", use_container_width=True, help="Load this exact pick, line, and odds directly into your slip below and scroll to form."):
+            if st.button("📥 Load to Form", key=f"apply_{idx}_{sc['pick']}", use_container_width=True):
                 st.session_state.single_applied_pick = sc
                 st.session_state.single_selected_idx = sc["game_index"]
                 st.session_state.single_form_version += 1
@@ -1219,7 +1020,6 @@ elif menu_choice == "⚡ Single Game Engine":
 
     # Anchor point for smooth auto-scrolling
     st.markdown("<div id='bet-slip-anchor'></div>", unsafe_allow_html=True)
-
     if st.session_state.scroll_to_form:
         st.session_state.scroll_to_form = False
         components.html("""
@@ -1233,22 +1033,18 @@ elif menu_choice == "⚡ Single Game Engine":
             </script>
         """, height=0)
 
-    # ACCORDION 3: SLIP BUILDER WITH 0.5 STEP INCREMENTS
+    # Section 3: Wager Type & Lock In Bet Slip
     applied = st.session_state.single_applied_pick
     with st.expander("📝 Section 3: Wager Type & Lock In Bet Slip", expanded=True):
-        st.markdown(
-            "> **What this section does:** Review matchup parameters, customize risk and payout, and persist the slip to your account history."
-        )
-
         c1, c2 = st.columns(2)
         with c1:
             home_team = st.text_input("Home Team", value=g["home_team"], key=f"h_{g_id}_v{form_ver}")
             away_team = st.text_input("Away Team", value=g["away_team"], key=f"a_{g_id}_v{form_ver}")
-            pregame_total = st.number_input("Pre-Game Baseline Total", value=float(espn_ou), step=0.5, format="%.1f", key=f"pre_{g_id}_v{form_ver}", help="Opening sportsbook consensus total.")
+            pregame_total = st.number_input("Pre-Game Baseline Total", value=float(espn_ou), step=0.5, format="%.1f", key=f"pre_{g_id}_v{form_ver}")
         with c2:
             h_pts_in = st.number_input(f"{g['home_short']} Pts", min_value=0, value=g["home_score"], key=f"hp_{g_id}_v{form_ver}")
             a_pts_in = st.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"ap_{g_id}_v{form_ver}")
-            spread_line = st.number_input(f"{g['home_short']} Spread", value=float(espn_spread), step=0.5, format="%.1f", key=f"spd_{g_id}_v{form_ver}", help="Opening consensus point spread line.")
+            spread_line = st.number_input(f"{g['home_short']} Spread", value=float(espn_spread), step=0.5, format="%.1f", key=f"spd_{g_id}_v{form_ver}")
 
         default_wtype = 0
         if applied:
@@ -1261,8 +1057,7 @@ elif menu_choice == "⚡ Single Game Engine":
             ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Anytime Touchdown Scorer"], 
             index=default_wtype,
             horizontal=True, 
-            key=f"btype_{g_id}_v{form_ver}",
-            help="Choose the market type for this ticket."
+            key=f"btype_{g_id}_v{form_ver}"
         )
 
         with st.form(f"single_form_{g_id}_v{form_ver}"):
@@ -1272,33 +1067,33 @@ elif menu_choice == "⚡ Single Game Engine":
                 default_strike = round_half_point(applied["target_line"]) if (applied and applied.get("target_line")) else round_half_point(final_proj)
                 strike = f2.number_input("Target Line (pts)", value=float(default_strike), step=0.5, format="%.1f")
                 picked_t = None
+                dynamic_note = f"Game Total: {side} {strike:.1f} | Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} vs open)"
             elif bet_type == "Point Spread (ATS)":
                 f1, f2 = st.columns(2)
                 picked_t = f1.selectbox("Covering Team", [home_team, away_team])
                 default_spread = round_half_point(applied["target_line"]) if (applied and applied.get("target_line") is not None) else round_half_point(spread_line)
                 strike = f2.number_input("Spread Line", value=float(default_spread), step=0.5, format="%.1f")
                 side = "Spread"
+                dynamic_note = f"Point Spread: {picked_t} {strike:+.1f} | Expected ATS Margin: {live_proj_margin:+.1f} pts"
             elif bet_type == "Straight Up Winner (Moneyline)":
                 picked_t = st.selectbox("Outright Winner", [home_team, away_team])
                 strike = None
                 side = "Moneyline"
+                dynamic_note = f"Moneyline Winner: {picked_t} | Model Outright Win Expectancy: {live_h_prob*100 if picked_t==home_team else live_a_prob*100:.1f}%"
             else:
-                default_p = applied["picked_team"] if (applied and applied.get("picked_team")) else f"{p1_name} ({p1_pos} - {g['home_short']})"
-                picked_t = st.text_input("Player to Score TD", value=default_p, help="Enter exact player name.")
+                default_p = applied["picked_team"] if (applied and applied.get("picked_team")) else p1_name
+                picked_t = st.text_input("Player to Score TD", value=default_p)
                 strike = 1.0
                 side = "Anytime TD"
+                dynamic_note = f"Touchdown Prop: {picked_t} Any Time TD | Red zone share & goal-line touch volume play"
 
             p1, p2 = st.columns(2)
-            risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0, help="Dollar amount staked.")
+            risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
             mult = applied.get("est_payout_multiplier", 1.91) if applied else 1.91
-            payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=round(risk_amt * mult, 2), help="Total payout returned if ticket wins.")
+            payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=round(risk_amt * mult, 2))
             
-            if applied:
-                default_notes = f"Model Edge: {applied['pick']} | {applied.get('drift_info', '')}"
-            else:
-                default_notes = f"Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} vs {pregame_tot:.1f} open) | Live ATS Margin: {live_proj_margin:+.1f} pts"
-
-            ticket_notes = st.text_input("Notes", default_notes, help="Statistical audit trail and reasoning for this bet.")
+            # Dynamic notes field
+            ticket_notes = st.text_input("Notes", value=dynamic_note, help="Context-rich rationale dynamically updated for this wager.")
 
             if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
                 if bet_type == "Player Anytime Touchdown Scorer":
@@ -1342,13 +1137,9 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
 
     c_fcol1, c_fcol2 = st.columns([1, 2])
     with c_fcol1:
-        c_timing_view = c_fcol1.selectbox(
-            "Game Status Filter (Combo)",
-            ["⏳ Upcoming Games", "⚡ Live Games", "🌐 All Matchups"],
-            help="Filter games for your parlay legs."
-        )
+        c_timing_view = c_fcol1.selectbox("Game Status Filter (Combo)", ["⏳ Upcoming Games", "⚡ Live Games", "🌐 All Matchups"])
     with c_fcol2:
-        c_search = c_fcol2.text_input("🔍 Search Game Slate", placeholder="e.g. Chiefs, Lions, Ravens...", help="Search teams to include in parlay legs.")
+        c_search = c_fcol2.text_input("🔍 Search Game Slate", placeholder="e.g. Chiefs, Lions, Ravens...")
 
     c_pool = games_data
     if c_timing_view == "⏳ Upcoming Games":
@@ -1361,7 +1152,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
         c_pool = [g for g in c_pool if cq in g["home_team"].lower() or cq in g["away_team"].lower() or cq in g["home_short"].lower() or cq in g["away_short"].lower()]
 
     if not c_pool:
-        st.info("No games match the selected status or search filter. Switch back to '⏳ Upcoming Games' or '🌐 All Matchups'.")
+        st.info("No games match the selected filter.")
         st.stop()
 
     game_choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in c_pool]
@@ -1385,67 +1176,40 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             })
 
     with st.expander("🤖 Flurkstradamus AI Combo Recommender & Strategy Scanner", expanded=True):
-        st.markdown(
-            "> **What this scanner does:** Automatically scans the entire slate to find compound edges across totals, spreads, and moneylines matching your target leg count."
-        )
         col_strat1, col_strat2 = st.columns(2)
-        
         active_candidate_games = [gm for gm in c_pool if not gm.get("completed", False)]
         if not active_candidate_games:
             active_candidate_games = c_pool
         max_possible_legs = min(12, max(2, len(active_candidate_games)))
 
-        # 1. TARGET LEGS FIELD PLACED FIRST
-        suggest_legs_count = col_strat1.number_input(
-            "Target Legs (Up to 12)",
-            min_value=2,
-            max_value=max_possible_legs,
-            value=min(max(len(st.session_state.combo_active_legs), 3), max_possible_legs),
-            help="Choose how many legs to include in the parlay."
-        )
+        # 1. Target Legs First
+        suggest_legs_count = col_strat1.number_input("Target Legs (Up to 12)", min_value=2, max_value=max_possible_legs, value=min(max(len(st.session_state.combo_active_legs), 3), max_possible_legs))
+        # 2. Strategy Objective Second
+        strategy_mode = col_strat2.selectbox("Strategy Objective", [
+            "🎯 Maximum Win Probability (Safest Floor)",
+            "🔥 High Expected Value (+EV Total Edge)",
+            "🏆 Straight-Up Moneyline Dominance"
+        ])
 
-        # 2. STRATEGY OBJECTIVE FIELD PLACED SECOND
-        strategy_mode = col_strat2.selectbox(
-            "Strategy Objective",
-            [
-                "🎯 Maximum Win Probability (Safest Floor)",
-                "🔥 High Expected Value (+EV Total Edge)",
-                "🏆 Straight-Up Moneyline Dominance",
-                "🛡️ Defensive Under Lock (Pace Slump)"
-            ],
-            help="Select your compound strategy objective."
-        )
-
-        generate_clicked = st.button("⚡ Scan & Recommend Across Slates", use_container_width=True, help="Run AI scan to select the best combination of picks.")
+        generate_clicked = st.button("⚡ Scan & Recommend Across Slates", use_container_width=True)
 
         if generate_clicked and c_pool:
             candidate_legs = []
             for g_c in active_candidate_games:
                 c_h, c_a = g_c["home_team"], g_c["away_team"]
                 c_h_abbr, c_a_abbr = g_c["home_short"], g_c["away_short"]
-                c_h_pts, c_a_pts = g_c["home_score"], g_c["away_score"]
-                c_tot_pts = c_h_pts + c_a_pts
-                c_h_rec, c_a_rec = g_c.get("home_record", "0-0"), g_c.get("away_record", "0-0")
+                c_tot_pts = g_c["home_score"] + g_c["away_score"]
                 c_ou = g_c.get("market_ou", 47.5)
                 c_period = g_c.get("period", 1)
-
-                if c_period <= 1:
-                    proj_tot = c_ou
-                    sigma = 8.0
-                elif c_period == 2:
-                    proj_tot = c_tot_pts + (c_ou * 0.475)
-                    sigma = 6.0
-                else:
-                    proj_tot = c_tot_pts + 8.0
-                    sigma = 4.0
-
-                h_prob = calculate_moneyline_prob(c_h_pts + 14, c_a_pts + 14, c_h_rec, c_a_rec, is_final=False)
+                proj_tot = c_ou if c_period <= 1 else (c_tot_pts + (c_ou * 0.475))
+                sigma = 8.0 if c_period <= 1 else 6.0
+                h_prob = calculate_moneyline_prob(g_c["home_score"] + 14, g_c["away_score"] + 14, g_c.get("home_record", "0-0"), g_c.get("away_record", "0-0"))
 
                 if "Maximum Win Probability" in strategy_mode:
                     cushion_line = round_half_point(proj_tot + (sigma * 1.5))
                     p = calculate_win_prob(cushion_line, proj_tot, sigma, is_under=True)
                     candidate_legs.append({
-                        "leg_id": f"tot_{g_c['id']}_under_{cushion_line}",
+                        "leg_id": f"tot_{g_c['id']}",
                         "matchup_idx": c_pool.index(g_c),
                         "type": "Game Total",
                         "side": "Under",
@@ -1457,43 +1221,39 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                         "score_metric": p
                     })
                 elif "High Expected Value" in strategy_mode:
-                    edge = abs(proj_tot - c_ou)
-                    is_u = proj_tot < c_ou
                     tgt_line = round_half_point(c_ou)
-                    p = calculate_win_prob(tgt_line, proj_tot, sigma, is_under=is_u)
+                    p = calculate_win_prob(tgt_line, proj_tot, sigma, is_under=(proj_tot < c_ou))
                     candidate_legs.append({
-                        "leg_id": f"ev_{g_c['id']}_{'u' if is_u else 'o'}_{tgt_line}",
+                        "leg_id": f"ev_{g_c['id']}",
                         "matchup_idx": c_pool.index(g_c),
                         "type": "Game Total",
-                        "side": "Under" if is_u else "Over",
+                        "side": "Under" if proj_tot < c_ou else "Over",
                         "line": tgt_line,
                         "picked_team": c_h,
                         "prob": p,
-                        "desc": f"{'Under' if is_u else 'Over'} {tgt_line:.1f}",
-                        "detail": f"Edge: {edge:.1f} pts",
-                        "score_metric": edge * p
+                        "desc": f"{'Under' if proj_tot < c_ou else 'Over'} {tgt_line:.1f}",
+                        "detail": f"Edge: {abs(proj_tot - c_ou):.1f} pts",
+                        "score_metric": abs(proj_tot - c_ou) * p
                     })
                 else:
                     ml_fav = c_h if h_prob >= 0.5 else c_a
                     fav_abbr = c_h_abbr if h_prob >= 0.5 else c_a_abbr
-                    ml_p = max(h_prob, 1.0 - h_prob)
                     candidate_legs.append({
-                        "leg_id": f"ml_{g_c['id']}_{ml_fav}",
+                        "leg_id": f"ml_{g_c['id']}",
                         "matchup_idx": c_pool.index(g_c),
                         "type": "Straight Up Winner",
                         "side": "Under",
                         "line": round_half_point(c_ou),
                         "picked_team": ml_fav,
-                        "prob": ml_p,
+                        "prob": max(h_prob, 1.0 - h_prob),
                         "desc": f"{fav_abbr} ML",
-                        "detail": f"{ml_p*100:.1f}%",
-                        "score_metric": ml_p
+                        "detail": f"{max(h_prob, 1.0 - h_prob)*100:.1f}%",
+                        "score_metric": max(h_prob, 1.0 - h_prob)
                     })
 
             candidate_legs.sort(key=lambda x: x["score_metric"], reverse=True)
             selected_ai_legs = []
             used_games = set()
-
             for cand in candidate_legs:
                 if cand["matchup_idx"] not in used_games:
                     selected_ai_legs.append(cand)
@@ -1502,76 +1262,39 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                     break
 
             st.session_state.ai_recommended_combo = selected_ai_legs
-            st.session_state.editing_ai_combo = False
 
-        if st.session_state.ai_recommended_combo and c_pool:
-            valid_legs = [l for l in st.session_state.ai_recommended_combo if 0 <= l.get("matchup_idx", -1) < len(c_pool)]
-            st.session_state.ai_recommended_combo = valid_legs
-
-        # DISPLAY LEGS WITH CLEAN RESPONSIVE WRAPPER
         if st.session_state.ai_recommended_combo:
             num_legs_rec = len(st.session_state.ai_recommended_combo)
             comp_p = 1.0
             for l_item in st.session_state.ai_recommended_combo:
                 comp_p *= l_item["prob"]
 
-            t_col1, t_col2 = st.columns([8.5, 1.5], vertical_alignment="center")
-            t_col1.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
-            toggle_label = "Done" if st.session_state.editing_ai_combo else "Edit Legs"
-            if t_col2.button(toggle_label, key="toggle_edit_ai", help="Open menu to drop specific legs."):
-                st.session_state.editing_ai_combo = not st.session_state.editing_ai_combo
-                st.rerun()
-
-            if st.session_state.editing_ai_combo:
-                with st.container(border=True):
-                    leg_options = [
-                        f"Leg {k+1}: {item['desc']} ({c_pool[min(item['matchup_idx'], len(c_pool)-1)]['away_short']}@{c_pool[min(item['matchup_idx'], len(c_pool)-1)]['home_short']})"
-                        for k, item in enumerate(st.session_state.ai_recommended_combo)
-                    ]
-                    selected_leg_idx = st.radio("Select a leg to remove:", range(len(leg_options)), format_func=lambda x: leg_options[x])
-                    r_c1, r_c2 = st.columns([2, 1])
-                    if r_c1.button("🗑️ Remove Selected Leg", use_container_width=True):
-                        st.session_state.ai_recommended_combo.pop(selected_leg_idx)
-                        st.rerun()
-                    if r_c2.button("Done", use_container_width=True):
-                        st.session_state.editing_ai_combo = False
-                        st.rerun()
-
+            st.markdown(f"#### 🎯 Recommended Ticket ({num_legs_rec} Legs):")
             for idx_ai, l_ai in enumerate(st.session_state.ai_recommended_combo):
                 m_idx = min(max(l_ai.get("matchup_idx", 0), 0), len(c_pool) - 1)
                 g_match = c_pool[m_idx]
-                detail_str = l_ai.get("detail", "")
-                kickoff_str = g_match.get("kickoff", "Scheduled Game")
-                league_str = g_match.get("league", "NFL")
-
                 st.markdown(f"""
                 <div class="rec-card-box">
                     <div class="rec-header-row">
-                        <div>
-                            <span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px;">
-                                LEG {idx_ai+1}
-                            </span>
-                            <span style="background-color: rgba(255,255,255,0.08); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; margin-left:4px;">[{league_str}]</span>
-                        </div>
+                        <div><span style="background-color: #22c55e; color: #000; font-weight: 800; font-size: 0.75rem; padding: 2px 7px; border-radius: 4px;">LEG {idx_ai+1}</span></div>
                         <div class="rec-matchup-meta">
                             <img src="{g_match['away_logo']}" width="20" height="20" style="border-radius: 50%;">
                             <strong>{g_match['away_short']}</strong> @
                             <img src="{g_match['home_logo']}" width="20" height="20" style="border-radius: 50%;">
                             <strong>{g_match['home_short']}</strong>
-                            <span style="opacity: 0.65; font-size: 0.75rem; margin-left: 2px;">({kickoff_str})</span>
+                            <span style="opacity: 0.65; font-size: 0.75rem; margin-left: 2px;">({g_match.get('kickoff')})</span>
                         </div>
                     </div>
                     <div class="rec-pick-row">
                         <strong style="color: #4ade80; font-size: 1.05rem;">{l_ai['desc']}</strong>
-                        <span style="opacity:0.6; font-size:0.80rem;">({detail_str})</span>
                         <span class="badge-prob">{l_ai['prob']*100:.1f}% Win Prob</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
             m_rec1, m_rec2 = st.columns([2, 1], vertical_alignment="center")
-            m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%", delta=f"{len(st.session_state.ai_recommended_combo)} Legs")
-            if m_rec2.button("📥 Apply Picks into Ticket Slip", use_container_width=True, help="Load recommended picks directly into the combo slip below."):
+            m_rec1.metric("Compound Recommended Win Expectancy", f"{comp_p * 100:.1f}%")
+            if m_rec2.button("📥 Apply Picks into Ticket Slip", use_container_width=True):
                 st.session_state.combo_version += 1
                 st.session_state.combo_active_legs = [
                     {
@@ -1606,23 +1329,11 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
     for i, leg_data in enumerate(st.session_state.combo_active_legs):
         with st.container(border=True):
             safe_m_idx = min(max(leg_data.get("matchup_idx", 0), 0), len(game_choices) - 1) if game_choices else 0
-            sel_matchup = st.selectbox(
-                f"Leg {i+1} Matchup",
-                range(len(game_choices)),
-                index=safe_m_idx,
-                format_func=lambda x: game_choices[x],
-                key=f"m_sel_{i}_v{ver}"
-            )
+            sel_matchup = st.selectbox(f"Leg {i+1} Matchup", range(len(game_choices)), index=safe_m_idx, format_func=lambda x: game_choices[x], key=f"m_sel_{i}_v{ver}")
             leg_data["matchup_idx"] = sel_matchup
             leg_g = c_pool[sel_matchup]
 
-            wager_cat = st.radio(
-                f"Wager Type (Leg {i+1})",
-                ["Game Total", "Straight Up Winner"],
-                horizontal=True,
-                index=0 if leg_data["type"] == "Game Total" else 1,
-                key=f"wtype_{i}_v{ver}"
-            )
+            wager_cat = st.radio(f"Wager Type (Leg {i+1})", ["Game Total", "Straight Up Winner"], horizontal=True, index=0 if leg_data["type"] == "Game Total" else 1, key=f"wtype_{i}_v{ver}")
             leg_data["type"] = wager_cat
 
             if wager_cat == "Game Total":
@@ -1656,18 +1367,16 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
         c_risk = c_r1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
         c_payout = c_r2.number_input("Payout ($)", min_value=1.0, value=50.0, step=10.0)
         if st.form_submit_button(f"Lock In {len(combo_legs)}-Leg Ticket", use_container_width=True):
-            parsed_legs = []
-            for item in st.session_state.combo_active_legs:
-                s_idx = min(item["matchup_idx"], len(c_pool) - 1)
-                mg = c_pool[s_idx]
-                parsed_legs.append({
-                    "matchup": f"{mg['away_short']} @ {mg['home_short']}",
+            parsed_legs = [
+                {
+                    "matchup": f"{c_pool[min(item['matchup_idx'], len(c_pool) - 1)]['away_short']} @ {c_pool[min(item['matchup_idx'], len(c_pool) - 1)]['home_short']}",
                     "type": item["type"],
                     "side": item.get("side", ""),
                     "line": round_half_point(item.get("line", 0.0)),
                     "picked_team": item.get("picked_team", "")
-                })
-
+                }
+                for item in st.session_state.combo_active_legs
+            ]
             combo_record = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip(),
@@ -1694,7 +1403,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
 # =========================================================================
 elif menu_choice == "📜 Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
-    st.caption("Click any card to enter the live game War Room with score updates and projection timelines.")
+    st.caption("Click any card to enter the live game War Room.")
 
     curr_user_clean = current_user.strip().lower()
     col_filter1, col_filter2 = st.columns([3, 1])
@@ -1737,28 +1446,17 @@ elif menu_choice == "📜 Locked Bets History":
 # =========================================================================
 elif menu_choice == "🏆 Leaderboard":
     st.subheader("🏆 Leaderboard")
-    st.caption("Consensus standings, return on investment, betting volume, and live member status.")
+    st.caption("Consensus standings, return on investment, and betting volume.")
 
     user_stats = {}
     for b in st.session_state.saved_bets:
         u_raw = b.get("user", "Flurk").strip().lower()
         if u_raw not in user_stats:
-            user_stats[u_raw] = {
-                "name": b.get("user"),
-                "total_bets": 0,
-                "won": 0,
-                "lost": 0,
-                "pending": 0,
-                "net": 0.0,
-                "total_staked": 0.0,
-                "types": {}
-            }
-        
+            user_stats[u_raw] = {"name": b.get("user"), "total_bets": 0, "won": 0, "lost": 0, "pending": 0, "net": 0.0, "total_staked": 0.0, "types": {}}
         user_stats[u_raw]["total_bets"] += 1
         r, p = float(b.get("risk_dollars", 0)), float(b.get("payout_dollars", 0))
         cat = b.get("bet_category", b.get("type", "Single"))
         user_stats[u_raw]["types"][cat] = user_stats[u_raw]["types"].get(cat, 0) + 1
-
         if b.get("status") == "Won":
             user_stats[u_raw]["won"] += 1
             user_stats[u_raw]["net"] += (p - r)
@@ -1773,76 +1471,58 @@ elif menu_choice == "🏆 Leaderboard":
     board = []
     for u_key, stat in user_stats.items():
         acc = st.session_state.user_accounts.get(u_key, {})
-        if not acc.get("is_public", True):
-            continue
-
+        if not acc.get("is_public", True): continue
         last_act = acc.get("last_active", "")
-        is_online = ("ET" in last_act)
-        fav_market = max(stat["types"], key=stat["types"].get) if stat["types"] else "Single"
         decided = stat["won"] + stat["lost"]
         win_rate = (stat["won"] / decided * 100) if decided > 0 else 0.0
         roi_val = (stat["net"] / stat["total_staked"] * 100) if stat["total_staked"] > 0 else 0.0
 
         board.append({
             "name": stat["name"],
-            "online": "🟢 Online" if is_online else "⚪ Offline",
+            "online": "🟢 Online" if ("ET" in last_act) else "⚪ Offline",
             "total_bets": stat["total_bets"],
             "won": stat["won"],
             "lost": stat["lost"],
-            "pending": stat["pending"],
             "win_rate": f"{win_rate:.1f}%",
             "roi": f"{roi_val:+.1f}%",
-            "favorite": fav_market,
             "net": stat["net"]
         })
 
     board.sort(key=lambda x: x["net"], reverse=True)
-
     if not board:
-        st.info("No recorded tickets on the public leaderboard.")
+        st.info("No public tickets on leaderboard.")
     else:
         for idx, u in enumerate(board):
             medal = "🥇" if idx == 0 else ("🥈" if idx == 1 else ("🥉" if idx == 2 else f"#{idx+1}"))
             with st.container(border=True):
                 c1, c2, c3 = st.columns([4, 4, 2])
                 c1.markdown(f"### {medal} **{u['name']}** &nbsp; <span style='font-size:0.8rem;'>{u['online']}</span>", unsafe_allow_html=True)
-                c1.caption(f"Favorite Wager Type: **{u['favorite']}**")
-                
-                c2.write(f"📊 **{u['won']}W - {u['lost']}L** ({u['win_rate']} Win Rate) | **{u['total_bets']}** Total Bets ({u['pending']} Pending)")
-                c2.write(f"Return ROI: **{u['roi']}**")
-
+                c2.write(f"📊 **{u['won']}W - {u['lost']}L** ({u['win_rate']}) | ROI: **{u['roi']}**")
                 color = "#4ade80" if u['net'] >= 0 else "#f87171"
                 c3.markdown(f"<div style='text-align:right;'><span style='color:{color};font-size:1.4rem;font-weight:700;'>${u['net']:+.2f}</span></div>", unsafe_allow_html=True)
 
 # =========================================================================
-# 6. LIVE SQUAD FEED
+# 6. SQUAD FEED, THE LOCKER ROOM, SETTINGS, HOW IT WORKS, ADMIN
 # =========================================================================
 elif menu_choice == "🔥 Live Squad Feed":
     st.subheader("🔥 Live Squad Feed")
-    st.caption("Live stream of tickets placed across the squad.")
     for b in st.session_state.saved_bets[:25]:
         with st.container(border=True):
             st.write(f"**{b.get('user')}**: {b.get('bet')} on `{b.get('matchup')}` — Risk: ${b.get('risk_dollars')} | Return: ${b.get('payout_dollars')} ({b.get('status')})")
 
-# =========================================================================
-# 7. THE LOCKER ROOM
-# =========================================================================
 elif menu_choice == "💬 The Locker Room":
     st.subheader("💬 The Locker Room")
-    st.caption("Squad banter with compact reactions and threaded replies.")
-
     with st.form("send_msg_form", clear_on_submit=True):
         user_msg = st.text_input("Send a message", placeholder="Share your thoughts...")
         if st.form_submit_button("Post Message", use_container_width=True) and user_msg.strip():
-            new_msg = {
+            st.session_state.chat_messages.insert(0, {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip(),
                 "time": get_current_et_time().strftime("%I:%M %p ET"),
                 "text": user_msg.strip(),
                 "reactions": {},
                 "replies": []
-            }
-            st.session_state.chat_messages.insert(0, new_msg)
+            })
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
             st.rerun()
 
@@ -1861,7 +1541,6 @@ elif menu_choice == "💬 The Locker Room":
                 st.rerun()
 
             st.write(m.get("text"))
-
             col_rx, col_pop = st.columns([8, 2], vertical_alignment="center")
             if m["reactions"]:
                 rx_badges = [f"{em} {ct}" for em, ct in m["reactions"].items() if ct > 0]
@@ -1874,124 +1553,51 @@ elif menu_choice == "💬 The Locker Room":
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                         st.rerun()
 
-            with st.expander(f"💬 Replies ({len(m['replies'])})", expanded=False):
-                for rep in m["replies"]:
-                    st.markdown(f"• **{rep.get('user')}** ({rep.get('time')}): {rep.get('text')}")
-                with st.form(f"rep_{m_id}", clear_on_submit=True):
-                    rep_in = st.text_input("Reply", placeholder="Write reply...", label_visibility="collapsed")
-                    if st.form_submit_button("Reply") and rep_in.strip():
-                        m["replies"].append({"user": current_user.strip(), "time": get_current_et_time().strftime("%I:%M %p ET"), "text": rep_in.strip()})
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                        st.rerun()
-
-# =========================================================================
-# 8. HOW IT WORKS
-# =========================================================================
 elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
-    * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, and top winners. If you have no bets placed, follow the quick start onboarding steps!
-    * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Review real-time model projections, anytime touchdown props, and custom AI bet rationales with full team logo headers and dates.
+    * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, and top winners.
+    * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Model projections, point spreads, anytime touchdown props with guaranteed real player names, and auto-scrolling form loading.
     * **🔗 Multi-Leg Combo Builder**: Scan slates for optimal multi-leg parlay opportunities with compound true win probabilities.
     * **🏟️ In-Game War Room**: Click any single or multi-leg combo ticket in Locked Bets History to evaluate live score updates, all team logos, and quarter-by-quarter projection drift.
     * **⚙️ Account Settings**: Personalize your profile, bio, avatar, and privacy settings.
     """)
 
-# =========================================================================
-# 9. MODEL METHODOLOGY & MATH
-# =========================================================================
 elif menu_choice == "📖 Model Methodology & Math":
     st.subheader("📖 Flurkstradamus Machine Learning & Mathematical Architecture")
-    st.markdown("""
-    ### Why Flurkstradamus Outperforms Traditional Sportsbooks
-    Traditional sportsbooks rely on static pre-game lines and flat halving models (dividing full game lines by 2 for halftime). 
-    Flurkstradamus utilizes a **Self-Learning Bayesian In-Game Regression Engine** designed to avoid getting trapped in volatile blowouts or sudden shootouts.
-    """)
+    st.latex(r"Z = \frac{\text{Line} - \mu_{\text{in-game}}}{\sigma_{\text{decay}}}")
+    st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
+    st.latex(r"P(\text{TD}) = 1 - e^{-\left(\lambda_{\text{Team TD}} \times \text{Player Share} \times \text{Defensive Matchup Modifier}\right)}")
 
-    with st.container(border=True):
-        st.markdown("#### 1. In-Game Machine Learning & Quarter-by-Quarter Feedback Loop")
-        st.write(
-            "Every game's trajectory is continuously preserved across 5 discrete states in `storage.json`: "
-            "**Pre-Game $\to$ Q1 $\to$ Halftime $\to$ Q3 $\to$ Final**."
-        )
-        st.markdown("""
-        * **Tracking Projections vs. Reality:** The model logs its pre-game expected scoring pace against actual quarter-by-quarter scoring.
-        * **Pace-Shock Anomaly Detection:** If an early quarter exceeds baseline scoring pace by over 25% (e.g. a shootout), the model expands variance ($\sigma$) dynamically rather than forcing an artificial regression toward opening pregame numbers.
-        * **Feedback Learning:** As historical games finalize, the system aggregates the variance delta between pre-game predictions and final scores to train team-specific tempo modifiers for future slates.
-        """)
-
-    with st.container(border=True):
-        st.markdown("#### 2. Statistical Formulas & Normal CDF Modeling")
-        st.write("Over/Under win expectancies use the continuous cumulative normal distribution function:")
-        st.latex(r"Z = \frac{\text{Line} - \mu_{\text{in-game}}}{\sigma_{\text{decay}}}")
-        st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
-        st.write("Point spread ATS win expectancies utilize effective team efficiency margins passed through a logistic sigmoid function:")
-        st.latex(r"\text{Spread}_{\text{eff}} = (\text{Home Proj} - \text{Away Proj}) + \left[(\text{Home Win \%} - \text{Away Win \%}) \times 7.0\right]")
-        st.latex(r"P(\text{Home Cover}) = \frac{1}{1 + e^{-\frac{\text{Spread}_{\text{eff}}}{6.5}}}")
-
-    with st.container(border=True):
-        st.markdown("#### 3. Anytime Touchdown Prop Architecture")
-        st.write(
-            "Touchdown probabilities model goal-line share ($< 5$ yards), red-zone target volume, team implied totals, and opponent red-zone defensive efficiency."
-        )
-        st.latex(r"P(\text{TD}) = 1 - e^{-\left(\lambda_{\text{Team TD}} \times \text{Player Share} \times \text{Defensive Matchup Modifier}\right)}")
-
-# =========================================================================
-# 10. ACCOUNT SETTINGS (BOTTOM OF USER NAVIGATION)
-# =========================================================================
 elif menu_choice == "⚙️ Account Settings":
     st.subheader("⚙️ Account Settings & Profile Management")
-    st.caption("Customize your display name, profile details, privacy preferences, and security.")
-
     with st.form("account_settings_form"):
-        st.markdown("### 👤 Profile Details")
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            new_display = st.text_input("Display Name (Public Bettor Handle)", value=current_user_profile.get("display_name", ""))
-            new_email = st.text_input("Email Address", value=current_user_profile.get("email", ""))
-            new_team = st.text_input("Favorite Team", value=current_user_profile.get("favorite_team", "NFL"))
-        with col_p2:
-            new_avatar = st.text_input("Profile Avatar URL", value=current_user_profile.get("avatar_url", ""), placeholder="https://example.com/avatar.png")
-            new_bio = st.text_area("Short Bio", value=current_user_profile.get("bio", "Football strategist and value seeker."))
-
-        st.markdown("### 🔒 Privacy Settings")
-        pr1, pr2 = st.columns(2)
-        with pr1:
-            pub_lead = st.toggle("Show My Profile on Public Leaderboard", value=current_user_profile.get("is_public", True), help="Toggle whether other bettors can see your P&L ranking.")
-        with pr2:
-            share_fd = st.toggle("Publish My Slips to Live Squad Feed", value=current_user_profile.get("share_feed", True), help="Allow your locked bets to broadcast to the community.")
-
-        st.markdown("### 🔑 Security & Password Change")
-        sc1, sc2 = st.columns(2)
-        with sc1:
-            p_change1 = st.text_input("New Password (Leave blank to keep current)", type="password", placeholder="••••••••")
-        with sc2:
-            p_change2 = st.text_input("Confirm New Password", type="password", placeholder="••••••••")
+        new_display = st.text_input("Display Name", value=current_user_profile.get("display_name", ""))
+        new_email = st.text_input("Email Address", value=current_user_profile.get("email", ""))
+        new_team = st.text_input("Favorite Team", value=current_user_profile.get("favorite_team", "NFL"))
+        new_avatar = st.text_input("Profile Avatar URL", value=current_user_profile.get("avatar_url", ""))
+        new_bio = st.text_area("Short Bio", value=current_user_profile.get("bio", "Football strategist."))
+        pub_lead = st.toggle("Show My Profile on Public Leaderboard", value=current_user_profile.get("is_public", True))
+        share_fd = st.toggle("Publish My Slips to Live Squad Feed", value=current_user_profile.get("share_feed", True))
+        p_change1 = st.text_input("New Password", type="password")
+        p_change2 = st.text_input("Confirm New Password", type="password")
 
         if st.form_submit_button("Save Account Settings", use_container_width=True):
-            if new_display.strip():
-                current_user_profile["display_name"] = new_display.strip()
-            if new_email.strip() and "@" in new_email:
-                current_user_profile["email"] = new_email.strip()
+            if new_display.strip(): current_user_profile["display_name"] = new_display.strip()
+            if new_email.strip(): current_user_profile["email"] = new_email.strip()
             current_user_profile["favorite_team"] = new_team.strip()
             current_user_profile["avatar_url"] = new_avatar.strip()
             current_user_profile["bio"] = new_bio.strip()
             current_user_profile["is_public"] = pub_lead
             current_user_profile["share_feed"] = share_fd
-
-            if p_change1:
-                if p_change1 == p_change2 and len(p_change1) >= 4:
-                    current_user_profile["password_hash"] = hash_password(p_change1)
-                    st.success("Password updated!")
-                else:
-                    st.error("Passwords must match and be at least 4 characters.")
-
+            if p_change1 and p_change1 == p_change2 and len(p_change1) >= 4:
+                current_user_profile["password_hash"] = hash_password(p_change1)
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-            st.success("✅ Account settings successfully updated!")
+            st.success("Settings updated!")
             st.rerun()
 
 # =========================================================================
-# 11. ADMIN CONSOLE
+# 11. ADMIN CONSOLE (DEFENSIVE VARIABLE INITIALIZATION)
 # =========================================================================
 elif menu_choice == "🛡️ Admin" and is_user_admin:
     st.subheader("🛡️ Commissioner Admin Console")
@@ -2025,9 +1631,16 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
             else:
                 st.caption("No search queries logged.")
 
+            # DEFENSIVE VARIABLE INITIALIZATION FOR ADMIN PORTFOLIO
             u_clean = selected_u.lower()
-            u_bets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() == u_clean or b.get("user", "").strip().lower() == u_info.get("display_name", "").strip().lower()]
+            u_display_clean = u_info.get("display_name", "").strip().lower()
+            u_bets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() in [u_clean, u_display_clean]]
             
+            u_won = [b for b in u_bets if b.get("status") == "Won"]
+            u_lost = [b for b in u_bets if b.get("status") == "Lost"]
+            u_profit = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in u_won) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
+            
+            st.markdown(f"##### 📊 Betting Portfolio ({len(u_bets)} Tickets Locked In):")
             p_col1, p_col2, p_col3 = st.columns(3)
             p_col1.metric("Tickets Placed", len(u_bets))
             p_col2.metric("Record", f"{len(u_won)}W - {len(u_lost)}L")
