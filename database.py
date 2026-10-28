@@ -9,17 +9,13 @@ def hash_password(password: str) -> str:
     """Hashes a password with SHA-256."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
-def load_storage():
-    """
-    Always returns exactly 5 items:
-    saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots
-    """
-    default_users = {
+def get_default_users():
+    return {
         "flurk": {
-            "username": "flurk",
+            "username": "Flurk",
             "email": "flurk@flurkstradamus.com",
             "display_name": "Flurk",
-            "password_hash": hash_password("flurk123"),
+            "password_hash": hash_password("Loofus1993"),
             "is_admin": True,
             "is_banned": False,
             "created_at": "2026-10-26",
@@ -35,6 +31,10 @@ def load_storage():
         }
     }
 
+def load_storage():
+    """Safely loads data from storage.json without destroying existing user state."""
+    default_users = get_default_users()
+
     if not os.path.exists(STORAGE_FILE):
         return [], [], default_users, [], {}
 
@@ -43,15 +43,35 @@ def load_storage():
             data = json.load(f)
             saved_bets = data.get("saved_bets", [])
             chat_messages = data.get("chat_messages", [])
-            user_accounts = data.get("user_accounts", default_users)
+            user_accounts = data.get("user_accounts", {})
+            
+            # Case-insensitive ensure flurk exists with correct hash
+            has_flurk = False
+            for k, u in list(user_accounts.items()):
+                if k.lower() == "flurk" or u.get("username", "").lower() == "flurk":
+                    has_flurk = True
+                    # Force sync password hash if locked out
+                    u["password_hash"] = hash_password("Loofus1993")
+                    u["is_admin"] = True
+                    u["is_banned"] = False
+                    user_accounts["flurk"] = u
+                    break
+
+            if not has_flurk:
+                user_accounts["flurk"] = default_users["flurk"]
+
             banned_emails = data.get("banned_emails", [])
             game_snapshots = data.get("game_snapshots", {})
             return saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots
-    except Exception:
+    except Exception as e:
+        print(f"Error loading storage: {e}")
         return [], [], default_users, [], {}
 
 def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots):
     """Saves state back to storage.json safely."""
+    if not user_accounts:
+        user_accounts = get_default_users()
+
     payload = {
         "saved_bets": saved_bets,
         "chat_messages": chat_messages,
@@ -89,9 +109,7 @@ def find_game_for_bet(bet, games_data):
     return None
 
 def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots=None):
-    """
-    Grades completed games without overwriting user-entered payouts or stakes.
-    """
+    """Grades completed games without overwriting user-entered payouts or stakes."""
     if not saved_bets or not games_data:
         return False
 
@@ -197,11 +215,20 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
                 updated = True
 
     if updated:
+        try:
+            with open(STORAGE_FILE, "r") as f:
+                cur = json.load(f)
+                users = cur.get("user_accounts", get_default_users())
+                banned = cur.get("banned_emails", [])
+        except:
+            users = get_default_users()
+            banned = []
+            
         save_all_storage(
             saved_bets, 
             chat_messages if chat_messages is not None else [], 
-            {}, 
-            [], 
+            users, 
+            banned, 
             game_snapshots if game_snapshots is not None else {}
         )
 
