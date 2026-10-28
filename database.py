@@ -12,11 +12,9 @@ STORAGE_FILE = "storage.json"
 BACKUP_FILE = "storage_backup.json"
 
 def hash_password(password: str) -> str:
-    """Hashes a password with SHA-256."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def get_admin_credentials():
-    """Retrieves admin credentials securely from Streamlit Secrets."""
     try:
         cfg = st.secrets["admin"]
         return {
@@ -31,73 +29,52 @@ def get_admin_credentials():
             "email": "admin@domain.com"
         }
 
-def send_verification_email(recipient_email: str, code: str) -> bool:
-    """Sends verification code email via SMTP if configured in Secrets."""
-    smtp_cfg = st.secrets.get("smtp")
-    if not smtp_cfg:
-        return False
+def send_verification_email(recipient_email: str, code: str) -> tuple[bool, str]:
     try:
-        msg = MIMEMultipart()
-        msg["From"] = smtp_cfg.get("sender_email", smtp_cfg.get("username"))
-        msg["To"] = recipient_email
-        msg["Subject"] = "Your Flurkstradamus Verification Code"
-        
-        body = f"""Welcome to Flurkstradamus!
-        
-Your email verification code is: {code}
+        if "smtp" not in st.secrets:
+            return False, "SMTP configuration not configured in Streamlit Secrets."
+        smtp_cfg = st.secrets["smtp"]
+    except Exception as e:
+        return False, f"Failed reading SMTP secrets: {e}"
 
-Enter this code on the verification screen to activate your account.
-"""
-        msg.attach(MIMEText(body, "plain"))
-        
-        server = smtplib.SMTP(smtp_cfg.get("server", "smtp.gmail.com"), int(smtp_cfg.get("port", 587)))
-        server.starttls()
-        server.login(smtp_cfg.get("username"), smtp_cfg.get("password"))
+    server_host = smtp_cfg.get("server", "smtp.gmail.com")
+    port = int(smtp_cfg.get("port", 587))
+    username = smtp_cfg.get("username", "").strip()
+    password = smtp_cfg.get("password", "").strip().replace(" ", "")
+    sender_email = smtp_cfg.get("sender_email", username).strip()
+
+    if not username or not password:
+        return False, "SMTP username or password missing."
+
+    msg = MIMEMultipart()
+    msg["From"] = f"Flurkstradamus <{sender_email}>"
+    msg["To"] = recipient_email
+    msg["Subject"] = "Your Flurkstradamus Verification Code"
+    msg.attach(MIMEText(f"Welcome to Flurkstradamus!\n\nYour 6-digit confirmation code is: {code}\n", "plain"))
+
+    try:
+        if port == 465:
+            server = smtplib.SMTP_SSL(server_host, port, timeout=10)
+        else:
+            server = smtplib.SMTP(server_host, port, timeout=10)
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+        server.login(username, password)
         server.send_message(msg)
         server.quit()
-        return True
+        return True, "Activation email sent successfully."
+    except smtplib.SMTPAuthenticationError:
+        return False, "Gmail authentication failed. Please configure a 16-character App Password."
     except Exception as e:
-        print(f"SMTP send failed: {e}")
-        return False
-
-def get_default_users():
-    cred = get_admin_credentials()
-    u_key = cred["username"].lower()
-    return {
-        u_key: {
-            "username": cred["username"],
-            "email": cred["email"],
-            "display_name": cred["username"],
-            "password_hash": hash_password(cred["password"]),
-            "is_admin": True,
-            "is_banned": False,
-            "is_verified": True,
-            "verification_code": None,
-            "created_at": "2026-10-26",
-            "last_login": "2026-10-26 12:00 PM ET",
-            "favorite_team": "NFL",
-            "bio": "Lead strategist and administrator.",
-            "avatar_url": "",
-            "is_public": True,
-            "share_feed": True,
-            "searches": [],
-            "reset_token": None,
-            "session_token": None
-        }
-    }
+        return False, f"SMTP error: {str(e)}"
 
 def load_storage():
-    """
-    Safely loads storage data. If storage.json is missing or corrupted,
-    recovers from storage_backup.json to prevent data loss.
-    """
-    default_users = get_default_users()
     admin_cred = get_admin_credentials()
     admin_key = admin_cred["username"].lower()
-
     target_path = STORAGE_FILE if os.path.exists(STORAGE_FILE) else (BACKUP_FILE if os.path.exists(BACKUP_FILE) else None)
     if not target_path:
-        return [], [], default_users, [], {}, []
+        return [], [], {}, [], {}, []
 
     try:
         with open(target_path, "r") as f:
@@ -105,16 +82,17 @@ def load_storage():
             saved_bets = data.get("saved_bets", [])
             chat_messages = data.get("chat_messages", [])
             user_accounts = data.get("user_accounts", {})
+            banned_emails = data.get("banned_emails", [])
+            game_snapshots = data.get("game_snapshots", {})
             support_tickets = data.get("support_tickets", [])
 
-            # Ensure admin matches st.secrets credentials without data loss
             admin_user = user_accounts.get(admin_key, {
                 "username": admin_cred["username"],
                 "email": admin_cred["email"],
                 "display_name": admin_cred["username"],
-                "created_at": "2026-10-26",
-                "favorite_team": "NFL",
-                "bio": "Lead strategist and administrator.",
+                "created_at": "2026-10-28",
+                "favorite_team": "Multi-Sport",
+                "bio": "Lead administrator.",
                 "avatar_url": "",
                 "is_public": True,
                 "share_feed": True,
@@ -126,13 +104,8 @@ def load_storage():
             admin_user["is_banned"] = False
             admin_user["is_verified"] = True
             admin_user["password_hash"] = hash_password(admin_cred["password"])
-            admin_user["email"] = admin_cred["email"]
             user_accounts[admin_key] = admin_user
 
-            banned_emails = data.get("banned_emails", [])
-            game_snapshots = data.get("game_snapshots", {})
-
-            # Ensure every bet slip preserves locked_profit
             for b in saved_bets:
                 if "locked_profit" not in b:
                     p = float(b.get("payout_dollars", b.get("payout", 0.0)))
@@ -140,15 +113,10 @@ def load_storage():
                     b["locked_profit"] = p - r
 
             return saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots, support_tickets
-    except Exception as e:
-        print(f"Error loading storage: {e}")
-        return [], [], default_users, [], {}, []
+    except Exception:
+        return [], [], {}, [], {}, []
 
 def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots, support_tickets=None):
-    """
-    Guaranteed atomic save with disk merge and automated backup creation.
-    Never wipes out accounts, bets, chat, or support tickets if an empty state is received.
-    """
     disk_bets, disk_chat, disk_users, disk_banned, disk_snaps, disk_tickets = [], [], {}, [], {}, []
     if os.path.exists(STORAGE_FILE):
         try:
@@ -164,20 +132,13 @@ def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, ga
         except Exception:
             pass
 
-    final_bets = saved_bets if saved_bets else disk_bets
-    final_chat = chat_messages if chat_messages else disk_chat
-    final_users = user_accounts if user_accounts else (disk_users if disk_users else get_default_users())
-    final_banned = banned_emails if banned_emails else disk_banned
-    final_snaps = game_snapshots if game_snapshots else disk_snaps
-    final_tickets = support_tickets if support_tickets is not None else disk_tickets
-
     payload = {
-        "saved_bets": final_bets,
-        "chat_messages": final_chat,
-        "user_accounts": final_users,
-        "banned_emails": final_banned,
-        "game_snapshots": final_snaps,
-        "support_tickets": final_tickets
+        "saved_bets": saved_bets if saved_bets else disk_bets,
+        "chat_messages": chat_messages if chat_messages else disk_chat,
+        "user_accounts": user_accounts if user_accounts else disk_users,
+        "banned_emails": banned_emails if banned_emails else disk_banned,
+        "game_snapshots": game_snapshots if game_snapshots else disk_snaps,
+        "support_tickets": support_tickets if support_tickets is not None else disk_tickets
     }
     try:
         temp_file = STORAGE_FILE + ".tmp"
@@ -185,14 +146,12 @@ def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, ga
             json.dump(payload, f, indent=2)
         os.replace(temp_file, STORAGE_FILE)
     except Exception as e:
-        print(f"Error saving storage: {e}")
+        print(f"Save error: {e}")
 
 def find_game_for_bet(bet, games_data):
-    """Matches a bet ticket to an active or past ESPN game object."""
     matchup = bet.get("matchup", "")
     if not matchup or not games_data:
         return None
-
     parts = matchup.split("@")
     if len(parts) == 2:
         a_abbr = parts[0].strip().upper()
@@ -200,21 +159,17 @@ def find_game_for_bet(bet, games_data):
         for g in games_data:
             if g.get("away_short", "").upper() == a_abbr and g.get("home_short", "").upper() == h_abbr:
                 return g
-
     for g in games_data:
         h_team = g.get("home_team", "").lower()
         a_team = g.get("away_team", "").lower()
         if (h_team in matchup.lower() or g.get("home_short", "").lower() in matchup.lower()) and \
            (a_team in matchup.lower() or g.get("away_short", "").lower() in matchup.lower()):
             return g
-
     return None
 
 def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots=None, support_tickets=None):
-    """Grades completed games without modifying user-entered payout or risk amounts."""
     if not saved_bets or not games_data:
         return False
-
     updated = False
 
     for bet in saved_bets:
@@ -222,88 +177,56 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
             continue
 
         is_combo = (bet.get("bet_category") == "Combo" or "Leg" in bet.get("type", ""))
-
         if is_combo:
             legs = bet.get("parsed_legs", [])
-            if not legs:
-                continue
-
-            all_legs_final = True
-            any_leg_lost = False
-
+            all_final = True
+            any_lost = False
             for leg in legs:
-                leg_game = find_game_for_bet({"matchup": leg.get("matchup", "")}, games_data)
-                if not leg_game:
-                    all_legs_final = False
+                lg_game = find_game_for_bet({"matchup": leg.get("matchup", "")}, games_data)
+                if not lg_game or not lg_game.get("completed", False):
+                    all_final = False
                     continue
-
-                is_completed = leg_game.get("completed", False) or "final" in str(leg_game.get("status", "")).lower()
-                if not is_completed:
-                    all_legs_final = False
-                    continue
-
-                h_score = leg_game.get("home_score", 0)
-                a_score = leg_game.get("away_score", 0)
-                tot_score = h_score + a_score
-
-                l_type = leg.get("type", "")
-                l_side = leg.get("side", "")
-                l_line = leg.get("line")
-
-                if l_type == "Game Total" and l_line is not None:
-                    if l_side == "Under" and tot_score > float(l_line):
-                        any_leg_lost = True
-                    elif l_side == "Over" and tot_score < float(l_line):
-                        any_leg_lost = True
-                elif l_type in ["Straight Up Winner", "Moneyline"]:
+                h_sc = lg_game.get("home_score", 0)
+                a_sc = lg_game.get("away_score", 0)
+                tot_sc = h_sc + a_sc
+                if leg.get("type") == "Game Total" and leg.get("line") is not None:
+                    if leg.get("side") == "Under" and tot_sc > float(leg.get("line")):
+                        any_lost = True
+                    elif leg.get("side") == "Over" and tot_sc < float(leg.get("line")):
+                        any_lost = True
+                elif leg.get("type") in ["Straight Up Winner", "Moneyline"]:
                     picked = leg.get("picked_team", "")
-                    if picked == leg_game.get("home_team") and h_score < a_score:
-                        any_leg_lost = True
-                    elif picked == leg_game.get("away_team") and a_score < h_score:
-                        any_leg_lost = True
+                    if picked == lg_game.get("home_team") and h_sc < a_sc:
+                        any_lost = True
+                    elif picked == lg_game.get("away_team") and a_sc < h_sc:
+                        any_lost = True
 
-            if any_leg_lost:
+            if any_lost:
                 bet["status"] = "Lost"
                 updated = True
-            elif all_legs_final and not any_leg_lost:
+            elif all_final and not any_lost:
                 bet["status"] = "Won"
                 updated = True
-
         else:
             game = find_game_for_bet(bet, games_data)
-            if not game:
+            if not game or not game.get("completed", False):
                 continue
 
-            is_completed = game.get("completed", False) or "final" in str(game.get("status", "")).lower()
-            if not is_completed:
-                continue
-
-            h_score = game.get("home_score", 0)
-            a_score = game.get("away_score", 0)
-            tot_score = h_score + a_score
+            h_sc = game.get("home_score", 0)
+            a_sc = game.get("away_score", 0)
+            tot_sc = h_sc + a_sc
             cat = bet.get("bet_category", "")
             t_line = bet.get("target_line")
             b_side = bet.get("bet_direction", "")
 
             won = None
-
-            if cat in ["Total", "2H Total"] and t_line is not None:
-                t_val = float(t_line)
-                if b_side == "Under":
-                    won = (tot_score < t_val)
-                elif b_side == "Over":
-                    won = (tot_score > t_val)
-            elif cat == "Spread" and t_line is not None:
-                spread_val = float(t_line)
-                if bet.get("picked_team") == game.get("home_team"):
-                    won = ((h_score - a_score) + spread_val) > 0
-                else:
-                    won = ((a_score - h_score) + spread_val) > 0
-            elif cat == "Moneyline":
-                if bet.get("picked_team") == game.get("home_team"):
-                    won = (h_score > a_score)
-                else:
-                    won = (a_score > h_score)
+            if "Total" in cat and t_line is not None:
+                won = (tot_sc < float(t_line)) if b_side == "Under" else (tot_sc > float(t_line))
+            elif "Spread" in cat and t_line is not None:
+                diff = (h_sc - a_sc) if bet.get("picked_team") == game.get("home_team") else (a_sc - h_sc)
+                won = (diff + float(t_line)) > 0
+            elif "Moneyline" in cat:
+                won = (h_sc > a_sc) if bet.get("picked_team") == game.get("home_team") else (a_sc > h_sc)
 
             if won is True:
                 bet["status"] = "Won"
@@ -313,13 +236,5 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
                 updated = True
 
     if updated:
-        save_all_storage(
-            saved_bets, 
-            chat_messages if chat_messages is not None else [], 
-            {}, 
-            [], 
-            game_snapshots if game_snapshots is not None else {},
-            support_tickets=support_tickets
-        )
-
+        save_all_storage(saved_bets, chat_messages or [], {}, [], game_snapshots or {}, support_tickets)
     return updated
