@@ -50,7 +50,7 @@ def inject_google_analytics():
 
 inject_google_analytics()
 
-# CSS Layout, Mobile Optimization & Left Alignment
+# CSS Layout, Mobile Optimization & Absolute Left Alignment
 st.markdown("""
 <style>
     @media (min-width: 768px) {
@@ -109,12 +109,15 @@ st.markdown("""
     }
     a.header-anchor, a[data-testid="stHeaderAnchor"] { display: none !important; }
     
-    /* Left-align sidebar buttons & contents */
-    section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.25rem !important; }
+    /* ENFORCE STRICT LEFT ALIGNMENT ON ALL SIDEBAR BUTTONS & WRAPPERS */
+    section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { 
+        gap: 0.25rem !important; 
+    }
     section[data-testid="stSidebar"] div[data-testid="stButton"] {
         margin: 0 !important;
         padding: 0 !important;
         width: 100% !important;
+        text-align: left !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stButton"] button {
         text-align: left !important; 
@@ -122,10 +125,17 @@ st.markdown("""
         display: flex !important;
         align-items: center !important; 
         padding-left: 14px !important; 
+        padding-right: 14px !important;
         min-height: 2.2rem !important;
         font-weight: 600 !important; 
         border-radius: 6px !important; 
         width: 100% !important;
+    }
+    section[data-testid="stSidebar"] div[data-testid="stButton"] button div {
+        text-align: left !important;
+        justify-content: flex-start !important;
+        width: 100% !important;
+        display: flex !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stButton"] button p {
         text-align: left !important; 
@@ -529,11 +539,19 @@ else:
 
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots, st.session_state.support_tickets)
 
+# Navigation Menu (Leaderboard moved directly under Live Squad Feed)
 nav_list = [
-    "📊 My Dashboard", "⚡ Single Game Engine", "🔗 Multi-Leg Combo Builder",
-    "📜 Locked Bets History", "🏆 Leaderboard", "🔥 Live Squad Feed",
-    "💡 How It Works", "📖 Model Methodology & Math", "⚙️ Account Settings",
-    "📩 Feedback & Support", "ℹ️ About Flurkstradamus"
+    "📊 My Dashboard", 
+    "⚡ Single Game Engine", 
+    "🔗 Multi-Leg Combo Builder",
+    "📜 Locked Bets History", 
+    "🔥 Live Squad Feed",
+    "🏆 Leaderboard", 
+    "💡 How It Works", 
+    "📖 Model Methodology & Math", 
+    "⚙️ Account Settings",
+    "📩 Feedback & Support", 
+    "ℹ️ About Flurkstradamus"
 ]
 if is_admin: 
     nav_list.append("🛡️ Admin")
@@ -575,10 +593,10 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
     render_combo_builder(curr_user, active_uname, games_data, get_current_et_time)
 elif menu_choice == "📜 Locked Bets History":
     render_history(curr_user, active_uname, is_admin, games_data, render_ticket_card)
-elif menu_choice == "🏆 Leaderboard":
-    render_leaderboard()
 elif menu_choice == "🔥 Live Squad Feed":
     render_squad_feed(games_data, render_ticket_card)
+elif menu_choice == "🏆 Leaderboard":
+    render_leaderboard()
 elif menu_choice == "💡 How It Works":
     render_how_it_works()
 elif menu_choice == "📖 Model Methodology & Math":
