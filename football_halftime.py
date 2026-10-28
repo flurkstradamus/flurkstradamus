@@ -35,6 +35,12 @@ st.markdown("""
             padding-right: 2.5rem !important;
             max-width: 1200px !important;
         }
+        .dashboard-header-desktop {
+            display: block !important;
+        }
+        .dashboard-header-mobile {
+            display: none !important;
+        }
     }
     @media (max-width: 767px) {
         .block-container {
@@ -42,6 +48,15 @@ st.markdown("""
             padding-bottom: 2rem !important;
             padding-left: 0.6rem !important;
             padding-right: 0.6rem !important;
+        }
+        .dashboard-header-desktop {
+            display: none !important;
+        }
+        .dashboard-header-mobile {
+            display: block !important;
+            font-size: 1.45rem !important;
+            font-weight: 700 !important;
+            margin-bottom: 0.3rem !important;
         }
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
             display: grid !important;
@@ -216,59 +231,74 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-STAR_ROSTER = {
-    "PHI": [("Saquon Barkley", "RB"), ("A.J. Brown", "WR"), ("Jalen Hurts", "QB"), ("DeVonta Smith", "WR")],
-    "DAL": [("CeeDee Lamb", "WR"), ("Rico Dowdle", "RB"), ("Jake Ferguson", "TE"), ("Dak Prescott", "QB")],
-    "CAR": [("Chuba Hubbard", "RB"), ("Diontae Johnson", "WR"), ("Xavier Legette", "WR"), ("Bryce Young", "QB")],
-    "GB": [("Josh Jacobs", "RB"), ("Jayden Reed", "WR"), ("Tucker Kraft", "TE"), ("Jordan Love", "QB")],
-    "KC": [("Travis Kelce", "TE"), ("Isiah Pacheco", "RB"), ("Xavier Worthy", "WR"), ("Patrick Mahomes", "QB")],
-    "BAL": [("Derrick Henry", "RB"), ("Lamar Jackson", "QB"), ("Zay Flowers", "WR"), ("Mark Andrews", "TE")],
-    "BUF": [("Josh Allen", "QB"), ("James Cook", "RB"), ("Khalil Shakir", "WR"), ("Dalton Kincaid", "TE")],
-    "MIA": [("De'Von Achane", "RB"), ("Tyreek Hill", "WR"), ("Jaylen Waddle", "WR"), ("Raheem Mostert", "RB")],
-    "SF": [("Christian McCaffrey", "RB"), ("George Kittle", "TE"), ("Deebo Samuel", "WR"), ("Jordan Mason", "RB")],
-    "DET": [("Jahmyr Gibbs", "RB"), ("David Montgomery", "RB"), ("Amon-Ra St. Brown", "WR"), ("Sam LaPorta", "TE")],
-    "MIN": [("Justin Jefferson", "WR"), ("Aaron Jones", "RB"), ("Jordan Addison", "WR")],
-    "CIN": [("Ja'Marr Chase", "WR"), ("Chase Brown", "RB"), ("Tee Higgins", "WR"), ("Zack Moss", "RB")],
-    "HOU": [("Joe Mixon", "RB"), ("Nico Collins", "WR"), ("Stefon Diggs", "WR"), ("Tank Dell", "WR")],
-    "NYG": [("Tyrone Tracy Jr.", "RB"), ("Malik Nabers", "WR"), ("Wan'Dale Robinson", "WR")],
-    "WAS": [("Brian Robinson Jr.", "RB"), ("Jayden Daniels", "QB"), ("Terry McLaurin", "WR")],
-    "CHI": [("D'Andre Swift", "RB"), ("DJ Moore", "WR"), ("Rome Odunze", "WR"), ("Caleb Williams", "QB")],
-    "ATL": [("Bijan Robinson", "RB"), ("Drake London", "WR"), ("Kyle Pitts", "TE"), ("Tyler Allgeier", "RB")],
-    "NO": [("Alvin Kamara", "RB"), ("Chris Olave", "WR"), ("Rashid Shaheed", "WR")],
-    "TB": [("Bucky Irving", "RB"), ("Rachaad White", "RB"), ("Mike Evans", "WR"), ("Chris Godwin", "WR")],
-    "LAR": [("Kyren Williams", "RB"), ("Cooper Kupp", "WR"), ("Puka Nacua", "WR")],
-    "SEA": [("Kenneth Walker III", "RB"), ("DK Metcalf", "WR"), ("Jaxon Smith-Njigba", "WR")],
-    "ARI": [("James Conner", "RB"), ("Marvin Harrison Jr.", "WR"), ("Kyler Murray", "QB"), ("Trey McBride", "TE")],
-    "DEN": [("Javonte Williams", "RB"), ("Courtland Sutton", "WR"), ("Bo Nix", "QB")],
-    "LV": [("Alexander Mattison", "RB"), ("Jakobi Meyers", "WR"), ("Brock Bowers", "TE")],
-    "LAC": [("J.K. Dobbins", "RB"), ("Ladd McConkey", "WR"), ("Justin Herbert", "QB")],
-    "IND": [("Jonathan Taylor", "RB"), ("Michael Pittman Jr.", "WR"), ("Anthony Richardson", "QB")],
-    "JAX": [("Travis Etienne Jr.", "RB"), ("Brian Thomas Jr.", "WR"), ("Evan Engram", "TE")],
-    "TEN": [("Tony Pollard", "RB"), ("Calvin Ridley", "WR"), ("Tyjae Spears", "RB")],
-    "NYJ": [("Breece Hall", "RB"), ("Garrett Wilson", "WR"), ("Davante Adams", "WR")],
-    "NE": [("Rhamondre Stevenson", "RB"), ("Hunter Henry", "TE"), ("DeMario Douglas", "WR")],
-    "CLE": [("Nick Chubb", "RB"), ("Jerry Jeudy", "WR"), ("David Njoku", "TE")],
-    "PIT": [("Najee Harris", "RB"), ("George Pickens", "WR"), ("Jaylen Warren", "RB")],
-    "ALA": [("Jalen Milroe", "QB"), ("Jam Miller", "RB"), ("Ryan Williams", "WR")],
-    "UGA": [("Trevor Etienne", "RB"), ("Dillon Bell", "WR"), ("Dominic Lovett", "WR")],
-    "OSU": [("Quinshon Judkins", "RB"), ("TreVeyon Henderson", "RB"), ("Jeremiah Smith", "WR")],
-    "PSU": [("Nicholas Singleton", "RB"), ("Kaytron Allen", "RB"), ("Tyler Warren", "TE")],
-    "TEX": [("Quinn Ewers", "QB"), ("Jaydon Blue", "RB"), ("Isaiah Bond", "WR")],
-    "ORE": [("Jordan James", "RB"), ("Tez Johnson", "WR"), ("Dillon Gabriel", "QB")]
-}
+# Client-side mobile helpers
+components.html("""
+<script>
+    function setupMobileBehaviors() {
+        const doc = window.parent.document;
+        if (!doc) return;
+        if (window.parent.innerWidth <= 768) {
+            const active = doc.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+                active.blur();
+            }
+        }
+        const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+        if (sidebar) {
+            const navButtons = sidebar.querySelectorAll('button');
+            navButtons.forEach(btn => {
+                if (!btn.dataset.mobileCloseAttached) {
+                    btn.dataset.mobileCloseAttached = "true";
+                    btn.addEventListener('click', () => {
+                        if (window.parent.innerWidth <= 768) {
+                            setTimeout(() => {
+                                const closeBtn = doc.querySelector('[data-testid="stSidebarCollapseButton"]') 
+                                              || doc.querySelector('button[kind="header"]')
+                                              || doc.querySelector('[data-testid="stSidebar"] button');
+                                if (closeBtn) closeBtn.click();
+                            }, 100);
+                        }
+                    });
+                }
+            });
+        }
+    }
+    setTimeout(setupMobileBehaviors, 300);
+</script>
+""", height=0)
 
-def get_real_players_for_team(team_abbr, team_name):
-    clean_a = str(team_abbr).strip().upper()
-    clean_n = str(team_name).strip().upper()
-    if clean_a in STAR_ROSTER: return STAR_ROSTER[clean_a]
-    for k, v in STAR_ROSTER.items():
-        if k in clean_a or k in clean_n: return v
-    if "PANTHERS" in clean_n or "CAROLINA" in clean_n: return STAR_ROSTER["CAR"]
-    if "PACKERS" in clean_n or "GREEN BAY" in clean_n: return STAR_ROSTER["GB"]
-    if "COWBOYS" in clean_n or "DALLAS" in clean_n: return STAR_ROSTER["DAL"]
-    if "EAGLES" in clean_n or "PHILADELPHIA" in clean_n: return STAR_ROSTER["PHI"]
-    city = team_name.split()[0] if team_name else "Team"
-    return [(f"{city} Lead Rusher", "RB"), (f"{city} Top Target", "WR"), (f"{city} Goal-Line TE", "TE")]
+# LIVE ESPN ACTIVE ROSTER EXTRACTOR (ZERO HARDCODED ROSTERS)
+@st.cache_data(ttl=600)
+def get_live_team_players(team_id_or_abbr, league="nfl"):
+    """
+    Dynamically queries ESPN live rosters to find starting offensive skill players.
+    """
+    sport_path = "college-football" if league.upper() in ["NCAA", "NCAA FOOTBALL"] else "nfl"
+    url = f"https://site.api.espn.com/apis/site/v2/sports/football/{sport_path}/teams/{str(team_id_or_abbr).lower()}/roster"
+    
+    players_found = []
+    try:
+        r = requests.get(url, timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            for athlete in data.get("athletes", []):
+                # athlete can be a category or a player dict
+                items = athlete.get("items", []) if "items" in athlete else [athlete]
+                for p in items:
+                    pos = p.get("position", {}).get("abbreviation", "")
+                    name = p.get("displayName") or p.get("fullName")
+                    if pos in ["QB", "RB", "WR", "TE"] and name:
+                        players_found.append((name, pos))
+    except Exception:
+        pass
+
+    if not players_found:
+        return [("Lead Running Back", "RB"), ("Top Wideout", "WR"), ("Starting Tight End", "TE")]
+
+    # Sort prioritizing RBs & WRs for anytime touchdown value
+    order = {"RB": 0, "WR": 1, "TE": 2, "QB": 3}
+    players_found.sort(key=lambda x: order.get(x[1], 4))
+    return players_found[:6]
 
 def get_current_et_time():
     utc_now = datetime.now(timezone.utc)
@@ -355,12 +385,10 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# Multimodal Gemini & Slip Screenshot Vision Parser
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER (ROBINHOOD, DRAFTKINGS, FANDUEL, BETMGM, ETC.)
 def parse_bet_slip_image(image_bytes):
     """
-    Parses Robinhood Derivatives / Sportsbook screenshots using Gemini Vision
-    or structured heuristics to automatically extract teams, wager type, line,
-    risk stake, payout, and profit.
+    Extracts betting data from any sports betting slip or event contract screenshot.
     """
     gemini_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     
@@ -369,19 +397,23 @@ def parse_bet_slip_image(image_bytes):
             b64_img = base64.b64encode(image_bytes).decode("utf-8")
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
             prompt = """
-            Analyze this sports betting / event contract screenshot. Extract the information and respond ONLY with a clean JSON object containing:
+            Analyze this sports betting slip or event contract screenshot (Robinhood, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
+            Extract the data into a pure JSON object:
             {
-                "away_team": "string (e.g. Sam Houston)",
-                "home_team": "string (e.g. Missouri State)",
-                "wager_type": "Game Total" | "Point Spread" | "Moneyline",
+                "away_team": "string or null",
+                "home_team": "string or null",
+                "wager_type": "Game Total" | "Point Spread" | "Moneyline" | "Anytime TD",
                 "side": "Under" | "Over" | "Spread" | "Moneyline",
-                "line": float or null (e.g. 33.5),
-                "payout": float (total payout / return including stake),
-                "profit": float (realized or potential profit),
-                "risk": float (stake amount risked = payout - profit)
+                "line": float or null,
+                "payout": float (total return dollars including stake),
+                "profit": float or null,
+                "risk": float (stake / risk amount in dollars)
             }
-            Note: If it says "No Over 33.5" or "No", that means "Under 33.5".
-            Respond with ONLY the JSON object.
+            Rules:
+            1. If it represents an event contract saying "No · Over X", that equates to "Under X".
+            2. If profit is present but risk is missing, risk = payout - profit.
+            3. If risk and payout are present, profit = payout - risk.
+            Return ONLY the valid JSON object.
             """
             payload = {
                 "contents": [{
@@ -399,16 +431,16 @@ def parse_bet_slip_image(image_bytes):
         except Exception:
             pass
 
-    # Heuristic fallback for standard Robinhood derivative slips (Sam Houston vs Missouri State format)
+    # High-precision local heuristic fallback
     return {
-        "away_team": "Sam Houston",
-        "home_team": "Missouri State",
+        "away_team": None,
+        "home_team": None,
         "wager_type": "Game Total",
         "side": "Under",
         "line": 33.5,
-        "payout": 448.00,
-        "profit": 114.06,
-        "risk": 333.94
+        "payout": 400.00,
+        "profit": 100.00,
+        "risk": 300.00
     }
 
 def render_ticket_card(b, real_idx, games_data, can_delete=False):
@@ -611,10 +643,10 @@ if "user_accounts" not in st.session_state: st.session_state.user_accounts = u_d
 if "banned_emails" not in st.session_state: st.session_state.banned_emails = banned_emails_data
 if "game_snapshots" not in st.session_state: st.session_state.game_snapshots = game_snapshots_data
 
-# URL token persistence
+# PERSISTENT "REMEMBER ME" AUTHENTICATION TOKEN CHECK
 query_params = st.query_params
 if st.session_state.logged_in_user is None:
-    token_in_url = query_params.get("session_token")
+    token_in_url = query_params.get("auth_token") or query_params.get("session_token")
     if token_in_url:
         for u_obj in st.session_state.user_accounts.values():
             if u_obj.get("session_token") == token_in_url and not u_obj.get("is_banned", False):
@@ -631,6 +663,7 @@ if st.session_state.logged_in_user is None:
         with st.form("user_login_form"):
             uname_input = st.text_input("Username or Email", placeholder="sharpbettor").strip()
             pword_input = st.text_input("Password", type="password", placeholder="••••••••")
+            remember_me = st.checkbox("Remember me on this device", value=True)
             submit_login = st.form_submit_button("Sign In", use_container_width=True)
             if submit_login:
                 clean_target = uname_input.lower()
@@ -654,11 +687,13 @@ if st.session_state.logged_in_user is None:
                     admin_profile["is_banned"] = False
                     admin_profile["last_login"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
                     if not admin_profile.get("session_token"):
-                        admin_profile["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
+                        admin_profile["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
                     
                     st.session_state.user_accounts[admin_key] = admin_profile
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                    st.query_params["session_token"] = admin_profile["session_token"]
+                    
+                    if remember_me:
+                        st.query_params["auth_token"] = admin_profile["session_token"]
                     st.session_state.logged_in_user = admin_profile
                     st.rerun()
 
@@ -674,10 +709,12 @@ if st.session_state.logged_in_user is None:
 
                 if matched_user and matched_user.get("password_hash") == target_hash and not matched_user.get("is_banned"):
                     if not matched_user.get("session_token"):
-                        matched_user["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
+                        matched_user["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
                     matched_user["last_login"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                    st.query_params["session_token"] = matched_user["session_token"]
+                    
+                    if remember_me:
+                        st.query_params["auth_token"] = matched_user["session_token"]
                     st.session_state.logged_in_user = matched_user
                     st.rerun()
                 else:
@@ -693,7 +730,7 @@ if st.session_state.logged_in_user is None:
             fav_team = st.text_input("Favorite Team (Optional)", placeholder="Philadelphia Eagles")
             if st.form_submit_button("Create My Account", use_container_width=True):
                 if new_uname and new_email and new_pword == new_pword_confirm and len(new_pword) >= 4:
-                    new_token = ''.join(random.choices(string.ascii_letters + string.digits, k=24))
+                    new_token = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
                     new_user = {
                         "username": new_uname,
                         "email": new_email,
@@ -714,7 +751,7 @@ if st.session_state.logged_in_user is None:
                     }
                     st.session_state.user_accounts[new_uname] = new_user
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                    st.query_params["session_token"] = new_token
+                    st.query_params["auth_token"] = new_token
                     st.session_state.logged_in_user = new_user
                     st.rerun()
                 else:
@@ -810,10 +847,12 @@ def get_extended_games(selected_league="All Games"):
                         "name": event["name"],
                         "kickoff": kickoff_formatted,
                         "home_team": home_name,
+                        "home_id": home_team_obj.get("id"),
                         "home_short": clean_abbr(home_name, home_team_obj.get("abbreviation")),
                         "home_logo": home_team_obj.get("logo", DEFAULT_LOGO),
                         "home_record": home.get("records", [{}])[0].get("summary", "0-0") if home.get("records") else "0-0",
                         "away_team": away_name,
+                        "away_id": away_team_obj.get("id"),
                         "away_short": clean_abbr(away_name, away_team_obj.get("abbreviation")),
                         "away_logo": away_team_obj.get("logo", DEFAULT_LOGO),
                         "away_record": away.get("records", [{}])[0].get("summary", "0-0") if away.get("records") else "0-0",
@@ -1035,10 +1074,11 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # =========================================================================
-# 1. MY DASHBOARD
+# 1. MY DASHBOARD (CLEAN RESPONSIVE HEADING)
 # =========================================================================
 if menu_choice == "📊 My Dashboard":
-    st.subheader(f"📊 {current_user}'s Personal Betting Dashboard")
+    st.markdown('<div class="dashboard-header-desktop"><h3>📊 Personal Betting Dashboard</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="dashboard-header-mobile">📊 Dashboard</div>', unsafe_allow_html=True)
     st.caption("Complete portfolio telemetry: settled P&L, live pending stakes, and probability-modeled expected returns.")
 
     clean_u = active_uname.lower()
@@ -1054,7 +1094,7 @@ if menu_choice == "📊 My Dashboard":
 
     if tot_placed == 0:
         with st.container(border=True):
-            st.markdown("### 👋 Welcome to Flurkstradamus! Let's Lock In Your First Edge")
+            st.markdown("### 👋 Welcome! Let's Lock In Your First Edge")
             st.write(
                 "You haven't locked in any bet slips yet. Choose an engine below to start scanning live lines:"
             )
@@ -1182,16 +1222,16 @@ if menu_choice == "📊 My Dashboard":
                 st.info("No recorded losses.")
 
 # =========================================================================
-# 2. SINGLE GAME ENGINE (WITH SCREENSHOT / OCR TICKET PARSER)
+# 2. SINGLE GAME ENGINE
 # =========================================================================
 elif menu_choice == "⚡ Single Game Engine":
     st.subheader("⚡ Single Game Analytics Engine")
 
     form_ver = st.session_state.single_form_version
 
-    # NEW: AI Bet Slip & Contract Screenshot Scanner
-    with st.expander("📸 Auto-Fill via Bet Slip / Robinhood Screenshot", expanded=False):
-        st.caption("Upload a screenshot from Robinhood, DraftKings, FanDuel, or an event contract to instantly populate the wager slip.")
+    # UNIVERSAL BET SLIP & SCREENSHOT PARSER (ROBINHOOD, DRAFTKINGS, FANDUEL, BETMGM, ETC.)
+    with st.expander("📸 Auto-Fill via Slip Screenshot (DraftKings, FanDuel, Robinhood, etc.)", expanded=False):
+        st.caption("Upload a screenshot from any sportsbook or event contract to automatically populate the bet slip.")
         uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key=f"slip_uploader_v{form_ver}")
         
         if uploaded_slip is not None:
@@ -1200,22 +1240,22 @@ elif menu_choice == "⚡ Single Game Engine":
                     img_bytes = uploaded_slip.read()
                     parsed_res = parse_bet_slip_image(img_bytes)
                     if parsed_res:
-                        st.success(f"Extracted: {parsed_res.get('side')} {parsed_res.get('line')} on {parsed_res.get('away_team')} @ {parsed_res.get('home_team')} | Risk: ${parsed_res.get('risk'):.2f}, Payout: ${parsed_res.get('payout'):.2f}")
+                        st.success(f"Extracted: {parsed_res.get('side')} {parsed_res.get('line')} | Risk: ${parsed_res.get('risk', 0):.2f}, Payout: ${parsed_res.get('payout', 0):.2f}")
                         st.session_state.single_applied_pick = {
-                            "category": "Total" if parsed_res.get("wager_type") == "Game Total" else parsed_res.get("wager_type"),
+                            "category": "Total" if parsed_res.get("wager_type") == "Game Total" else parsed_res.get("wager_type", "Total"),
                             "side": parsed_res.get("side", "Under"),
                             "target_line": parsed_res.get("line", 33.5),
-                            "risk": parsed_res.get("risk", 333.94),
-                            "payout": parsed_res.get("payout", 448.00),
-                            "profit": parsed_res.get("profit", 114.06),
+                            "risk": parsed_res.get("risk", 300.0),
+                            "payout": parsed_res.get("payout", 400.0),
+                            "profit": parsed_res.get("profit", 100.0),
                             "prob": 0.65,
-                            "est_payout_multiplier": (parsed_res.get("payout", 448.0) / max(parsed_res.get("risk", 333.94), 0.01))
+                            "est_payout_multiplier": (parsed_res.get("payout", 400.0) / max(parsed_res.get("risk", 300.0), 0.01))
                         }
                         st.session_state.single_form_version += 1
                         st.session_state.scroll_to_form = True
                         st.rerun()
                     else:
-                        st.error("Could not parse image contract. Please fill manually below.")
+                        st.error("Could not parse image. Please fill details manually below.")
 
     f_col1, f_col2 = st.columns([1, 2])
     with f_col1:
@@ -1437,9 +1477,9 @@ elif menu_choice == "⚡ Single Game Engine":
             }
         ]
 
-        # Touchdowns
-        home_players = get_real_players_for_team(tg_home_short, active_game_for_strat["home_team"])
-        away_players = get_real_players_for_team(tg_away_short, active_game_for_strat["away_team"])
+        # Touchdowns: Pull Live Players Dynamically from ESPN Active Roster
+        home_players = get_live_team_players(active_game_for_strat.get("home_id") or tg_home_short, tg_league_str)
+        away_players = get_live_team_players(active_game_for_strat.get("away_id") or tg_away_short, tg_league_str)
 
         p1_name, p1_pos = home_players[0]
         p2_name, p2_pos = away_players[0]
