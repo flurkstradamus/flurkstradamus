@@ -169,7 +169,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         q = search_query.strip().lower()
         pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
-    with st.expander("📸 Auto-Fill via Slip Screenshot (Robinhood, DraftKings, FanDuel, etc.)", expanded=True):
+    with st.expander("📸 Auto-Fill via Slip Screenshot (Robinhood, DraftKings, FanDuel, etc.)", expanded=False):
         st.caption("Upload any sportsbook or prediction contract screenshot to detect teams, lines, risk, and potential payouts.")
         uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key="slip_file_input")
         
