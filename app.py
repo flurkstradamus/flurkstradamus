@@ -312,7 +312,6 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
     if not is_combo:
         live_m = find_game_for_bet(b, games_data)
 
-    # Determine whether the matchup has started or finished
     game_started = False
     is_final = False
     if live_m:
@@ -321,10 +320,8 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         game_started = ("pre" not in chk.lower()) and ("pm" not in stt and "am" not in stt)
         is_final = live_m.get("completed", False) or "final" in stt
 
-    # Check if the bet is resolved or the matchup is final
     is_ticket_settled = (status_val in ["Won", "Lost"]) or is_final
 
-    # Only compute and display Live Win Prob for active/unsettled tickets
     live_prob_badge_html = ""
     if not is_ticket_settled:
         if is_combo:
@@ -348,13 +345,8 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         else:
             live_prob_str = calculate_live_bet_prob(b, live_m)
 
-        live_prob_badge_html = f"""
-        <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
-            🎲 Live Win Prob: {live_prob_str}
-        </span>
-        """
+        live_prob_badge_html = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.80rem;'>🎲 Live Win Prob: {live_prob_str}</span>"
 
-    # Status badge styling
     if status_val == "Won":
         badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
     elif status_val == "Lost":
@@ -365,18 +357,12 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ SCHEDULED</span>"
 
     if is_combo:
-        header_html = f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:1.0rem; font-weight:700;">🔗 Multi-Leg Parlay ({len(b.get('parsed_legs', []))} Legs)</span>
-                <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Bettor')}</strong></span>
-            </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                {live_prob_badge_html}
-                {badge_html}
-            </div>
-        </div>
-        """
+        header_html = (
+            "<div style='display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:6px;margin-bottom:8px;'>"
+            f"<div style='display:flex;align-items:center;gap:8px;'><span style='font-size:1.0rem;font-weight:700;'>🔗 Multi-Leg Parlay ({len(b.get('parsed_legs', []))} Legs)</span><span style='opacity:0.55;font-size:0.80rem;'>by <strong>{b.get('user', 'Bettor')}</strong></span></div>"
+            f"<div style='display:flex;align-items:center;gap:8px;'>{live_prob_badge_html}{badge_html}</div>"
+            "</div>"
+        )
     elif live_m:
         a_sh = live_m.get("away_short", "AWAY")
         h_sh = live_m.get("home_short", "HOME")
@@ -386,36 +372,27 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         status_txt = live_m.get("displayClock") or live_m.get("status")
 
         if game_started or is_final:
-            score_badge = f"<span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:6px; font-weight:700; font-size:0.82rem;'>{a_sh} {a_sc} - {h_sc} {h_sh} ({tot_pts} pts | {status_txt})</span>"
+            score_badge = f"<span style='background-color:rgba(255,255,255,0.08);padding:2px 8px;border-radius:6px;font-weight:700;font-size:0.82rem;'>{a_sh} {a_sc} - {h_sc} {h_sh} ({tot_pts} pts | {status_txt})</span>"
         else:
-            score_badge = f"<span style='opacity:0.65; font-size:0.80rem;'>🗓️ {live_m.get('kickoff', status_txt)}</span>"
+            score_badge = f"<span style='opacity:0.65;font-size:0.80rem;'>🗓️ {live_m.get('kickoff', status_txt)}</span>"
 
-        header_html = f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-                <img src="{live_m.get('away_logo', DEFAULT_LOGO)}" width="24" height="24" style="border-radius:50%; object-fit:contain;">
-                <strong>{a_sh}</strong> <span style='opacity:0.4;'>@</span>
-                <img src="{live_m.get('home_logo', DEFAULT_LOGO)}" width="24" height="24" style="border-radius:50%; object-fit:contain;">
-                <strong>{h_sh}</strong>
-                {score_badge}
-                <span style="opacity:0.55; font-size:0.80rem; margin-left:4px;">by <strong>{b.get('user', 'Bettor')}</strong></span>
-            </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                {live_prob_badge_html}
-                {badge_html}
-            </div>
-        </div>
-        """
+        away_logo = live_m.get('away_logo', DEFAULT_LOGO)
+        home_logo = live_m.get('home_logo', DEFAULT_LOGO)
+        header_html = (
+            "<div style='display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:6px;margin-bottom:8px;'>"
+            f"<div style='display:flex;align-items:center;gap:8px;'><img src='{away_logo}' width='24' height='24' style='border-radius:50%;object-fit:contain;'><strong>{a_sh}</strong> <span style='opacity:0.4;'>@</span><img src='{home_logo}' width='24' height='24' style='border-radius:50%;object-fit:contain;'><strong>{h_sh}</strong>{score_badge}<span style='opacity:0.55;font-size:0.80rem;margin-left:4px;'>by <strong>{b.get('user', 'Bettor')}</strong></span></div>"
+            f"<div style='display:flex;align-items:center;gap:8px;'>{live_prob_badge_html}{badge_html}</div>"
+            "</div>"
+        )
     else:
-        header_html = f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
-            <div><strong>{b.get('matchup', 'Matchup')}</strong> <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Bettor')}</strong></span></div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                {live_prob_badge_html}
-                {badge_html}
-            </div>
-        </div>
-        """
+        m_txt = b.get('matchup', 'Matchup')
+        u_txt = b.get('user', 'Bettor')
+        header_html = (
+            "<div style='display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:6px;margin-bottom:8px;'>"
+            f"<div><strong>{m_txt}</strong> <span style='opacity:0.55;font-size:0.80rem;'>by <strong>{u_txt}</strong></span></div>"
+            f"<div style='display:flex;align-items:center;gap:8px;'>{live_prob_badge_html}{badge_html}</div>"
+            "</div>"
+        )
 
     with st.container(border=True):
         st.markdown(header_html, unsafe_allow_html=True)
@@ -549,7 +526,6 @@ st.sidebar.markdown("---")
 def get_cached_games():
     return fetch_nba_scoreboard() + fetch_football_scoreboard("All Games")
 
-# Determine if the target view actually needs live game slates
 needs_live_data = st.session_state.active_nav_page in [
     "📊 My Dashboard", 
     "⚡ Single Game Engine", 
@@ -560,7 +536,6 @@ needs_live_data = st.session_state.active_nav_page in [
 
 if needs_live_data:
     games_data = get_cached_games()
-    # Resolve bets once without blocking every simple interaction
     auto_resolve_bets(
         st.session_state.saved_bets, 
         games_data, 
@@ -571,7 +546,7 @@ if needs_live_data:
 else:
     games_data = []
 
-# Navigation Menu (Leaderboard placed directly below Live Squad Feed)
+# Navigation Menu
 nav_list = [
     "📊 My Dashboard", 
     "⚡ Single Game Engine", 
