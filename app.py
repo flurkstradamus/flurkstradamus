@@ -528,9 +528,32 @@ if st.sidebar.button("🚪 Logout", use_container_width=True):
 
 st.sidebar.markdown("---")
 
-# Pull cross-sport data globally so views can filter on their own
-games_data = fetch_nba_scoreboard() + fetch_football_scoreboard("All Games")
-auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots, st.session_state.support_tickets)
+
+@st.cache_data(ttl=30, show_spinner=False)
+def get_cached_games():
+    return fetch_nba_scoreboard() + fetch_football_scoreboard("All Games")
+
+# Determine if the target view actually needs live game slates
+needs_live_data = st.session_state.active_nav_page in [
+    "📊 My Dashboard", 
+    "⚡ Single Game Engine", 
+    "🔗 Multi-Leg Combo Builder", 
+    "📜 Locked Bets History", 
+    "🔥 Live Squad Feed"
+] or (st.session_state.selected_bet_id is not None)
+
+if needs_live_data:
+    games_data = get_cached_games()
+    # Resolve bets once without blocking every simple interaction
+    auto_resolve_bets(
+        st.session_state.saved_bets, 
+        games_data, 
+        st.session_state.chat_messages, 
+        st.session_state.game_snapshots, 
+        st.session_state.support_tickets
+    )
+else:
+    games_data = []
 
 # Navigation Menu (Leaderboard placed directly below Live Squad Feed)
 nav_list = [
