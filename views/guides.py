@@ -4,7 +4,6 @@ def render_how_it_works():
     st.title("💡 How Flurkstradamus Works")
     st.caption("A complete guide to our predictive modeling engine, vision slip parser, and parlay optimization tools.")
 
-    # Platform Overview
     st.markdown("""
     Flurkstradamus is an institutional-grade sports betting analytics engine. Rather than relying on gut feeling, 
     the platform applies **real-time Poisson distributions**, **possession tempo drift models**, and **multimodal vision OCR** 
@@ -25,12 +24,13 @@ def render_how_it_works():
         * **Live Pace & Terminal Drift Modeling**: Dynamically calculates projected final scores, 2nd-half total variance, ATS covering probability, and outright win expectancies using Bayesian scoring distributions.
         * **Multimodal Vision OCR Slip Parser**: Upload bet slips from Robinhood, DraftKings, FanDuel, BetMGM, or Caesars. Gemini Vision extracts the teams, strike lines, side, risk dollars, and payout to automatically populate your ticket form.
         * **Consensus Edge Recommendations**: Compares the bookmakers' opening lines against live pace metrics to output highest-conviction market picks.
+        * **Tiered Strategy Picks (Good, Better, Best)**: Choose between safe floor anchors, balanced +EV value, and optimal alpha plays with automated slip population.
 
         ### Step-by-Step Workflow:
-        1. **Select League & Status**: Filter by *NBA*, *NFL*, *NCAA*, or *All Games*, and toggle between *Upcoming*, *Live*, or *Completed*.
-        2. **Select Matchup**: Pick any game from the slate to view live scoreboard graphics, pregame lines, and projected point margins.
-        3. **Review AI Strategy**: Compare the AI's consensus pick and variance standard deviation in Section 2.
-        4. **Lock In Ticket**: Click **📥 Load to Form** (or manually fine-tune your risk/payout in Section 3) and click **Lock In Bet Slip** to commit it directly to your bankroll tracker.
+        1. **Select Matchup Method**: Choose between **🎯 Manual Matchup Selection** or let the **🤖 AI Auto-Select Optimal Matchup** with the highest market divergence.
+        2. **Review Matchup Telemetry**: Observe live pace drift, projected second-half totals, and ATS coverage margins.
+        3. **Review Tiered Recommendations**: Compare the **🥉 Good**, **🥈 Better**, and **🥇 Best** suggested picks.
+        4. **Lock In Ticket**: Click **📥 Load Pick** to populate the slip form below, fine-tune your risk or payout, and submit to your bankroll tracker.
         """)
 
     # Tool 2: Multi-Leg Combo Builder
@@ -47,13 +47,13 @@ def render_how_it_works():
             * **NBA**: Totals, Spreads, Moneylines, and *Player Points Props*.
             * **Football**: Totals, Spreads, Moneylines, and *Anytime Touchdown Scorers*.
             * **All Games**: Cross-sport combinations.
-        * **True Compound Expectancy**: Multiplies independent mathematical probabilities rather than bookmaker-juiced odds to give you the honest break-even probability.
+        * **True Compound Expectancy & Analytics**: Multiplies independent mathematical probabilities rather than bookmaker-juiced odds to provide honest break-even probability, zero-vig fair odds, and volatility profiles.
 
         ### Step-by-Step Workflow:
         1. Select your target **League Scope**, **Target Market Focus**, **Number of Legs** (2–12), and **Strategy Profile**.
-        2. Click **⚡ Auto-Generate Combo** to generate a parlay slate with team logos and kickoff timestamps.
+        2. Click **⚡ Auto-Generate Combo** to generate a parlay slate with team logos, kickoff timestamps, and analytics metrics.
         3. Review individual edge rationale in the **🧠 AI Model Strategy & Edge Rationales** accordion.
-        4. Use **✏️ Edit selection or remove legs** to uncheck any legs you want to remove.
+        4. Use **✏️ Edit selection or remove legs** to adjust any legs you want to discard.
         5. Click **📥 Load Combo to Slips** to transfer the picks to the ticket builder below, set your risk amount, and lock in the parlay.
         """)
 
@@ -133,8 +133,32 @@ def render_math():
 
 def render_about():
     st.title("ℹ️ About Flurkstradamus")
+    st.caption("Algorithmic sports analytics, automated bankroll tracking, and high-performance betting telemetry.")
+
     st.markdown("""
-    **Flurkstradamus** was built to eliminate emotional betting and replace it with mathematical precision. 
-    By synthesizing real-time sports APIs, advanced probability models, and computer vision OCR, 
-    the platform gives everyday sports fans and sharp bettors equal access to algorithmic sports intelligence.
+    **Flurkstradamus** was engineered to replace emotional betting bias with transparent, mathematical modeling. 
+    By synthesizing real-time sports APIs, live pace drift regressions, compound Poisson distributions, and computer vision OCR, 
+    the platform delivers institutional-grade predictive analytics directly into the hands of everyday sports bettors.
     """)
+
+    st.markdown("---")
+
+    st.markdown("### 👨‍💻 Engineering & Development")
+    with st.container(border=True):
+        c1, c2 = st.columns([1.2, 2.8])
+        with c1:
+            st.markdown("""
+            **Creator & Lead Engineer:**  
+            **Development Company:**  
+            **Headquarters:**  
+            **Portfolio / Website:**  
+            """)
+        with c2:
+            st.markdown("""
+            **Adam Sowers**  
+            **Sowers Web Technologies**  
+            Altamonte Springs, FL  
+            [sweetcustomwebsites.com](https://sweetcustomwebsites.com)
+            """)
+
+        st.caption("Crafted by Sowers Web Technologies — specializing in bespoke full-stack applications, data dashboards, and algorithmic engines.")
