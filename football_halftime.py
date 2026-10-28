@@ -380,58 +380,68 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER (SUPPORTS SPREADS, TOTALS, MONEYLINES)
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH MULTI-MODEL FALLBACK & DIAGNOSTICS
 def parse_bet_slip_image(image_bytes):
     gemini_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     
-    if gemini_key:
+    if not gemini_key:
+        return None, "GEMINI_API_KEY is not defined in Streamlit Secrets. Please add GEMINI_API_KEY to your Secrets."
+
+    b64_img = base64.b64encode(image_bytes).decode("utf-8")
+    prompt = """
+    You are an expert sports betting OCR analyzer. Analyze this sports betting slip or event contract screenshot (from Robinhood, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
+    Extract the following data into a strictly valid JSON object:
+    {
+        "away_team": "string or null (e.g. Delaware, Sam Houston)",
+        "home_team": "string or null (e.g. Western Kentucky, Missouri State)",
+        "picked_team": "string or null (team name picked if spread or moneyline)",
+        "wager_type": "Point Spread" | "Game Total" | "Moneyline" | "Anytime TD",
+        "side": "Under" | "Over" | "Spread" | "Moneyline",
+        "line": float or null (e.g. 77.5, 33.5, -7.5),
+        "payout": float (total payout / return in dollars including stake),
+        "profit": float or null (realized or potential profit in dollars),
+        "risk": float or null (amount staked / risked in dollars),
+        "is_settled": true if the screenshot indicates a payout, settlement, or won status, else false
+    }
+    Rules to follow:
+    1. If the headline says "Over X points Payout" and the pick says "No · Over X", that contract is UNDER X points on Game Total.
+    2. If the pick says "Yes · Over X", that is an OVER X Game Total bet.
+    3. If the headline says "Will Team -X.X points win?" or "Team -X.X points Payout", this is a Point Spread bet on that team covering -X.X.
+    4. In "Event", extract both competing teams (e.g. "Delaware vs Western Kentucky" -> away_team: "Delaware", home_team: "Western Kentucky").
+    5. If profit is present but risk is missing: risk = payout - profit.
+    6. If both risk and payout are present: profit = payout - risk.
+    Return ONLY the raw JSON object without markdown fences.
+    """
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": "image/png", "data": b64_img}}
+            ]
+        }],
+        "generationConfig": {"response_mime_type": "application/json"}
+    }
+
+    # Try gemini-1.5-flash first, then gemini-2.0-flash
+    models = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    last_error = ""
+
+    for model_name in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
         try:
-            b64_img = base64.b64encode(image_bytes).decode("utf-8")
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-            prompt = """
-            Analyze this sports betting slip or event contract screenshot (Robinhood Derivatives, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
-            Extract the exact bet parameters into a pure JSON object:
-            {
-                "away_team": "string or null (e.g. Delaware, Sam Houston)",
-                "home_team": "string or null (e.g. Western Kentucky, Missouri State)",
-                "picked_team": "string or null (team name picked if spread or moneyline)",
-                "wager_type": "Point Spread" | "Game Total" | "Moneyline" | "Anytime TD",
-                "side": "Under" | "Over" | "Spread" | "Moneyline",
-                "line": float or null (e.g. 77.5, 33.5, -7.5),
-                "payout": float (total payout / return in dollars including stake),
-                "profit": float or null (realized or potential profit),
-                "risk": float or null (amount staked / risked),
-                "is_settled": true if the screenshot indicates a payout, settlement, or won status, else false
-            }
-            Rules:
-            1. If title says "Over 77.5 points Payout" and subtitle says "No · Over 77.5", that is an UNDER 77.5 Game Total bet.
-            2. If it says "No · Over X", that is ALWAYS an Under X on Game Total.
-            3. If it says "Yes · Over X", that is ALWAYS an Over X on Game Total.
-            4. If it says "Will Team -X.X points win?" or "Team -X.X points Payout", this is a Point Spread bet on that team covering -X.X.
-            5. In "Event", extract both competing teams (e.g. "Delaware vs Western Kentucky" -> away_team: Delaware, home_team: Western Kentucky).
-            6. If profit is present but risk is missing: risk = payout - profit.
-            7. If both risk and payout are present: profit = payout - risk.
-            Return ONLY the valid JSON object.
-            """
-            payload = {
-                "contents": [{
-                    "parts": [
-                        {"text": prompt},
-                        {"inline_data": {"mime_type": "image/png", "data": b64_img}}
-                    ]
-                }],
-                "generationConfig": {"response_mime_type": "application/json"}
-            }
-            r = requests.post(url, json=payload, timeout=9.0)
+            r = requests.post(url, json=payload, timeout=12.0)
             if r.status_code == 200:
                 txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                return json.loads(txt)
-        except Exception:
-            pass
+                cleaned = re.sub(r"^```json\s*", "", txt.strip())
+                cleaned = re.sub(r"```$", "", cleaned.strip())
+                return json.loads(cleaned), None
+            else:
+                last_error = f"{model_name} returned HTTP {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            last_error = f"{model_name} request failed: {str(e)}"
 
-    # Generic OCR / regex fallback if Gemini API key is missing
-    # Checks image metadata or provides intelligent dynamic parsing
-    return None
+    return None, f"Vision API error: {last_error}"
 
 def match_game_in_pool(away_name, home_name, pool, picked_name=""):
     """Finds the index of a game in pool based on partial team name matches."""
@@ -806,7 +816,6 @@ def get_extended_games(selected_league="All Games"):
     seen_ids = set()
     now_et = get_current_et_time()
     
-    # Query past 3 days and next 7 days to always capture recent finals
     date_queries = [""]
     for d in range(-3, 8):
         dt_day = (now_et + timedelta(days=d)).strftime("%Y%m%d")
@@ -1281,9 +1290,9 @@ elif menu_choice == "⚡ Single Game Engine":
         
         if uploaded_slip is not None:
             if st.button("⚡ Extract & Auto-Fill Form", use_container_width=True):
-                with st.spinner("Analyzing screenshot & extracting contract lines..."):
+                with st.spinner("Analyzing screenshot with vision model..."):
                     img_bytes = uploaded_slip.read()
-                    parsed_res = parse_bet_slip_image(img_bytes)
+                    parsed_res, err_msg = parse_bet_slip_image(img_bytes)
                     if parsed_res:
                         away_t = parsed_res.get("away_team", "")
                         home_t = parsed_res.get("home_team", "")
@@ -1300,7 +1309,7 @@ elif menu_choice == "⚡ Single Game Engine":
                         is_settled_flag = parsed_res.get("is_settled", False)
                         wager_cat = parsed_res.get("wager_type", "Game Total")
                         wager_side = parsed_res.get("side", "Under")
-                        w_line = parsed_res.get("line", 77.5)
+                        w_line = float(parsed_res.get("line", 77.5)) if parsed_res.get("line") is not None else 77.5
                         w_payout = float(parsed_res.get("payout", 31.00))
                         w_profit = float(parsed_res.get("profit", 12.09)) if parsed_res.get("profit") is not None else 12.09
                         w_risk = float(parsed_res.get("risk", w_payout - w_profit))
@@ -1326,7 +1335,7 @@ elif menu_choice == "⚡ Single Game Engine":
                         st.success(f"Matched {wager_cat}: {wager_side} {w_line} ({away_t} vs {home_t})! Status: {status_msg} | Stake: ${w_risk:.2f}, Payout: ${w_payout:.2f}")
                         st.rerun()
                     else:
-                        st.error("Could not parse image. Please verify your GEMINI_API_KEY is configured in Streamlit Secrets.")
+                        st.error(f"Could not parse image: {err_msg}")
 
     if pool:
         game_options = [f"[{g['kickoff']}] [{g['league']}] {g['away_short']} @ {g['home_short']}" for g in pool]
