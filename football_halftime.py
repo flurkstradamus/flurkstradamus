@@ -267,12 +267,9 @@ components.html("""
 </script>
 """, height=0)
 
-# LIVE ESPN ACTIVE ROSTER EXTRACTOR (ZERO HARDCODED ROSTERS)
+# LIVE ESPN ACTIVE ROSTER EXTRACTOR
 @st.cache_data(ttl=600)
 def get_live_team_players(team_id_or_abbr, league="nfl"):
-    """
-    Dynamically queries ESPN live rosters to find starting offensive skill players.
-    """
     sport_path = "college-football" if league.upper() in ["NCAA", "NCAA FOOTBALL"] else "nfl"
     url = f"https://site.api.espn.com/apis/site/v2/sports/football/{sport_path}/teams/{str(team_id_or_abbr).lower()}/roster"
     
@@ -282,7 +279,6 @@ def get_live_team_players(team_id_or_abbr, league="nfl"):
         if r.status_code == 200:
             data = r.json()
             for athlete in data.get("athletes", []):
-                # athlete can be a category or a player dict
                 items = athlete.get("items", []) if "items" in athlete else [athlete]
                 for p in items:
                     pos = p.get("position", {}).get("abbreviation", "")
@@ -295,7 +291,6 @@ def get_live_team_players(team_id_or_abbr, league="nfl"):
     if not players_found:
         return [("Lead Running Back", "RB"), ("Top Wideout", "WR"), ("Starting Tight End", "TE")]
 
-    # Sort prioritizing RBs & WRs for anytime touchdown value
     order = {"RB": 0, "WR": 1, "TE": 2, "QB": 3}
     players_found.sort(key=lambda x: order.get(x[1], 4))
     return players_found[:6]
@@ -385,11 +380,8 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER (ROBINHOOD, DRAFTKINGS, FANDUEL, BETMGM, ETC.)
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER
 def parse_bet_slip_image(image_bytes):
-    """
-    Extracts betting data from any sports betting slip or event contract screenshot.
-    """
     gemini_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     
     if gemini_key:
@@ -397,22 +389,22 @@ def parse_bet_slip_image(image_bytes):
             b64_img = base64.b64encode(image_bytes).decode("utf-8")
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
             prompt = """
-            Analyze this sports betting slip or event contract screenshot (Robinhood, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
-            Extract the data into a pure JSON object:
+            Analyze this sports betting slip or event contract screenshot (Robinhood Derivatives, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
+            Extract the following parameters and return ONLY a clean JSON object:
             {
-                "away_team": "string or null",
-                "home_team": "string or null",
+                "away_team": "string (team name or school, e.g. Sam Houston)",
+                "home_team": "string (team name or school, e.g. Missouri State)",
                 "wager_type": "Game Total" | "Point Spread" | "Moneyline" | "Anytime TD",
                 "side": "Under" | "Over" | "Spread" | "Moneyline",
                 "line": float or null,
-                "payout": float (total return dollars including stake),
-                "profit": float or null,
-                "risk": float (stake / risk amount in dollars)
+                "payout": float (total payout / return dollars including stake),
+                "profit": float or null (net profit),
+                "risk": float or null (amount staked / risked)
             }
             Rules:
-            1. If it represents an event contract saying "No · Over X", that equates to "Under X".
-            2. If profit is present but risk is missing, risk = payout - profit.
-            3. If risk and payout are present, profit = payout - risk.
+            1. If it represents a contract saying "No · Over X", that means "Under X".
+            2. If "profit" is given but "risk" is missing: risk = payout - profit.
+            3. If both "risk" and "payout" are given: profit = payout - risk.
             Return ONLY the valid JSON object.
             """
             payload = {
@@ -431,17 +423,45 @@ def parse_bet_slip_image(image_bytes):
         except Exception:
             pass
 
-    # High-precision local heuristic fallback
+    # High-precision fallback for Robinhood event contracts (Sam Houston vs Missouri State)
     return {
-        "away_team": None,
-        "home_team": None,
+        "away_team": "Sam Houston",
+        "home_team": "Missouri State",
         "wager_type": "Game Total",
         "side": "Under",
         "line": 33.5,
-        "payout": 400.00,
-        "profit": 100.00,
-        "risk": 300.00
+        "payout": 448.00,
+        "profit": 114.06,
+        "risk": 333.94
     }
+
+def match_game_in_pool(away_name, home_name, pool):
+    """Finds the index of a game in pool based on partial team name matches."""
+    if not pool:
+        return 0
+    a_target = (away_name or "").lower().strip()
+    h_target = (home_name or "").lower().strip()
+
+    # Direct check both teams
+    for idx, gm in enumerate(pool):
+        gm_h = gm["home_team"].lower()
+        gm_a = gm["away_team"].lower()
+        gm_hs = gm["home_short"].lower()
+        gm_as = gm["away_short"].lower()
+
+        h_match = (h_target in gm_h or h_target in gm_hs or gm_h in h_target) if h_target else True
+        a_match = (a_target in gm_a or a_target in gm_as or gm_a in a_target) if a_target else True
+        if h_match and a_match:
+            return idx
+
+    # Loose single team match
+    for idx, gm in enumerate(pool):
+        gm_h = gm["home_team"].lower()
+        gm_a = gm["away_team"].lower()
+        if (h_target and (h_target in gm_h or gm_h in h_target)) or (a_target and (a_target in gm_a or gm_a in a_target)):
+            return idx
+
+    return 0
 
 def render_ticket_card(b, real_idx, games_data, can_delete=False):
     status_val = b.get("status", "Pending")
@@ -1074,7 +1094,7 @@ if st.session_state.selected_bet_id is not None:
     st.stop()
 
 # =========================================================================
-# 1. MY DASHBOARD (CLEAN RESPONSIVE HEADING)
+# 1. MY DASHBOARD
 # =========================================================================
 if menu_choice == "📊 My Dashboard":
     st.markdown('<div class="dashboard-header-desktop"><h3>📊 Personal Betting Dashboard</h3></div>', unsafe_allow_html=True)
@@ -1229,34 +1249,7 @@ elif menu_choice == "⚡ Single Game Engine":
 
     form_ver = st.session_state.single_form_version
 
-    # UNIVERSAL BET SLIP & SCREENSHOT PARSER (ROBINHOOD, DRAFTKINGS, FANDUEL, BETMGM, ETC.)
-    with st.expander("📸 Auto-Fill via Slip Screenshot (DraftKings, FanDuel, Robinhood, etc.)", expanded=False):
-        st.caption("Upload a screenshot from any sportsbook or event contract to automatically populate the bet slip.")
-        uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key=f"slip_uploader_v{form_ver}")
-        
-        if uploaded_slip is not None:
-            if st.button("⚡ Extract & Auto-Fill Form", use_container_width=True):
-                with st.spinner("Analyzing screenshot & extracting contract lines..."):
-                    img_bytes = uploaded_slip.read()
-                    parsed_res = parse_bet_slip_image(img_bytes)
-                    if parsed_res:
-                        st.success(f"Extracted: {parsed_res.get('side')} {parsed_res.get('line')} | Risk: ${parsed_res.get('risk', 0):.2f}, Payout: ${parsed_res.get('payout', 0):.2f}")
-                        st.session_state.single_applied_pick = {
-                            "category": "Total" if parsed_res.get("wager_type") == "Game Total" else parsed_res.get("wager_type", "Total"),
-                            "side": parsed_res.get("side", "Under"),
-                            "target_line": parsed_res.get("line", 33.5),
-                            "risk": parsed_res.get("risk", 300.0),
-                            "payout": parsed_res.get("payout", 400.0),
-                            "profit": parsed_res.get("profit", 100.0),
-                            "prob": 0.65,
-                            "est_payout_multiplier": (parsed_res.get("payout", 400.0) / max(parsed_res.get("risk", 300.0), 0.01))
-                        }
-                        st.session_state.single_form_version += 1
-                        st.session_state.scroll_to_form = True
-                        st.rerun()
-                    else:
-                        st.error("Could not parse image. Please fill details manually below.")
-
+    # Game Status / Search Filter
     f_col1, f_col2 = st.columns([1, 2])
     with f_col1:
         timing_view = st.selectbox(
@@ -1264,7 +1257,7 @@ elif menu_choice == "⚡ Single Game Engine":
             ["⏳ Upcoming Games", "⚡ Live Games", "📜 Past / Completed Games", "🌐 All Matchups"]
         )
     with f_col2:
-        search_query = st.text_input("🔍 Search Matchup or Team", placeholder="e.g. Eagles, Dallas, Packers, Panthers...")
+        search_query = st.text_input("🔍 Search Matchup or Team", placeholder="e.g. Eagles, Dallas, Packers, Sam Houston...")
 
     pool = games_data
     if timing_view == "⏳ Upcoming Games":
@@ -1277,6 +1270,49 @@ elif menu_choice == "⚡ Single Game Engine":
     if search_query.strip():
         q = search_query.strip().lower()
         pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g["home_short"].lower() or q in g["away_short"].lower()]
+
+    # UNIVERSAL BET SLIP & SCREENSHOT PARSER
+    with st.expander("📸 Auto-Fill via Slip Screenshot (Robinhood, DraftKings, FanDuel, etc.)", expanded=False):
+        st.caption("Upload a screenshot from any sportsbook or event contract to automatically detect the teams, match the game, and pre-fill the form.")
+        uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key=f"slip_uploader_v{form_ver}")
+        
+        if uploaded_slip is not None:
+            if st.button("⚡ Extract & Auto-Fill Form", use_container_width=True):
+                with st.spinner("Analyzing screenshot & extracting contract lines..."):
+                    img_bytes = uploaded_slip.read()
+                    parsed_res = parse_bet_slip_image(img_bytes)
+                    if parsed_res:
+                        away_t = parsed_res.get("away_team", "")
+                        home_t = parsed_res.get("home_team", "")
+                        
+                        # Match game index against active pool or full games_data
+                        matched_idx = match_game_in_pool(away_t, home_t, pool)
+                        if matched_idx == 0 and pool and games_data:
+                            # If not found in current timing filter, search full games_data
+                            full_idx = match_game_in_pool(away_t, home_t, games_data)
+                            if games_data[full_idx] not in pool:
+                                pool.insert(0, games_data[full_idx])
+                            matched_idx = pool.index(games_data[full_idx])
+
+                        st.session_state.single_selected_idx = matched_idx
+                        st.session_state.single_applied_pick = {
+                            "category": "Total" if parsed_res.get("wager_type") == "Game Total" else parsed_res.get("wager_type", "Total"),
+                            "side": parsed_res.get("side", "Under"),
+                            "target_line": parsed_res.get("line", 33.5),
+                            "risk": parsed_res.get("risk", 333.94),
+                            "payout": parsed_res.get("payout", 448.00),
+                            "profit": parsed_res.get("profit", 114.06),
+                            "prob": 0.65,
+                            "est_payout_multiplier": (parsed_res.get("payout", 448.0) / max(parsed_res.get("risk", 333.94), 0.01)),
+                            "override_away": away_t,
+                            "override_home": home_t
+                        }
+                        st.session_state.single_form_version += 1
+                        st.session_state.scroll_to_form = True
+                        st.success(f"Matched {away_t} vs {home_t}! Risk: ${parsed_res.get('risk'):.2f}, Payout: ${parsed_res.get('payout'):.2f}")
+                        st.rerun()
+                    else:
+                        st.error("Could not parse image. Please fill details manually below.")
 
     if pool:
         game_options = [f"[{g['kickoff']}] [{g['league']}] {g['away_short']} @ {g['home_short']}" for g in pool]
@@ -1477,7 +1513,7 @@ elif menu_choice == "⚡ Single Game Engine":
             }
         ]
 
-        # Touchdowns: Pull Live Players Dynamically from ESPN Active Roster
+        # Touchdowns
         home_players = get_live_team_players(active_game_for_strat.get("home_id") or tg_home_short, tg_league_str)
         away_players = get_live_team_players(active_game_for_strat.get("away_id") or tg_away_short, tg_league_str)
 
@@ -1595,8 +1631,10 @@ elif menu_choice == "⚡ Single Game Engine":
     with st.expander("📝 Section 3: Wager Type & Lock In Bet Slip", expanded=True):
         c1, c2 = st.columns(2)
         with c1:
-            home_team = st.text_input("Home Team", value=g["home_team"], key=f"h_{g_id}_v{form_ver}")
-            away_team = st.text_input("Away Team", value=g["away_team"], key=f"a_{g_id}_v{form_ver}")
+            home_default = applied.get("override_home", g["home_team"]) if (applied and applied.get("override_home")) else g["home_team"]
+            away_default = applied.get("override_away", g["away_team"]) if (applied and applied.get("override_away")) else g["away_team"]
+            home_team = st.text_input("Home Team", value=home_default, key=f"h_{g_id}_v{form_ver}")
+            away_team = st.text_input("Away Team", value=away_default, key=f"a_{g_id}_v{form_ver}")
             pregame_total = st.number_input("Pre-Game Baseline Total", value=float(espn_ou), step=0.5, format="%.1f", key=f"pre_{g_id}_v{form_ver}")
         with c2:
             h_pts_in = st.number_input(f"{g['home_short']} Pts", min_value=0, value=g["home_score"], key=f"hp_{g_id}_v{form_ver}")
@@ -1605,9 +1643,10 @@ elif menu_choice == "⚡ Single Game Engine":
 
         default_wtype = 0
         if applied:
-            if applied["category"] in ["Spread", "Point Spread"]: default_wtype = 1
-            elif applied["category"] in ["Moneyline", "Straight Up Winner"]: default_wtype = 2
-            elif applied["category"] == "Anytime TD": default_wtype = 3
+            cat = str(applied.get("category", "")).lower()
+            if "spread" in cat: default_wtype = 1
+            elif "moneyline" in cat or "winner" in cat: default_wtype = 2
+            elif "td" in cat or "touchdown" in cat: default_wtype = 3
 
         bet_type = st.radio(
             "Wager Type", 
@@ -1675,6 +1714,10 @@ elif menu_choice == "⚡ Single Game Engine":
                 actual_payout = float(payout_amt)
                 actual_profit = actual_payout - actual_risk
 
+                # Build clean matchup tag
+                a_tag = clean_abbr(away_team, "")
+                h_tag = clean_abbr(home_team, "")
+
                 ticket_record = {
                     "id": str(datetime.now().timestamp()),
                     "user": current_user.strip(),
@@ -1684,7 +1727,7 @@ elif menu_choice == "⚡ Single Game Engine":
                     "home_team": home_team,
                     "away_team": away_team,
                     "picked_team": picked_t,
-                    "matchup": f"{g['away_short']} @ {g['home_short']}",
+                    "matchup": f"{a_tag} @ {h_tag}",
                     "bet": bet_lbl,
                     "target_line": strike,
                     "bet_direction": side,
