@@ -431,7 +431,6 @@ if st.session_state.logged_in_user is None:
                     st.error("Please fill all required fields and verify password.")
 
     with tab_forgot:
-        st.caption("Enter email to generate reset token.")
         with st.form("request_reset_form"):
             recover_email = st.text_input("Registered Email").strip().lower()
             if st.form_submit_button("Request Reset Code", use_container_width=True):
@@ -627,7 +626,7 @@ auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat
 # WAR ROOM VIEW
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
-    if st.button("⬅️ Back to Locked Bets History", use_container_width=True):
+    if st.button("⬅️ Back to Tickets", use_container_width=True):
         st.session_state.selected_bet_id = None
         st.rerun()
 
@@ -736,53 +735,174 @@ if st.session_state.selected_bet_id is not None:
                 st.table(t_rows)
     st.stop()
 
-# =========================================================================
-# 1. MY DASHBOARD
-# =========================================================================
-if menu_choice == "📊 My Dashboard":
-    st.subheader(f"📊 {current_user}'s Personal Betting Dashboard")
-    st.caption("Personal portfolio overview: money won, money lost, ROI, and performance breakdown.")
+# Helper function to render uniform ticket cards for Locked Bets & Live Squad Feed
+def render_ticket_card(b, real_idx, can_delete=False):
+    status_val = b.get("status", "Pending")
+    is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
 
-    curr_user_clean = current_user.strip().lower()
-    my_bets = [b for b in st.session_state.saved_bets if b.get("user", "").strip().lower() == curr_user_clean or (curr_user_clean == "flurk" and b.get("user", "").strip().lower() in ["flurk", "admin"])]
-    tot_placed = len(my_bets)
+    if is_combo:
+        compound_p = 1.0
+        legs_list = b.get("parsed_legs", [])
+        for l_item in legs_list:
+            m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
+            p_str = calculate_live_bet_prob({
+                "status": b.get("status"),
+                "target_line": l_item.get("line"),
+                "bet_direction": l_item.get("side"),
+                "bet_category": l_item.get("type"),
+                "picked_team": l_item.get("picked_team"),
+                "win_prob": "65.0%"
+            }, m_g)
+            try:
+                compound_p *= (float(p_str.replace("%", "")) / 100.0)
+            except Exception:
+                compound_p *= 0.5
+        live_prob_str = f"{compound_p * 100:.1f}%"
+        live_m = None
+    else:
+        live_m = find_game_for_bet(b, games_data)
+        live_prob_str = calculate_live_bet_prob(b, live_m)
 
-    if tot_placed == 0:
-        with st.container(border=True):
-            st.markdown("### 👋 Welcome to Flurkstradamus! Let's Lock In Your First Edge")
-            st.write("You haven't locked in any bet slips yet. Choose an engine below to start scanning:")
-            ob_c1, ob_c2 = st.columns(2)
-            if ob_c1.button("⚡ Go to Single Game Engine", use_container_width=True):
-                st.session_state.active_nav_page = "⚡ Single Game Engine"
+    game_started = False
+    is_final = False
+    if live_m:
+        chk = live_m.get("checkpoint", "")
+        stt = live_m.get("status", "").lower()
+        game_started = ("pre" not in chk.lower()) and ("pm" not in stt and "am" not in stt)
+        is_final = live_m.get("completed", False) or "final" in stt
+
+    if status_val == "Won":
+        badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
+    elif status_val == "Lost":
+        badge_html = "<span style='background-color:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>❌ LOST</span>"
+    elif game_started:
+        badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⚡ IN PLAY</span>"
+    else:
+        badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ SCHEDULED</span>"
+
+    if is_combo:
+        header_html = f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:1.0rem; font-weight:700;">🔗 Multi-Leg Parlay ({len(b.get('parsed_legs', []))} Legs)</span>
+                <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Flurk')}</strong></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
+                    🎲 Live Win Prob: {live_prob_str}
+                </span>
+                {badge_html}
+            </div>
+        </div>
+        """
+    elif live_m:
+        a_sh = live_m.get("away_short", "AWAY")
+        h_sh = live_m.get("home_short", "HOME")
+        a_sc = live_m.get("away_score", 0)
+        h_sc = live_m.get("home_score", 0)
+        tot_pts = a_sc + h_sc
+        status_txt = live_m.get("displayClock") or live_m.get("status")
+
+        if game_started or is_final:
+            score_badge = f"<span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:6px; font-weight:700; font-size:0.82rem;'>{a_sh} {a_sc} - {h_sc} {h_sh} ({tot_pts} pts | {status_txt})</span>"
+        else:
+            score_badge = f"<span style='opacity:0.65; font-size:0.80rem;'>🗓️ {live_m.get('kickoff', status_txt)}</span>"
+
+        header_html = f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <img src="{live_m.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%;">
+                <strong>{a_sh}</strong> <span style='opacity:0.4;'>@</span>
+                <img src="{live_m.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%;">
+                <strong>{h_sh}</strong>
+                {score_badge}
+                <span style="opacity:0.55; font-size:0.80rem; margin-left:4px;">by <strong>{b.get('user', 'Flurk')}</strong></span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
+                    🎲 Live Win Prob: {live_prob_str}
+                </span>
+                {badge_html}
+            </div>
+        </div>
+        """
+    else:
+        header_html = f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+            <div><strong>{b.get('matchup', 'Matchup')}</strong> <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Flurk')}</strong></span></div>
+            <div>{badge_html}</div>
+        </div>
+        """
+
+    with st.container(border=True):
+        st.markdown(header_html, unsafe_allow_html=True)
+        
+        c_row1, c_row2, c_row3, c_row4 = st.columns([3.5, 3.5, 2.0, 1.2])
+        with c_row1:
+            st.write(f"**Pick:** `{b.get('bet')}`")
+            st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
+
+        with c_row2:
+            r_val = float(b.get('risk_dollars', 10.0))
+            p_val = float(b.get('payout_dollars', 19.0))
+            roi_pct = ((p_val - r_val) / max(r_val, 0.01)) * 100
+            st.write(f"Risk: **${r_val:.2f}** ➔ Payout: **${p_val:.2f}**")
+            st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${p_val - r_val:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
+
+        with c_row3:
+            cat_label = b.get("bet_category", b.get("type", "Single"))
+            st.caption(f"Type: **{cat_label}**")
+            if b.get("notes"):
+                st.caption(f"*{b.get('notes')}*")
+
+        with c_row4:
+            if st.button("🏟️ War Room", key=f"open_feed_war_{b['id']}_{real_idx}", use_container_width=True):
+                st.session_state.selected_bet_id = b["id"]
                 st.rerun()
-            if ob_c2.button("🔗 Go to Multi-Leg Combo Builder", use_container_width=True):
-                st.session_state.active_nav_page = "🔗 Multi-Leg Combo Builder"
-                st.rerun()
+            if can_delete:
+                if st.button("🗑️", key=f"del_ticket_{b['id']}_{real_idx}", help="Delete ticket", use_container_width=True):
+                    st.session_state.saved_bets.pop(real_idx)
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
+                    st.rerun()
 
-    won_bets = [b for b in my_bets if b.get("status") == "Won"]
-    lost_bets = [b for b in my_bets if b.get("status") == "Lost"]
-    pending_bets = [b for b in my_bets if b.get("status") == "Pending"]
-
-    tot_won_dollars = sum(float(b.get("payout_dollars", 0)) - float(b.get("risk_dollars", 0)) for b in won_bets)
-    tot_lost_dollars = sum(float(b.get("risk_dollars", 0)) for b in lost_bets)
-    net_pl = tot_won_dollars - tot_lost_dollars
-    tot_risk = sum(float(b.get("risk_dollars", 0)) for b in my_bets if b.get("status") in ["Won", "Lost"])
-    roi = (net_pl / tot_risk * 100) if tot_risk > 0 else 0.0
-    avg_stake = (sum(float(b.get("risk_dollars", 0)) for b in my_bets) / tot_placed) if tot_placed > 0 else 0.0
-
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("My Bets Placed", tot_placed)
-    k2.metric("Money Won", f"${tot_won_dollars:.2f}")
-    k3.metric("Money Lost", f"${tot_lost_dollars:.2f}")
-    k4.metric("Net P&L", f"${net_pl:+.2f}", delta=f"{roi:+.1f}% ROI")
-
-    k5, k6, k7, k8 = st.columns(4)
-    decided = len(won_bets) + len(lost_bets)
-    win_pct = (len(won_bets) / decided * 100) if decided > 0 else 0.0
-    k5.metric("Win Rate", f"{win_pct:.1f}%", f"{len(won_bets)}W - {len(lost_bets)}L")
-    k6.metric("Average Stake", f"${avg_stake:.2f}")
-    k7.metric("Pending In Play", len(pending_bets))
-    k8.metric("Active Bets", len(my_bets))
+        if is_combo:
+            with st.expander("📋 View Parlay Legs, Live Points & Scores", expanded=False):
+                parsed = b.get("parsed_legs", [])
+                for leg_idx, leg in enumerate(parsed):
+                    m_g = find_game_for_bet({"matchup": leg["matchup"]}, games_data)
+                    if m_g:
+                        a_sh = m_g.get("away_short", "AWAY")
+                        h_sh = m_g.get("home_short", "HOME")
+                        a_sc = m_g.get("away_score", 0)
+                        h_sc = m_g.get("home_score", 0)
+                        tot_sc = a_sc + h_sc
+                        leg_live_p = calculate_live_bet_prob({
+                            "status": b.get("status"),
+                            "target_line": leg.get("line"),
+                            "bet_direction": leg.get("side"),
+                            "bet_category": leg.get("type"),
+                            "picked_team": leg.get("picked_team"),
+                            "win_prob": "65.0%"
+                        }, m_g)
+                        st.markdown(f"""
+                        <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:6px 10px; border-radius:6px; margin-bottom:4px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="opacity:0.5; font-size:0.75rem;">Leg {leg_idx+1}:</span>
+                                <img src="{m_g.get('away_logo', DEFAULT_LOGO)}" width="20" height="20" style="border-radius:50%;">
+                                <strong>{a_sh}</strong> @
+                                <img src="{m_g.get('home_logo', DEFAULT_LOGO)}" width="20" height="20" style="border-radius:50%;">
+                                <strong>{h_sh}</strong>
+                                <span style="opacity:0.4;">|</span>
+                                <strong style="color:#38bdf8;">{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}</strong>
+                                <span style="opacity:0.65; font-size:0.80rem;">({a_sc} - {h_sc} | {tot_sc} pts)</span>
+                            </div>
+                            <div>
+                                <span style="font-weight:700; font-size:0.75rem; background:rgba(56,189,248,0.15); color:#38bdf8; padding:2px 7px; border-radius:4px;">
+                                    {leg_live_p}
+                                </span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
 # =========================================================================
 # 2. SINGLE GAME ENGINE
@@ -1074,7 +1194,7 @@ elif menu_choice == "⚡ Single Game Engine":
         else:
             strat_candidates = [spread_bets[0], full_totals_bets[0], touchdown_bets[0]]
 
-        # RENDER SUGGESTED CARDS WITH VERIFIED REAL PLAYER NAMES
+        # Render AI Cards
         for idx, sc in enumerate(strat_candidates[:3]):
             tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
             st.markdown(f"""
@@ -1184,7 +1304,7 @@ elif menu_choice == "⚡ Single Game Engine":
             risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
             mult = applied.get("est_payout_multiplier", 1.91) if applied else 1.91
             payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=round(risk_amt * mult, 2))
-            ticket_notes = st.text_input("Notes", value=dynamic_note, help="Context-rich rationale dynamically updated for this wager.")
+            ticket_notes = st.text_input("Notes", value=dynamic_note)
 
             if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
                 if bet_type == "Player Anytime Touchdown Scorer":
@@ -1375,7 +1495,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                         </div>
                     </div>
                     <div class="rec-pick-row">
-                        <strong style="color:#4ade80; font-size: 1.05rem;">{l_ai['desc']}</strong>
+                        <strong style="color: #4ade80; font-size: 1.05rem;">{l_ai['desc']}</strong>
                         <span class="badge-prob">{l_ai['prob']*100:.1f}% Win Prob</span>
                     </div>
                 </div>
@@ -1488,7 +1608,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             st.success(f"{len(combo_legs)}-Leg combo ticket locked in!")
 
 # =========================================================================
-# 4. LOCKED BETS HISTORY (LIVE WIN PROBABILITIES & TOTAL POINTS OVERVIEW)
+# 4. LOCKED BETS HISTORY
 # =========================================================================
 elif menu_choice == "📜 Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
@@ -1517,179 +1637,7 @@ elif menu_choice == "📜 Locked Bets History":
     else:
         for b in my_tickets:
             real_idx = st.session_state.saved_bets.index(b)
-            status_val = b.get("status", "Pending")
-            is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
-
-            # Calculate Live Win Probability & Live Telemetry
-            if is_combo:
-                compound_p = 1.0
-                legs_list = b.get("parsed_legs", [])
-                for l_item in legs_list:
-                    m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
-                    p_str = calculate_live_bet_prob({
-                        "status": b.get("status"),
-                        "target_line": l_item.get("line"),
-                        "bet_direction": l_item.get("side"),
-                        "bet_category": l_item.get("type"),
-                        "picked_team": l_item.get("picked_team"),
-                        "win_prob": "65.0%"
-                    }, m_g)
-                    try:
-                        compound_p *= (float(p_str.replace("%", "")) / 100.0)
-                    except Exception:
-                        compound_p *= 0.5
-                live_prob_str = f"{compound_p * 100:.1f}%"
-                live_m = None
-            else:
-                live_m = find_game_for_bet(b, games_data)
-                live_prob_str = calculate_live_bet_prob(b, live_m)
-
-            # Determine game state badges
-            game_started = False
-            is_final = False
-            if live_m:
-                chk = live_m.get("checkpoint", "")
-                stt = live_m.get("status", "").lower()
-                game_started = ("pre" not in chk.lower()) and ("pm" not in stt and "am" not in stt)
-                is_final = live_m.get("completed", False) or "final" in stt
-
-            if status_val == "Won":
-                badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
-                border_color = "#22c55e"
-            elif status_val == "Lost":
-                badge_html = "<span style='background-color:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>❌ LOST</span>"
-                border_color = "#ef4444"
-            elif game_started:
-                badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⚡ IN PLAY</span>"
-                border_color = "#eab308"
-            else:
-                badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ SCHEDULED</span>"
-                border_color = "rgba(255,255,255,0.15)"
-
-            # Card Header Bar with Live Scores & Logos
-            if is_combo:
-                header_html = f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="font-size:1.0rem; font-weight:700;">🔗 Multi-Leg Parlay ({len(b.get('parsed_legs', []))} Legs)</span>
-                        <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Flurk')}</strong></span>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
-                            🎲 Live Win Prob: {live_prob_str}
-                        </span>
-                        {badge_html}
-                    </div>
-                </div>
-                """
-            elif live_m:
-                a_sh = live_m.get("away_short", "AWAY")
-                h_sh = live_m.get("home_short", "HOME")
-                a_sc = live_m.get("away_score", 0)
-                h_sc = live_m.get("home_score", 0)
-                tot_pts = a_sc + h_sc
-                status_txt = live_m.get("displayClock") or live_m.get("status")
-
-                if game_started or is_final:
-                    score_badge = f"<span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:6px; font-weight:700; font-size:0.82rem;'>{a_sh} {a_sc} - {h_sc} {h_sh} ({tot_pts} pts | {status_txt})</span>"
-                else:
-                    score_badge = f"<span style='opacity:0.65; font-size:0.80rem;'>🗓️ {live_m.get('kickoff', status_txt)}</span>"
-
-                header_html = f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <img src="{live_m.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%;">
-                        <strong>{a_sh}</strong> <span style='opacity:0.4;'>@</span>
-                        <img src="{live_m.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%;">
-                        <strong>{h_sh}</strong>
-                        {score_badge}
-                    </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
-                            🎲 Live Win Prob: {live_prob_str}
-                        </span>
-                        {badge_html}
-                    </div>
-                </div>
-                """
-            else:
-                header_html = f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
-                    <div><strong>{b.get('matchup', 'Matchup')}</strong></div>
-                    <div>{badge_html}</div>
-                </div>
-                """
-
-            with st.container(border=True):
-                st.markdown(header_html, unsafe_allow_html=True)
-                
-                c_row1, c_row2, c_row3, c_row4 = st.columns([3.5, 3.5, 2.0, 1.0])
-                with c_row1:
-                    st.write(f"**Pick:** `{b.get('bet')}`")
-                    st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
-
-                with c_row2:
-                    r_val = float(b.get('risk_dollars', 10.0))
-                    p_val = float(b.get('payout_dollars', 19.0))
-                    roi_pct = ((p_val - r_val) / max(r_val, 0.01)) * 100
-                    st.write(f"Risk: **${r_val:.2f}** ➔ Payout: **${p_val:.2f}**")
-                    st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${p_val - r_val:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
-
-                with c_row3:
-                    cat_label = b.get("bet_category", b.get("type", "Single"))
-                    st.caption(f"Type: **{cat_label}**")
-                    if b.get("notes"):
-                        st.caption(f"*{b.get('notes')}*")
-
-                with c_row4:
-                    if st.button("🏟️ War Room", key=f"open_war_{b['id']}", use_container_width=True):
-                        st.session_state.selected_bet_id = b["id"]
-                        st.rerun()
-                    if st.button("🗑️", key=f"del_{b['id']}", help="Delete ticket", use_container_width=True):
-                        st.session_state.saved_bets.pop(real_idx)
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                        st.rerun()
-
-                # Multi-Leg Parlay Legs on Overview
-                if is_combo:
-                    with st.expander("📋 View Parlay Legs, Live Points & Scores", expanded=False):
-                        parsed = b.get("parsed_legs", [])
-                        for leg_idx, leg in enumerate(parsed):
-                            m_g = find_game_for_bet({"matchup": leg["matchup"]}, games_data)
-                            if m_g:
-                                a_sh = m_g.get("away_short", "AWAY")
-                                h_sh = m_g.get("home_short", "HOME")
-                                a_sc = m_g.get("away_score", 0)
-                                h_sc = m_g.get("home_score", 0)
-                                tot_sc = a_sc + h_sc
-                                fin = m_g.get("completed", False) or "final" in m_g.get("status", "").lower()
-                                leg_live_p = calculate_live_bet_prob({
-                                    "status": b.get("status"),
-                                    "target_line": leg.get("line"),
-                                    "bet_direction": leg.get("side"),
-                                    "bet_category": leg.get("type"),
-                                    "picked_team": leg.get("picked_team"),
-                                    "win_prob": "65.0%"
-                                }, m_g)
-                                st.markdown(f"""
-                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:6px 10px; border-radius:6px; margin-bottom:4px;">
-                                    <div style="display:flex; align-items:center; gap:8px;">
-                                        <span style="opacity:0.5; font-size:0.75rem;">Leg {leg_idx+1}:</span>
-                                        <img src="{m_g.get('away_logo', DEFAULT_LOGO)}" width="20" height="20" style="border-radius:50%;">
-                                        <strong>{a_sh}</strong> @
-                                        <img src="{m_g.get('home_logo', DEFAULT_LOGO)}" width="20" height="20" style="border-radius:50%;">
-                                        <strong>{h_sh}</strong>
-                                        <span style="opacity:0.4;">|</span>
-                                        <strong style="color:#38bdf8;">{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}</strong>
-                                        <span style="opacity:0.65; font-size:0.80rem;">({a_sc} - {h_sc} | {tot_sc} pts)</span>
-                                    </div>
-                                    <div>
-                                        <span style="font-weight:700; font-size:0.75rem; background:rgba(56,189,248,0.15); color:#38bdf8; padding:2px 7px; border-radius:4px;">
-                                            {leg_live_p}
-                                        </span>
-                                    </div>
-                                </div>
-                                """, unsafe_allow_html=True)
+            render_ticket_card(b, real_idx, can_delete=True)
 
 # =========================================================================
 # 5. LEADERBOARD
@@ -1798,14 +1746,30 @@ elif menu_choice == "🏆 Leaderboard":
                     st.markdown(f"<div style='text-align:right;opacity:0.65;font-size:0.80rem;'>Net Profit</div>", unsafe_allow_html=True)
 
 # =========================================================================
-# 6. SQUAD FEED, THE LOCKER ROOM, SETTINGS, HOW IT WORKS, ADMIN
+# 6. LIVE SQUAD FEED (UPGRADED TO MATCH LOCKED BETS CARD FORMAT)
 # =========================================================================
 elif menu_choice == "🔥 Live Squad Feed":
     st.subheader("🔥 Live Squad Feed")
-    for b in st.session_state.saved_bets[:25]:
-        with st.container(border=True):
-            st.write(f"**{b.get('user')}**: {b.get('bet')} on `{b.get('matchup')}` — Risk: ${b.get('risk_dollars')} | Return: ${b.get('payout_dollars')} ({b.get('status')})")
+    st.caption("Real-time stream of all community tickets with live game telemetry, scores, and win probabilities.")
 
+    # Filter to public tickets
+    feed_tickets = []
+    for b in st.session_state.saved_bets:
+        u_raw = b.get("user", "Flurk").strip().lower()
+        acc = st.session_state.user_accounts.get(u_raw, {})
+        if acc.get("share_feed", True):
+            feed_tickets.append(b)
+
+    if not feed_tickets:
+        st.info("No community tickets locked in yet.")
+    else:
+        for idx, b in enumerate(feed_tickets[:30]):
+            real_idx = st.session_state.saved_bets.index(b)
+            render_ticket_card(b, real_idx, can_delete=False)
+
+# =========================================================================
+# 7. THE LOCKER ROOM
+# =========================================================================
 elif menu_choice == "💬 The Locker Room":
     st.subheader("💬 The Locker Room")
     with st.form("send_msg_form", clear_on_submit=True):
@@ -1849,23 +1813,13 @@ elif menu_choice == "💬 The Locker Room":
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                         st.rerun()
 
-            with st.expander(f"💬 Replies ({len(m['replies'])})", expanded=False):
-                for rep in m["replies"]:
-                    st.markdown(f"• **{rep.get('user')}** ({rep.get('time')}): {rep.get('text')}")
-                with st.form(f"rep_{m_id}", clear_on_submit=True):
-                    rep_in = st.text_input("Reply", placeholder="Write reply...", label_visibility="collapsed")
-                    if st.form_submit_button("Reply") and rep_in.strip():
-                        m["replies"].append({"user": current_user.strip(), "time": get_current_et_time().strftime("%I:%M %p ET"), "text": rep_in.strip()})
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-                        st.rerun()
-
 elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
     * **📊 My Dashboard**: Review personal performance, money won, money lost, ROI, and top winners.
     * **⚡ Single Game Engine**: Filter games by upcoming, live, or past. Model projections, point spreads, anytime touchdown props with guaranteed real player names, and auto-scrolling form loading.
     * **🔗 Multi-Leg Combo Builder**: Scan slates for optimal multi-leg parlay opportunities with compound true win probabilities.
-    * **🏟️ In-Game War Room**: Click any single or multi-leg combo ticket in Locked Bets History to evaluate live score updates, all team logos, and live probability chances of winning.
+    * **🏟️ In-Game War Room**: Click any single or multi-leg combo ticket in Locked Bets History or Live Squad Feed to evaluate live score updates, all team logos, and live probability chances of winning.
     * **⚙️ Account Settings**: Personalize your profile, bio, avatar, and privacy settings.
     """)
 
@@ -1903,7 +1857,7 @@ elif menu_choice == "⚙️ Account Settings":
             st.rerun()
 
 # =========================================================================
-# 11. ADMIN CONSOLE (DEFENSIVE VARIABLE INITIALIZATION)
+# 11. ADMIN CONSOLE
 # =========================================================================
 elif menu_choice == "🛡️ Admin" and is_user_admin:
     st.subheader("🛡️ Commissioner Admin Console")
