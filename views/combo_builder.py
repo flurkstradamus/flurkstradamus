@@ -8,16 +8,33 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     st.subheader("🔗 Multi-Leg Cross-Sport Combo Builder (Up to 12 Legs)")
     st.caption("Automated cross-slate parlay scanner, compound probability calculator, and slip builder.")
 
-    # Top-Level AI Automation & Strategy Controls
+    # Top-Level AI Automation & Strategy Controls (Dropdown Selection)
     with st.container(border=True):
         st.markdown("#### 🤖 AI Combo Optimizer & Auto-Assembler")
         c_top1, c_top2 = st.columns(2)
         
-        target_legs = c_top1.slider("Target Number of Legs", min_value=2, max_value=12, value=max(2, min(len(st.session_state.combo_active_legs) or 3, 12)))
-        strat_choice = c_top2.select_slider(
+        leg_options = list(range(2, 13))
+        current_len = len(st.session_state.combo_active_legs) if st.session_state.combo_active_legs else 3
+        default_leg_idx = leg_options.index(max(2, min(current_len, 12)))
+
+        target_legs = c_top1.selectbox(
+            "Target Number of Legs",
+            options=leg_options,
+            index=default_leg_idx,
+            format_func=lambda x: f"{x} Legs",
+            key="combo_target_legs_select"
+        )
+
+        strat_options = [
+            "🛡️ Safe Floor (High Win %, Low Drawdown)",
+            "⚖️ Balanced Edge (+EV Sweet Spot)",
+            "🚀 High Profit (Max Multiplier & Longshots)"
+        ]
+        strat_choice = c_top2.selectbox(
             "Combo Strategy Profile",
-            options=["🛡️ Safe Floor (High Win %, Low Drawdown)", "⚖️ Balanced Edge (+EV Sweet Spot)", "🚀 High Profit (Max Multiplier & Longshots)"],
-            value="⚖️ Balanced Edge (+EV Sweet Spot)"
+            options=strat_options,
+            index=1,
+            key="combo_strat_profile_select"
         )
 
         col_filter1, col_filter2, col_gen = st.columns([1.5, 2, 1.5], vertical_alignment="bottom")
