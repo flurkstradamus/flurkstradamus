@@ -25,28 +25,87 @@ def format_nba_tipoff(date_str, fallback_status):
     except Exception:
         return fallback_status
 
-@st.cache_data(ttl=600)
-def get_live_nba_roster(team_id_or_abbr):
-    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{str(team_id_or_abbr).lower()}/roster"
-    players = []
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_nba_injury_list():
+    """
+    Fetches the live NBA-wide injury report from ESPN.
+    Returns a set of lowercased player names who are confirmed Out or Doubtful.
+    """
+    inactive_players = set()
+    url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
     try:
-        r = requests.get(url, timeout=3.0)
+        r = requests.get(url, timeout=3.5)
         if r.status_code == 200:
             data = r.json()
-            for athlete in data.get("athletes", []):
-                items = athlete.get("items", []) if "items" in athlete else [athlete]
+            # ESPN organizes injuries under injuries array per team or league-wide
+            items = data.get("injuries", [])
+            for team_entry in items:
+                for inj in team_entry.get("injuries", []):
+                    ath = inj.get("athlete", {})
+                    name = ath.get("displayName") or ath.get("name")
+                    status_desc = str(inj.get("status", "")).lower()
+                    # Filter out players who will not play
+                    if name and any(kw in status_desc for kw in ["out", "doubtful", "ir", "injured reserve", "suspension"]):
+                        inactive_players.add(name.lower().strip())
+    except Exception:
+        pass
+    return inactive_players
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_live_nba_roster(team_id_or_abbr):
+    """
+    Retrieves active rotation players dynamically while filtering out:
+    1. Injured or Out players
+    2. Deep reserves who do not log active playing time
+    """
+    clean_key = str(team_id_or_abbr or "").strip().lower()
+    injury_set = fetch_nba_injury_list()
+
+    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{clean_key}/roster"
+    healthy_players = []
+
+    try:
+        r = requests.get(url, timeout=3.5)
+        if r.status_code == 200:
+            data = r.json()
+            athletes = data.get("athletes", [])
+            for athlete_group in athletes:
+                items = athlete_group.get("items", []) if "items" in athlete_group else [athlete_group]
                 for p in items:
-                    pos = p.get("position", {}).get("abbreviation", "G")
                     name = p.get("displayName") or p.get("fullName")
-                    if pos in ["PG", "SG", "SF", "PF", "C", "G", "F"] and name:
-                        pts_line = 24.5 if pos in ["PG", "SG"] else (19.5 if pos in ["SF", "PF"] else 14.5)
-                        players.append((name, pos, pts_line))
+                    pos = p.get("position", {}).get("abbreviation", "G")
+                    stats = p.get("statistics", {})
+                    ppg = float(stats.get("pointsPerGame", 0.0))
+
+                    if not name:
+                        continue
+
+                    # 1. Skip players on the live injury report
+                    if name.lower().strip() in injury_set:
+                        continue
+
+                    # 2. Skip players listed as injured directly on the roster object
+                    injuries = p.get("injuries", [])
+                    if injuries:
+                        status_str = str(injuries[0].get("status", "")).lower()
+                        if any(kw in status_str for kw in ["out", "doubtful", "ir"]):
+                            continue
+
+                    # 3. Dynamic points prop line based on season metrics or position
+                    if ppg >= 7.5:
+                        strike_line = round(ppg + 0.5, 1)
+                        healthy_players.append((name, pos, strike_line))
+                    elif not stats and pos in ["PG", "SG", "SF", "PF", "C", "G", "F"]:
+                        # Fallback for starters when statistics array is omitted
+                        pts_line = 21.5 if pos in ["PG", "SG"] else (17.5 if pos in ["SF", "PF"] else 13.5)
+                        healthy_players.append((name, pos, pts_line))
     except Exception:
         pass
 
-    if not players:
-        return [("Lead Guard", "PG", 23.5), ("Lead Wing", "SF", 20.5), ("Starting Big", "C", 14.5)]
-    return players[:8]
+    if len(healthy_players) >= 3:
+        return healthy_players[:10]
+
+    return [("Lead Guard", "PG", 22.5), ("Lead Wing", "SF", 19.5), ("Starting Center", "C", 14.5)]
 
 @st.cache_data(ttl=30, show_spinner=False)
 def fetch_nba_scoreboard(days_range=(-2, 4)):
