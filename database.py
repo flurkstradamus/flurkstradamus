@@ -45,12 +45,10 @@ def load_storage():
             chat_messages = data.get("chat_messages", [])
             user_accounts = data.get("user_accounts", {})
             
-            # Case-insensitive ensure flurk exists with correct hash
             has_flurk = False
             for k, u in list(user_accounts.items()):
                 if k.lower() == "flurk" or u.get("username", "").lower() == "flurk":
                     has_flurk = True
-                    # Force sync password hash if locked out
                     u["password_hash"] = hash_password("Loofus1993")
                     u["is_admin"] = True
                     u["is_banned"] = False
@@ -109,7 +107,7 @@ def find_game_for_bet(bet, games_data):
     return None
 
 def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots=None):
-    """Grades completed games without overwriting user-entered payouts or stakes."""
+    """Grades completed games without modifying entered payout or risk amounts."""
     if not saved_bets or not games_data:
         return False
 
@@ -165,8 +163,6 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
                 updated = True
             elif all_legs_final and not any_leg_lost:
                 bet["status"] = "Won"
-                if not bet.get("payout_dollars") or float(bet.get("payout_dollars", 0)) <= 0:
-                    bet["payout_dollars"] = float(bet.get("payout", bet.get("risk_dollars", 10.0) * 1.91))
                 updated = True
 
         else:
@@ -207,8 +203,6 @@ def auto_resolve_bets(saved_bets, games_data, chat_messages=None, game_snapshots
 
             if won is True:
                 bet["status"] = "Won"
-                if not bet.get("payout_dollars") or float(bet.get("payout_dollars", 0)) <= 0:
-                    bet["payout_dollars"] = float(bet.get("payout", bet.get("risk_dollars", 10.0) * 1.91))
                 updated = True
             elif won is False:
                 bet["status"] = "Lost"
