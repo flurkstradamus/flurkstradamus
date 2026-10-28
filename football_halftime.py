@@ -431,6 +431,7 @@ if st.session_state.logged_in_user is None:
                     st.error("Please fill all required fields and verify password.")
 
     with tab_forgot:
+        st.caption("Enter email to generate reset token.")
         with st.form("request_reset_form"):
             recover_email = st.text_input("Registered Email").strip().lower()
             if st.form_submit_button("Request Reset Code", use_container_width=True):
@@ -451,7 +452,7 @@ current_user = "Flurk" if active_uname == "flurk" else current_user_profile.get(
 is_user_admin = current_user_profile.get("is_admin", False)
 current_user_profile["last_active"] = get_current_et_time().strftime("%Y-%m-%d %I:%M %p ET")
 
-# ESPN INGESTION ENGINE
+# ESPN Ingestion
 @st.cache_data(ttl=30)
 def get_extended_games(selected_league="All Games"):
     all_games = []
@@ -1073,6 +1074,7 @@ elif menu_choice == "⚡ Single Game Engine":
         else:
             strat_candidates = [spread_bets[0], full_totals_bets[0], touchdown_bets[0]]
 
+        # RENDER SUGGESTED CARDS WITH VERIFIED REAL PLAYER NAMES
         for idx, sc in enumerate(strat_candidates[:3]):
             tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
             st.markdown(f"""
@@ -1373,7 +1375,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                         </div>
                     </div>
                     <div class="rec-pick-row">
-                        <strong style="color: #4ade80; font-size: 1.05rem;">{l_ai['desc']}</strong>
+                        <strong style="color:#4ade80; font-size: 1.05rem;">{l_ai['desc']}</strong>
                         <span class="badge-prob">{l_ai['prob']*100:.1f}% Win Prob</span>
                     </div>
                 </div>
@@ -1486,11 +1488,11 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             st.success(f"{len(combo_legs)}-Leg combo ticket locked in!")
 
 # =========================================================================
-# 4. LOCKED BETS HISTORY
+# 4. LOCKED BETS HISTORY (LIVE WIN PROBABILITIES & TOTAL POINTS OVERVIEW)
 # =========================================================================
 elif menu_choice == "📜 Locked Bets History":
     st.subheader(f"📜 {current_user}'s Locked Bets")
-    st.caption("Click any card to enter the live game War Room.")
+    st.caption("Active slips with live in-game win probabilities, scoreboard telemetry, and total points.")
 
     curr_user_clean = current_user.strip().lower()
     col_filter1, col_filter2 = st.columns([3, 1])
@@ -1515,21 +1517,182 @@ elif menu_choice == "📜 Locked Bets History":
     else:
         for b in my_tickets:
             real_idx = st.session_state.saved_bets.index(b)
+            status_val = b.get("status", "Pending")
+            is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
+
+            # Calculate Live Win Probability & Live Telemetry
+            if is_combo:
+                compound_p = 1.0
+                legs_list = b.get("parsed_legs", [])
+                for l_item in legs_list:
+                    m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
+                    p_str = calculate_live_bet_prob({
+                        "status": b.get("status"),
+                        "target_line": l_item.get("line"),
+                        "bet_direction": l_item.get("side"),
+                        "bet_category": l_item.get("type"),
+                        "picked_team": l_item.get("picked_team"),
+                        "win_prob": "65.0%"
+                    }, m_g)
+                    try:
+                        compound_p *= (float(p_str.replace("%", "")) / 100.0)
+                    except Exception:
+                        compound_p *= 0.5
+                live_prob_str = f"{compound_p * 100:.1f}%"
+                live_m = None
+            else:
+                live_m = find_game_for_bet(b, games_data)
+                live_prob_str = calculate_live_bet_prob(b, live_m)
+
+            # Determine game state badges
+            game_started = False
+            is_final = False
+            if live_m:
+                chk = live_m.get("checkpoint", "")
+                stt = live_m.get("status", "").lower()
+                game_started = ("pre" not in chk.lower()) and ("pm" not in stt and "am" not in stt)
+                is_final = live_m.get("completed", False) or "final" in stt
+
+            if status_val == "Won":
+                badge_html = "<span style='background-color:#22c55e;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>🏆 WON</span>"
+                border_color = "#22c55e"
+            elif status_val == "Lost":
+                badge_html = "<span style='background-color:#ef4444;color:#fff;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>❌ LOST</span>"
+                border_color = "#ef4444"
+            elif game_started:
+                badge_html = "<span style='background-color:#eab308;color:#000;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⚡ IN PLAY</span>"
+                border_color = "#eab308"
+            else:
+                badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;padding:2px 8px;border-radius:12px;font-weight:700;font-size:0.75rem;'>⏳ SCHEDULED</span>"
+                border_color = "rgba(255,255,255,0.15)"
+
+            # Card Header Bar with Live Scores & Logos
+            if is_combo:
+                header_html = f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:1.0rem; font-weight:700;">🔗 Multi-Leg Parlay ({len(b.get('parsed_legs', []))} Legs)</span>
+                        <span style="opacity:0.55; font-size:0.80rem;">by <strong>{b.get('user', 'Flurk')}</strong></span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
+                            🎲 Live Win Prob: {live_prob_str}
+                        </span>
+                        {badge_html}
+                    </div>
+                </div>
+                """
+            elif live_m:
+                a_sh = live_m.get("away_short", "AWAY")
+                h_sh = live_m.get("home_short", "HOME")
+                a_sc = live_m.get("away_score", 0)
+                h_sc = live_m.get("home_score", 0)
+                tot_pts = a_sc + h_sc
+                status_txt = live_m.get("displayClock") or live_m.get("status")
+
+                if game_started or is_final:
+                    score_badge = f"<span style='background-color:rgba(255,255,255,0.08); padding:2px 8px; border-radius:6px; font-weight:700; font-size:0.82rem;'>{a_sh} {a_sc} - {h_sc} {h_sh} ({tot_pts} pts | {status_txt})</span>"
+                else:
+                    score_badge = f"<span style='opacity:0.65; font-size:0.80rem;'>🗓️ {live_m.get('kickoff', status_txt)}</span>"
+
+                header_html = f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <img src="{live_m.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%;">
+                        <strong>{a_sh}</strong> <span style='opacity:0.4;'>@</span>
+                        <img src="{live_m.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%;">
+                        <strong>{h_sh}</strong>
+                        {score_badge}
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="background-color:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; padding:2px 8px; border-radius:6px; font-size:0.80rem;">
+                            🎲 Live Win Prob: {live_prob_str}
+                        </span>
+                        {badge_html}
+                    </div>
+                </div>
+                """
+            else:
+                header_html = f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px; margin-bottom:8px;">
+                    <div><strong>{b.get('matchup', 'Matchup')}</strong></div>
+                    <div>{badge_html}</div>
+                </div>
+                """
+
             with st.container(border=True):
-                r1, r2, r3 = st.columns([5, 3, 2])
-                r1.markdown(f"#### **{b.get('bet')}**\n`{b.get('matchup')}`")
-                r2.write(f"Risk: **${float(b.get('risk_dollars',10)):.2f}** ➔ Payout: **${float(b.get('payout_dollars',19)):.2f}**\n\nStatus: `{b.get('status')}`")
-                with r3:
-                    if st.button("🏟️ View War Room", key=f"open_war_{b['id']}", use_container_width=True):
+                st.markdown(header_html, unsafe_allow_html=True)
+                
+                c_row1, c_row2, c_row3, c_row4 = st.columns([3.5, 3.5, 2.0, 1.0])
+                with c_row1:
+                    st.write(f"**Pick:** `{b.get('bet')}`")
+                    st.caption(f"🗓️ Logged: `{b.get('date', 'N/A')}`")
+
+                with c_row2:
+                    r_val = float(b.get('risk_dollars', 10.0))
+                    p_val = float(b.get('payout_dollars', 19.0))
+                    roi_pct = ((p_val - r_val) / max(r_val, 0.01)) * 100
+                    st.write(f"Risk: **${r_val:.2f}** ➔ Payout: **${p_val:.2f}**")
+                    st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${p_val - r_val:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
+
+                with c_row3:
+                    cat_label = b.get("bet_category", b.get("type", "Single"))
+                    st.caption(f"Type: **{cat_label}**")
+                    if b.get("notes"):
+                        st.caption(f"*{b.get('notes')}*")
+
+                with c_row4:
+                    if st.button("🏟️ War Room", key=f"open_war_{b['id']}", use_container_width=True):
                         st.session_state.selected_bet_id = b["id"]
                         st.rerun()
-                    if st.button("🗑️ Delete", key=f"del_{b['id']}", use_container_width=True):
+                    if st.button("🗑️", key=f"del_{b['id']}", help="Delete ticket", use_container_width=True):
                         st.session_state.saved_bets.pop(real_idx)
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                         st.rerun()
 
+                # Multi-Leg Parlay Legs on Overview
+                if is_combo:
+                    with st.expander("📋 View Parlay Legs, Live Points & Scores", expanded=False):
+                        parsed = b.get("parsed_legs", [])
+                        for leg_idx, leg in enumerate(parsed):
+                            m_g = find_game_for_bet({"matchup": leg["matchup"]}, games_data)
+                            if m_g:
+                                a_sh = m_g.get("away_short", "AWAY")
+                                h_sh = m_g.get("home_short", "HOME")
+                                a_sc = m_g.get("away_score", 0)
+                                h_sc = m_g.get("home_score", 0)
+                                tot_sc = a_sc + h_sc
+                                fin = m_g.get("completed", False) or "final" in m_g.get("status", "").lower()
+                                leg_live_p = calculate_live_bet_prob({
+                                    "status": b.get("status"),
+                                    "target_line": leg.get("line"),
+                                    "bet_direction": leg.get("side"),
+                                    "bet_category": leg.get("type"),
+                                    "picked_team": leg.get("picked_team"),
+                                    "win_prob": "65.0%"
+                                }, m_g)
+                                st.markdown(f"""
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:6px 10px; border-radius:6px; margin-bottom:4px;">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span style="opacity:0.5; font-size:0.75rem;">Leg {leg_idx+1}:</span>
+                                        <img src="{m_g.get('away_logo', DEFAULT_LOGO)}" width="20" height="20" style="border-radius:50%;">
+                                        <strong>{a_sh}</strong> @
+                                        <img src="{m_g.get('home_logo', DEFAULT_LOGO)}" width="20" height="20" style="border-radius:50%;">
+                                        <strong>{h_sh}</strong>
+                                        <span style="opacity:0.4;">|</span>
+                                        <strong style="color:#38bdf8;">{leg.get('side', '')} {leg.get('line', '')} {leg.get('picked_team', '')}</strong>
+                                        <span style="opacity:0.65; font-size:0.80rem;">({a_sc} - {h_sc} | {tot_sc} pts)</span>
+                                    </div>
+                                    <div>
+                                        <span style="font-weight:700; font-size:0.75rem; background:rgba(56,189,248,0.15); color:#38bdf8; padding:2px 7px; border-radius:4px;">
+                                            {leg_live_p}
+                                        </span>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+
 # =========================================================================
-# 5. LEADERBOARD (NO HOVER COPY ICONS & RICH SUMMARY ANALYTICS)
+# 5. LEADERBOARD
 # =========================================================================
 elif menu_choice == "🏆 Leaderboard":
     st.subheader("🏆 Leaderboard")
@@ -1575,7 +1738,6 @@ elif menu_choice == "🏆 Leaderboard":
         fav_market = max(stat["types"], key=stat["types"].get) if stat["types"] else "Single Play"
         member_since = acc.get("created_at", "N/A")
 
-        # Analytical Bettor Tier Badge
         if win_rate >= 65.0 and decided >= 3:
             tier_badge = "🎯 Sniper"
         elif stat["won"] >= 3 and stat["lost"] == 0:
@@ -1612,9 +1774,7 @@ elif menu_choice == "🏆 Leaderboard":
 
             with st.container(border=True):
                 c1, c2, c3 = st.columns([4, 4, 2])
-                
                 with c1:
-                    # Clean div avoids Streamlit heading hover anchor link detection
                     st.markdown(f"""
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
                         <span style="font-size:1.20rem; font-weight:700;">{medal} {u['name']}</span>
@@ -1689,6 +1849,16 @@ elif menu_choice == "💬 The Locker Room":
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                         st.rerun()
 
+            with st.expander(f"💬 Replies ({len(m['replies'])})", expanded=False):
+                for rep in m["replies"]:
+                    st.markdown(f"• **{rep.get('user')}** ({rep.get('time')}): {rep.get('text')}")
+                with st.form(f"rep_{m_id}", clear_on_submit=True):
+                    rep_in = st.text_input("Reply", placeholder="Write reply...", label_visibility="collapsed")
+                    if st.form_submit_button("Reply") and rep_in.strip():
+                        m["replies"].append({"user": current_user.strip(), "time": get_current_et_time().strftime("%I:%M %p ET"), "text": rep_in.strip()})
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
+                        st.rerun()
+
 elif menu_choice == "💡 How It Works":
     st.subheader("💡 How It Works: The User Manual")
     st.markdown("""
@@ -1733,7 +1903,7 @@ elif menu_choice == "⚙️ Account Settings":
             st.rerun()
 
 # =========================================================================
-# 11. ADMIN CONSOLE
+# 11. ADMIN CONSOLE (DEFENSIVE VARIABLE INITIALIZATION)
 # =========================================================================
 elif menu_choice == "🛡️ Admin" and is_user_admin:
     st.subheader("🛡️ Commissioner Admin Console")
