@@ -34,6 +34,10 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         st.session_state.combo_preview_legs = None
     if "combo_is_editing" not in st.session_state:
         st.session_state.combo_is_editing = False
+    if "combo_slip_version" not in st.session_state:
+        st.session_state.combo_slip_version = 0
+
+    slip_ver = st.session_state.combo_slip_version
 
     # Top-Level AI Automation & Strategy Controls
     with st.container(border=True):
@@ -121,7 +125,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
         if q_filter.strip():
             q = q_filter.strip().lower()
-            pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
+            pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g["home_short"].lower() or q in g["away_short"].lower()]
 
         if col_gen.button("⚡ Auto-Generate Combo", use_container_width=True, disabled=len(pool) == 0):
             new_generated = []
@@ -163,6 +167,9 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 elif chosen_type == "Point Spread (ATS)":
                     side_val = "Spread"
                     line_val = spread_val
+                elif chosen_type == "Straight Up Winner (Moneyline)":
+                    side_val = "Moneyline"
+                    line_val = 0.0
                 elif chosen_type == "Player Points Prop":
                     roster = get_live_nba_roster(g_item.get("home_id") or g_item.get("home_short"))
                     target_p_name = roster[0][0] if roster else "Lead Scorer"
@@ -192,9 +199,10 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     "rationale": rationale_text
                 })
 
-            st.session_state.combo_preview_legs = new_generated
-            st.session_state.combo_active_legs = list(new_generated)
+            st.session_state.combo_preview_legs = [dict(x) for x in new_generated]
+            st.session_state.combo_active_legs = [dict(x) for x in new_generated]
             st.session_state.combo_is_editing = False
+            st.session_state.combo_slip_version += 1
             st.rerun()
 
     # --- AI RECOMMENDATION PREVIEW (FULL-WIDTH CARDS) ---
@@ -244,10 +252,9 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Text Link Action Underneath the Legs
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             if not st.session_state.combo_is_editing:
-                if st.button("✏️ Edit selection or remove legs", type="tertiary" if hasattr(st, "tertiary") else "secondary", key="btn_toggle_edit_mode"):
+                if st.button("✏️ Edit selection or remove legs", key="btn_toggle_edit_mode"):
                     st.session_state.combo_is_editing = True
                     st.rerun()
             else:
@@ -258,18 +265,19 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 leg_indices_to_keep = []
                 for edit_i, e_leg in enumerate(prev_legs):
                     lbl = f"Leg #{edit_i+1}: {e_leg['matchup_str']} — {e_leg.get('picked_team', '')} {e_leg.get('side', '')} ({e_leg['type']})"
-                    is_checked = st.checkbox(lbl, value=True, key=f"edit_chk_{edit_i}")
+                    is_checked = st.checkbox(lbl, value=True, key=f"edit_chk_{edit_i}_v{slip_ver}")
                     if is_checked:
                         leg_indices_to_keep.append(edit_i)
 
                 c_save1, c_save2 = st.columns([2, 4], vertical_alignment="center")
                 with c_save1:
                     if st.button("💾 Save & Update Slip", type="primary", use_container_width=True, key="btn_commit_edit_legs"):
-                        updated_list = [prev_legs[k] for k in leg_indices_to_keep]
+                        updated_list = [dict(prev_legs[k]) for k in leg_indices_to_keep]
                         st.session_state.combo_preview_legs = updated_list
-                        st.session_state.combo_active_legs = list(updated_list)
+                        st.session_state.combo_active_legs = [dict(x) for x in updated_list]
                         st.session_state.combo_is_editing = False
-                        st.toast("✅ Parlay slip updated!", icon="💾")
+                        st.session_state.combo_slip_version += 1
+                        st.toast("✅ Parlay slip updated and synchronized!", icon="💾")
                         st.rerun()
                 with c_save2:
                     if st.button("Cancel", key="btn_cancel_edit_legs"):
@@ -301,6 +309,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 "league": first_gm.get("league", "SPORTS"),
                 "rationale": generate_leg_rationale("Game Total", "Under", round_half_point(first_gm.get("market_ou", 47.5)), first_gm, first_gm["home_team"])
             }]
+            st.session_state.combo_slip_version += 1
             st.rerun()
         return
 
@@ -341,12 +350,14 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             "league": next_gm.get("league", "SPORTS"),
             "rationale": generate_leg_rationale("Game Total", "Under", round_half_point(next_gm.get("market_ou", 47.5)), next_gm, next_gm["home_team"])
         })
+        st.session_state.combo_slip_version += 1
         st.rerun()
 
     if ctrl3.button("🗑️ Clear Slip", use_container_width=True):
         st.session_state.combo_active_legs = []
         st.session_state.combo_preview_legs = None
         st.session_state.combo_is_editing = False
+        st.session_state.combo_slip_version += 1
         st.rerun()
 
     combo_legs = []
@@ -383,15 +394,23 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 """, unsafe_allow_html=True)
 
             with col_hdr2:
-                if st.button("❌", key=f"del_leg_{i}", help="Remove leg"):
+                if st.button("❌", key=f"del_leg_{i}_v{slip_ver}", help="Remove leg"):
                     st.session_state.combo_active_legs.pop(i)
                     if st.session_state.combo_preview_legs and i < len(st.session_state.combo_preview_legs):
                         st.session_state.combo_preview_legs.pop(i)
+                    st.session_state.combo_slip_version += 1
                     st.rerun()
 
-            sel_m = st.selectbox(f"Matchup Selector", range(len(choices)), index=safe_idx, format_func=lambda x: choices[x], key=f"cb_m_{i}")
+            sel_m = st.selectbox(
+                f"Matchup Selector",
+                range(len(choices)),
+                index=safe_idx,
+                format_func=lambda x: choices[x],
+                key=f"cb_m_{i}_v{slip_ver}"
+            )
             if sel_m != safe_idx:
                 leg["matchup_idx"] = sel_m
+                st.session_state.combo_slip_version += 1
                 st.rerun()
 
             is_nba = (gm.get("league") == "NBA")
@@ -403,14 +422,26 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
             curr_type = leg.get("type", "Game Total")
             type_idx = market_choices.index(curr_type) if curr_type in market_choices else 0
-            w_type = st.radio(f"Market", market_choices, horizontal=True, index=type_idx, key=f"cb_wt_{i}")
+            w_type = st.radio(
+                f"Market",
+                market_choices,
+                horizontal=True,
+                index=type_idx,
+                key=f"cb_wt_{i}_v{slip_ver}"
+            )
             leg["type"] = w_type
 
             if w_type == "Game Total":
                 b1, b2 = st.columns(2)
-                s_side = b1.selectbox("Side", ["Under", "Over"], index=0 if leg.get("side", "Under") == "Under" else 1, key=f"cb_s_{i}")
+                cur_side = leg.get("side", "Under")
+                s_side = b1.selectbox(
+                    "Side",
+                    ["Under", "Over"],
+                    index=0 if cur_side == "Under" else 1,
+                    key=f"cb_s_{i}_v{slip_ver}"
+                )
                 default_line = float(round_half_point(leg.get("line", gm.get("market_ou", 224.5 if is_nba else 47.5))))
-                s_line = b2.number_input("Line (pts)", value=default_line, step=0.5, key=f"cb_l_{i}")
+                s_line = b2.number_input("Line (pts)", value=default_line, step=0.5, key=f"cb_l_{i}_v{slip_ver}")
                 leg["side"], leg["line"] = s_side, s_line
 
                 proj_val = (218.0 if is_nba else 43.0)
@@ -419,14 +450,25 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 combo_legs.append({"desc": f"{gm['away_short']} @ {gm['home_short']}: {s_side} {s_line:.1f}", "prob": leg_prob})
             elif w_type == "Point Spread (ATS)":
                 b1, b2 = st.columns(2)
-                team_sel = b1.selectbox("Covering Team", [gm["home_team"], gm["away_team"]], key=f"cb_cov_{i}")
-                spd_val = b2.number_input("Spread", value=float(round_half_point(gm.get("market_spread", -3.5))), step=0.5, key=f"cb_spd_{i}")
+                team_sel = b1.selectbox(
+                    "Covering Team",
+                    [gm["home_team"], gm["away_team"]],
+                    index=0 if leg.get("picked_team") == gm["home_team"] else 1,
+                    key=f"cb_cov_{i}_v{slip_ver}"
+                )
+                def_spread = float(round_half_point(leg.get("line", gm.get("market_spread", -3.5))))
+                spd_val = b2.number_input("Spread", value=def_spread, step=0.5, key=f"cb_spd_{i}_v{slip_ver}")
                 leg["picked_team"], leg["line"], leg["side"] = team_sel, spd_val, "Spread"
                 leg_prob = 0.52
                 combo_legs.append({"desc": f"{gm['away_short']} @ {gm['home_short']}: {team_sel} {spd_val:+.1f}", "prob": leg_prob})
             elif w_type == "Straight Up Winner (Moneyline)":
                 b1, b2 = st.columns(2)
-                winner = b1.selectbox("Winner", [gm["home_team"], gm["away_team"]], key=f"cb_win_{i}")
+                winner = b1.selectbox(
+                    "Winner",
+                    [gm["home_team"], gm["away_team"]],
+                    index=0 if leg.get("picked_team") == gm["home_team"] else 1,
+                    key=f"cb_win_{i}_v{slip_ver}"
+                )
                 leg["picked_team"], leg["side"], leg["line"] = winner, "Moneyline", 0.0
 
                 add_score = 40 if is_nba else 14
@@ -438,9 +480,11 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 h_roster = get_live_nba_roster(gm.get("home_id") or gm.get("home_short"))
                 a_roster = get_live_nba_roster(gm.get("away_id") or gm.get("away_short"))
                 all_p = [p[0] for p in (h_roster + a_roster)]
-                p_pick = b1.selectbox("Player", all_p, key=f"cb_prop_p_{i}")
-                side_p = b2.selectbox("Side", ["Over", "Under"], key=f"cb_prop_s_{i}")
-                pts_line = st.number_input("Points Line", value=float(leg.get("line", 22.5)), step=0.5, key=f"cb_prop_l_{i}")
+                cur_p = leg.get("picked_team")
+                p_idx_sel = all_p.index(cur_p) if cur_p in all_p else 0
+                p_pick = b1.selectbox("Player", all_p, index=p_idx_sel, key=f"cb_prop_p_{i}_v{slip_ver}")
+                side_p = b2.selectbox("Side", ["Over", "Under"], index=0 if leg.get("side") == "Over" else 1, key=f"cb_prop_s_{i}_v{slip_ver}")
+                pts_line = st.number_input("Points Line", value=float(leg.get("line", 22.5)), step=0.5, key=f"cb_prop_l_{i}_v{slip_ver}")
                 leg["picked_team"], leg["side"], leg["line"] = p_pick, side_p, pts_line
                 leg_prob = 0.55
                 combo_legs.append({"desc": f"{p_pick} {side_p} {pts_line:.1f} Pts", "prob": leg_prob})
@@ -449,7 +493,9 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 h_roster = get_live_football_roster(gm.get("home_id") or gm.get("home_short"), gm.get("league"))
                 a_roster = get_live_football_roster(gm.get("away_id") or gm.get("away_short"), gm.get("league"))
                 all_p = [p[0] for p in (h_roster + a_roster)]
-                p_pick = b1.selectbox("Player to Score TD", all_p, key=f"cb_td_p_{i}")
+                cur_p = leg.get("picked_team")
+                td_idx_sel = all_p.index(cur_p) if cur_p in all_p else 0
+                p_pick = b1.selectbox("Player to Score TD", all_p, index=td_idx_sel, key=f"cb_td_p_{i}_v{slip_ver}")
                 leg["picked_team"], leg["side"], leg["line"] = p_pick, "TD", 1.0
                 leg_prob = 0.48
                 combo_legs.append({"desc": f"{p_pick} Anytime TD", "prob": leg_prob})
@@ -458,7 +504,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%")
 
-    with st.form("save_combo_form"):
+    with st.form(f"save_combo_form_v{slip_ver}"):
         r_c, p_c = st.columns(2)
         c_risk = r_c.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
         c_payout = p_c.number_input("Payout ($)", min_value=1.0, value=max(20.0, round(10.0 * (1.0 / max(compound_prob, 0.02)), 2)), step=10.0)
