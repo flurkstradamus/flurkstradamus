@@ -153,11 +153,25 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
     form_ver = st.session_state.single_form_version
 
-    f_col1, f_col2 = st.columns([1, 2])
-    timing_view = f_col1.selectbox("Game Status Filter", ["⏳ Upcoming Games", "⚡ Live Games", "📜 Past / Completed Games", "🌐 All Matchups"])
-    search_query = f_col2.text_input("🔍 Search Matchup or Team", placeholder="e.g. Celtics, Lakers, Eagles, Chiefs...")
+    # League Scope Selector placed at the top of the game filters
+    col_lg, col_st, col_sr = st.columns([1.5, 1.5, 2])
+    league_scope = col_lg.selectbox(
+        "League Scope",
+        options=["All Games", "NBA", "NFL", "NCAA Football"],
+        index=0,
+        key=f"sg_league_scope_v{form_ver}"
+    )
+    timing_view = col_st.selectbox("Game Status Filter", ["⏳ Upcoming Games", "⚡ Live Games", "📜 Past / Completed Games", "🌐 All Matchups"])
+    search_query = col_sr.text_input("🔍 Search Matchup or Team", placeholder="e.g. Celtics, Lakers, Eagles, Chiefs...")
 
     pool = games_data
+    if league_scope == "NBA":
+        pool = [g for g in pool if g.get("league") == "NBA"]
+    elif league_scope == "NFL":
+        pool = [g for g in pool if g.get("league") == "NFL"]
+    elif league_scope == "NCAA Football":
+        pool = [g for g in pool if g.get("league") == "NCAA"]
+
     if timing_view == "⏳ Upcoming Games":
         pool = [g for g in pool if not g.get("completed", False) and (g.get("state_text") == "pre" or g.get("period", 0) == 0)]
     elif timing_view == "⚡ Live Games":
@@ -172,7 +186,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
     with st.expander("📸 Auto-Fill via Slip Screenshot (Robinhood, DraftKings, FanDuel, etc.)", expanded=False):
         st.caption("Upload any sportsbook or prediction contract screenshot to detect teams, lines, risk, and potential payouts.")
         uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key="slip_file_input")
-        
+
         if uploaded_slip is not None:
             if st.button("⚡ Extract & Auto-Fill Form", use_container_width=True, key="btn_run_extract"):
                 with st.spinner("Analyzing screenshot with vision model..."):
