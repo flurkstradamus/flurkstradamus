@@ -12,8 +12,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     # Top-Level AI Automation & Strategy Controls
     with st.container(border=True):
         st.markdown("#### 🤖 AI Combo Optimizer & Auto-Assembler")
-        
-        # 1. League Filter is now placed here
+
         c_top1, c_top2 = st.columns(2)
         league_choice = c_top1.selectbox(
             "Primary League / Slate Scope",
@@ -82,7 +81,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
         if q_filter.strip():
             q = q_filter.strip().lower()
-            pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g["home_short"].lower() or q in g["away_short"].lower()]
+            pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
         if col_gen.button("⚡ Auto-Generate Combo", use_container_width=True, disabled=len(pool) == 0):
             new_legs = []
@@ -92,7 +91,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 line_val = round_half_point(g_item.get("market_ou", 224.5 if is_nba else 47.5))
                 spread_val = round_half_point(g_item.get("market_spread", -3.5))
 
-                # Decide bet market based on user choice
                 if "Game Totals" in target_market_type:
                     chosen_type = "Game Total"
                 elif "Point Spreads" in target_market_type:
@@ -104,7 +102,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 elif "Touchdown" in target_market_type and not is_nba:
                     chosen_type = "Player Anytime Touchdown Scorer"
                 else:
-                    # Let the system cycle/pick best discrepancies
                     type_cycle = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)"]
                     if is_nba:
                         type_cycle.append("Player Points Prop")
@@ -112,7 +109,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                         type_cycle.append("Player Anytime Touchdown Scorer")
                     chosen_type = type_cycle[j % len(type_cycle)]
 
-                # Apply values
                 side_val = "Under"
                 target_p_name = g_item["home_team"]
 
@@ -265,7 +261,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         r_c, p_c = st.columns(2)
         c_risk = r_c.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
         c_payout = p_c.number_input("Payout ($)", min_value=1.0, value=max(20.0, round(10.0 * (1.0 / max(compound_prob, 0.02)), 2)), step=10.0)
-        
+
         if st.form_submit_button(f"Lock In {len(combo_legs)}-Leg Ticket", use_container_width=True):
             parsed_legs = [
                 {
