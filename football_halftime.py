@@ -381,7 +381,7 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH FAST IMAGE PRE-COMPRESSION
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH AUTO-DISCOVERY
 def parse_bet_slip_image(image_bytes):
     raw_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     if not raw_key:
@@ -389,6 +389,7 @@ def parse_bet_slip_image(image_bytes):
 
     gemini_key = str(raw_key).strip().strip('"').strip("'")
 
+    # Downscale and compress image to prevent timeout
     try:
         pil_img = Image.open(io.BytesIO(image_bytes))
         if pil_img.mode != "RGB":
@@ -439,26 +440,54 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    candidate_endpoints = [
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
-    ]
+    # Step 1: Query Google to find exact models supported by your API key
+    active_models = []
+    try:
+        list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
+        lr = requests.get(list_url, timeout=7.0)
+        if lr.status_code == 200:
+            for m in lr.json().get("models", []):
+                if "generateContent" in m.get("supportedGenerationMethods", []):
+                    active_models.append(m["name"])
+    except Exception as e:
+        pass
+
+    # Sort to prioritize fast flash models first, then pro, then anything else
+    def model_priority(m_name):
+        m_lower = m_name.lower()
+        if "2.5-flash" in m_lower or "2.0-flash" in m_lower: return 0
+        if "1.5-flash" in m_lower: return 1
+        if "flash" in m_lower: return 2
+        if "pro" in m_lower: return 3
+        return 4
+
+    active_models.sort(key=model_priority)
+
+    # Fallback list if listModels call was restricted or empty
+    if not active_models:
+        active_models = [
+            "models/gemini-2.0-flash",
+            "models/gemini-1.5-flash",
+            "models/gemini-2.5-flash",
+            "models/gemini-pro-vision"
+        ]
 
     last_error = ""
-    for endpoint_url in candidate_endpoints:
-        url = f"{endpoint_url}?key={gemini_key}"
+    for full_model_name in active_models[:5]:
+        # Format endpoint cleanly (handles both "models/..." and raw name)
+        clean_name = full_model_name if full_model_name.startswith("models/") else f"models/{full_model_name}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{clean_name}:generateContent?key={gemini_key}"
         try:
-            r = requests.post(url, json=payload, timeout=20.0)
+            r = requests.post(url, json=payload, timeout=25.0)
             if r.status_code == 200:
                 txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 cleaned = re.sub(r"^```json\s*", "", txt.strip())
                 cleaned = re.sub(r"```$", "", cleaned.strip())
                 return json.loads(cleaned), None
             else:
-                last_error = f"HTTP {r.status_code}: {r.text[:160]}"
+                last_error = f"{clean_name} -> HTTP {r.status_code}: {r.text[:140]}"
         except Exception as e:
-            last_error = str(e)
+            last_error = f"{clean_name} -> {str(e)}"
 
     return None, f"Vision API error ({last_error}). Please check your API key in Streamlit Secrets."
 
