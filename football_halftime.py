@@ -498,9 +498,11 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
             except: r_val = 10.0
             try: p_val = float(b.get("payout_dollars", b.get("payout", 19.0)))
             except: p_val = 19.0
-            roi_pct = ((p_val - r_val) / max(r_val, 0.01)) * 100
+            try: profit_locked = float(b.get("locked_profit", p_val - r_val))
+            except: profit_locked = p_val - r_val
+            roi_pct = (profit_locked / max(r_val, 0.01)) * 100
             st.write(f"Risk: **${r_val:.2f}** ➔ Payout: **${p_val:.2f}**")
-            st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${p_val - r_val:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:#4ade80; font-size:0.82rem;'>Potential Profit: +${profit_locked:.2f} (+{roi_pct:.1f}%)</span>", unsafe_allow_html=True)
 
         with c_row3:
             cat_label = b.get("bet_category", b.get("type", "Single"))
@@ -933,9 +935,12 @@ if st.session_state.selected_bet_id is not None:
     except: r_val = 10.0
     try: p_val = float(selected_bet.get('payout_dollars', selected_bet.get('payout', 19.0)))
     except: p_val = 19.0
+    try: profit_locked = float(selected_bet.get("locked_profit", p_val - r_val))
+    except: profit_locked = p_val - r_val
+
     wm1.metric("Risk", f"${r_val:.2f}")
     wm2.metric("Payout", f"${p_val:.2f}")
-    wm3.metric("Profit Potential", f"+${p_val - r_val:.2f}")
+    wm3.metric("Profit Potential", f"+${profit_locked:.2f}")
     wm4.metric("Status", selected_bet.get("status", "Pending"))
     wm5.metric("🎲 Live Win Prob", live_ticket_win_prob)
 
@@ -1040,7 +1045,10 @@ if menu_choice == "📊 My Dashboard":
         lost_bets = [b for b in my_bets if b.get("status") == "Lost"]
         pending_bets = [b for b in my_bets if b.get("status") == "Pending"]
 
-        tot_won_dollars = sum(float(b.get("payout_dollars", b.get("payout", 0))) - float(b.get("risk_dollars", 0)) for b in won_bets)
+        tot_won_dollars = sum(
+            float(b.get("locked_profit", float(b.get("payout_dollars", b.get("payout", 0))) - float(b.get("risk_dollars", 0))))
+            for b in won_bets
+        )
         tot_lost_dollars = sum(float(b.get("risk_dollars", 0)) for b in lost_bets)
         net_pl = tot_won_dollars - tot_lost_dollars
         tot_risk = sum(float(b.get("risk_dollars", 0)) for b in my_bets if b.get("status") in ["Won", "Lost"])
@@ -1048,7 +1056,10 @@ if menu_choice == "📊 My Dashboard":
         avg_stake = (sum(float(b.get("risk_dollars", 0)) for b in my_bets) / tot_placed) if tot_placed > 0 else 0.0
 
         pending_risk_dollars = sum(float(b.get("risk_dollars", 0)) for b in pending_bets)
-        pending_max_profit = sum(float(b.get("payout_dollars", b.get("payout", 0))) - float(b.get("risk_dollars", 0)) for b in pending_bets)
+        pending_max_profit = sum(
+            float(b.get("locked_profit", float(b.get("payout_dollars", b.get("payout", 0))) - float(b.get("risk_dollars", 0))))
+            for b in pending_bets
+        )
         
         pending_expected_profit = 0.0
         sum_weighted_prob = 0.0
@@ -1060,7 +1071,8 @@ if menu_choice == "📊 My Dashboard":
             except: r_amt = 0.0
             try: p_amt = float(b.get("payout_dollars", b.get("payout", 0)))
             except: p_amt = 0.0
-            net_win = p_amt - r_amt
+            try: net_win = float(b.get("locked_profit", p_amt - r_amt))
+            except: net_win = p_amt - r_amt
             prob = get_numeric_prob(b, games_data)
             
             ev_ticket = (prob * net_win) - ((1.0 - prob) * r_amt)
@@ -1093,7 +1105,7 @@ if menu_choice == "📊 My Dashboard":
         p2.metric(
             "Max Potential Profit", 
             f"+${pending_max_profit:.2f}", 
-            help="Maximum possible net profit if 100% of your open bets win."
+            help="Maximum possible net profit if 100% of your open bets win based on locked payout entries."
         )
         p3.metric(
             "Expected Profit (EV)", 
@@ -1127,9 +1139,13 @@ if menu_choice == "📊 My Dashboard":
         with h1:
             st.markdown("##### 🚀 Top Winner")
             if won_bets:
-                best_win = max(won_bets, key=lambda x: float(x.get("payout_dollars", x.get("payout", 0))) - float(x.get("risk_dollars", 0)))
-                profit = float(best_win.get("payout_dollars", best_win.get("payout", 0))) - float(best_win.get("risk_dollars", 0))
-                st.success(f"{best_win.get('bet')} on `{best_win.get('matchup')}`\n\nProfit: **+${profit:.2f}** | Return: ${float(best_win.get('payout_dollars', best_win.get('payout', 0))):.2f}")
+                best_win = max(
+                    won_bets,
+                    key=lambda x: float(x.get("locked_profit", float(x.get("payout_dollars", x.get("payout", 0))) - float(x.get("risk_dollars", 0))))
+                )
+                profit = float(best_win.get("locked_profit", float(best_win.get("payout_dollars", best_win.get("payout", 0))) - float(best_win.get("risk_dollars", 0))))
+                payout_show = float(best_win.get("payout_dollars", best_win.get("payout", 0)))
+                st.success(f"{best_win.get('bet')} on `{best_win.get('matchup')}`\n\nProfit: **+${profit:.2f}** | Return: ${payout_show:.2f}")
             else:
                 st.info("No graded winning slips yet.")
         with h2:
@@ -1549,6 +1565,8 @@ elif menu_choice == "⚡ Single Game Engine":
                     bet_lbl = f"{side} {strike:.1f}" if strike else f"{picked_t} ML"
                     cat_lbl = "Spread" if bet_type == "Point Spread (ATS)" else ("Total" if bet_type == "Game Total" else "Moneyline")
 
+                profit_to_lock = float(payout_amt) - float(risk_amt)
+
                 ticket_record = {
                     "id": str(datetime.now().timestamp()),
                     "user": current_user.strip(),
@@ -1565,6 +1583,7 @@ elif menu_choice == "⚡ Single Game Engine":
                     "risk_dollars": float(risk_amt),
                     "payout_dollars": float(payout_amt),
                     "payout": float(payout_amt),
+                    "locked_profit": float(profit_to_lock),
                     "model_proj": round(final_proj, 1),
                     "win_prob": f"{applied['prob']*100:.1f}%" if applied else "55.0%",
                     "status": "Pending",
@@ -1822,6 +1841,8 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 }
                 for item in st.session_state.combo_active_legs
             ]
+            profit_to_lock = float(c_payout) - float(c_risk)
+
             combo_record = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip(),
@@ -1835,6 +1856,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 "risk_dollars": float(c_risk),
                 "payout_dollars": float(c_payout),
                 "payout": float(c_payout),
+                "locked_profit": float(profit_to_lock),
                 "win_prob": f"{compound_prob * 100:.1f}%",
                 "status": "Pending",
                 "parsed_legs": parsed_legs,
@@ -1898,11 +1920,14 @@ elif menu_choice == "🏆 Leaderboard":
         except: r = 0.0
         try: p = float(b.get("payout_dollars", b.get("payout", 0)))
         except: p = 0.0
+        try: profit_locked = float(b.get("locked_profit", p - r))
+        except: profit_locked = p - r
+
         cat = b.get("bet_category", b.get("type", "Single"))
         user_stats[u_raw]["types"][cat] = user_stats[u_raw]["types"].get(cat, 0) + 1
         if b.get("status") == "Won":
             user_stats[u_raw]["won"] += 1
-            user_stats[u_raw]["net"] += (p - r)
+            user_stats[u_raw]["net"] += profit_locked
             user_stats[u_raw]["total_staked"] += r
         elif b.get("status") == "Lost":
             user_stats[u_raw]["lost"] += 1
@@ -2072,7 +2097,7 @@ elif menu_choice == "💡 How It Works":
     """)
 
 # =========================================================================
-# 9. MODEL METHODOLOGY & MATH (COMPREHENSIVE EXPANDED ARCHITECTURE)
+# 9. MODEL METHODOLOGY & MATH
 # =========================================================================
 elif menu_choice == "📖 Model Methodology & Math":
     st.subheader("📖 Flurkstradamus Machine Learning & Mathematical Architecture")
@@ -2191,7 +2216,10 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
             
             u_won = [b for b in u_bets if b.get("status") == "Won"]
             u_lost = [b for b in u_bets if b.get("status") == "Lost"]
-            u_profit = sum(float(b.get("payout_dollars", b.get("payout", 0))) - float(b.get("risk_dollars", 0)) for b in u_won) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
+            u_profit = sum(
+                float(b.get("locked_profit", float(b.get("payout_dollars", b.get("payout", 0))) - float(b.get("risk_dollars", 0))))
+                for b in u_won
+            ) - sum(float(b.get("risk_dollars", 0)) for b in u_lost)
             
             p_col1, p_col2, p_col3 = st.columns(3)
             p_col1.metric("Tickets Placed", len(u_bets))
