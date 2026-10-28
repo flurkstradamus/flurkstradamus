@@ -191,6 +191,29 @@ st.markdown("""
         padding: 12px;
         margin-bottom: 12px;
     }
+    .rec-header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        padding-bottom: 6px;
+        margin-bottom: 8px;
+    }
+    .rec-matchup-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85rem;
+    }
+    .rec-pick-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
     .badge-roi {
         background-color: #22c55e;
         color: #000;
@@ -209,10 +232,46 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# LIVE ESPN ACTIVE ROSTER EXTRACTOR
+# Client-side mobile helpers
+components.html("""
+<script>
+    function setupMobileBehaviors() {
+        const doc = window.parent.document;
+        if (!doc) return;
+        if (window.parent.innerWidth <= 768) {
+            const active = doc.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+                active.blur();
+            }
+        }
+        const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+        if (sidebar) {
+            const navButtons = sidebar.querySelectorAll('button');
+            navButtons.forEach(btn => {
+                if (!btn.dataset.mobileCloseAttached) {
+                    btn.dataset.mobileCloseAttached = "true";
+                    btn.addEventListener('click', () => {
+                        if (window.parent.innerWidth <= 768) {
+                            setTimeout(() => {
+                                const closeBtn = doc.querySelector('[data-testid="stSidebarCollapseButton"]') 
+                                              || doc.querySelector('button[kind="header"]')
+                                              || doc.querySelector('[data-testid="stSidebar"] button');
+                                if (closeBtn) closeBtn.click();
+                            }, 100);
+                        }
+                    });
+                }
+            });
+        }
+    }
+    setTimeout(setupMobileBehaviors, 300);
+</script>
+""", height=0)
+
+# LIVE ESPN ACTIVE ROSTER EXTRACTOR (ZERO HARDCODED ROSTERS)
 @st.cache_data(ttl=600)
 def get_live_team_players(team_id_or_abbr, league="nfl"):
-    sport_path = "college-football" if league.upper() in ["NCAA", "NCAA FOOTBALL"] else "nfl"
+    sport_path = "college-football" if str(league).upper() in ["NCAA", "NCAA FOOTBALL"] else "nfl"
     url = f"https://site.api.espn.com/apis/site/v2/sports/football/{sport_path}/teams/{str(team_id_or_abbr).lower()}/roster"
     
     players_found = []
@@ -322,7 +381,7 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH FAST IMAGE PRE-COMPRESSION
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH DYNAMIC MODEL LOOKUP
 def parse_bet_slip_image(image_bytes):
     raw_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     if not raw_key:
@@ -338,11 +397,9 @@ def parse_bet_slip_image(image_bytes):
             ratio = 1024 / float(pil_img.width)
             new_h = int(float(pil_img.height) * ratio)
             pil_img = pil_img.resize((1024, new_h), Image.Resampling.LANCZOS)
-        
         buf = io.BytesIO()
         pil_img.save(buf, format="JPEG", quality=85)
-        compressed_bytes = buf.getvalue()
-        b64_img = base64.b64encode(compressed_bytes).decode("utf-8")
+        b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
     except Exception:
         b64_img = base64.b64encode(image_bytes).decode("utf-8")
 
@@ -382,9 +439,10 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
+    # Discover and query active supported multimodal models
     candidate_endpoints = [
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
     ]
 
@@ -392,7 +450,7 @@ def parse_bet_slip_image(image_bytes):
     for endpoint_url in candidate_endpoints:
         url = f"{endpoint_url}?key={gemini_key}"
         try:
-            r = requests.post(url, json=payload, timeout=22.0)
+            r = requests.post(url, json=payload, timeout=20.0)
             if r.status_code == 200:
                 txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 cleaned = re.sub(r"^```json\s*", "", txt.strip())
@@ -555,14 +613,12 @@ if st.session_state.logged_in_user is None:
     st.title("🔮 Flurkstradamus")
     st.caption("Sign in, create an account, or confirm your registration code.")
 
-    # Verification Code Form
     if st.session_state.pending_verify_user is not None:
         target_u = st.session_state.user_accounts.get(st.session_state.pending_verify_user)
         with st.container(border=True):
             st.markdown(f"### ✉️ Verify Your Email Address")
             st.write(f"A 6-digit confirmation passcode was issued for **{target_u.get('email')}**.")
             
-            # If SMTP is not active, display activation code directly on screen for testing convenience
             if not st.secrets.get("smtp"):
                 st.info(f"💡 Dev/Test Activation Code: **`{target_u.get('verification_code')}`**")
                 
@@ -627,7 +683,6 @@ if st.session_state.logged_in_user is None:
                     st.session_state.logged_in_user = admin_profile
                     st.rerun()
 
-                # Standard Account Match
                 matched_user = None
                 for u_key, u_val in st.session_state.user_accounts.items():
                     if (u_key.lower() == clean_target or 
@@ -689,10 +744,7 @@ if st.session_state.logged_in_user is None:
                     }
                     st.session_state.user_accounts[new_uname] = new_user
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-                    
-                    # Send code via email if SMTP is configured
                     send_verification_email(new_email, verify_code)
-                    
                     st.session_state.pending_verify_user = new_uname
                     st.rerun()
                 else:
@@ -718,7 +770,7 @@ active_uname = current_user_profile.get("username", "").strip().lower()
 current_user = current_user_profile.get("display_name", current_user_profile.get("username", "Bettor"))
 is_user_admin = current_user_profile.get("is_admin", False)
 
-# Scoreboard Ingestion
+# Scoreboard Ingestion (Past 3 Days + Next 7 Days)
 @st.cache_data(ttl=30)
 def get_extended_games(selected_league="All Games"):
     all_games = []
@@ -807,6 +859,27 @@ def get_extended_games(selected_league="All Games"):
 
     return all_games
 
+def sync_game_snapshot(game, proj_total, proj_spread):
+    gid = game["id"]
+    if gid not in st.session_state.game_snapshots:
+        st.session_state.game_snapshots[gid] = {
+            "matchup": f"{game['away_short']} @ {game['home_short']}",
+            "open_ou": game.get("market_ou", 47.5),
+            "open_spread": game.get("market_spread", -3.5),
+            "stages": {}
+        }
+    stage_key = game["checkpoint"]
+    if stage_key not in st.session_state.game_snapshots[gid]["stages"]:
+        st.session_state.game_snapshots[gid]["stages"][stage_key] = {
+            "away_score": game["away_score"],
+            "home_score": game["home_score"],
+            "total_pts": game["away_score"] + game["home_score"],
+            "proj_total": round(proj_total, 1),
+            "proj_spread": round(proj_spread, 1),
+            "timestamp": get_current_et_time().strftime("%I:%M %p ET")
+        }
+        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+
 # Sidebar Navigation Items
 st.sidebar.markdown(f"## 🔮 Flurkstradamus")
 
@@ -857,6 +930,43 @@ league = st.sidebar.radio("Primary League", ["NFL", "NCAA Football", "All Games"
 games_data = get_extended_games(league)
 auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots, st.session_state.support_tickets)
 
+# WAR ROOM VIEW
+if st.session_state.selected_bet_id is not None:
+    selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
+    if st.button("⬅️ Back to Tickets", use_container_width=True):
+        st.session_state.selected_bet_id = None
+        st.rerun()
+
+    if selected_bet is None:
+        st.error("Ticket not found.")
+        st.stop()
+
+    live_g = find_game_for_bet(selected_bet, games_data)
+    live_ticket_win_prob = calculate_live_bet_prob(selected_bet, live_g)
+
+    st.title(f"🏟️ War Room: {selected_bet.get('matchup', 'Football Ticket')}")
+    st.caption(f"Pick: `{selected_bet['bet']}` | Status: `{selected_bet.get('status')}`")
+
+    wm1, wm2, wm3, wm4, wm5 = st.columns(5)
+    r_val = float(selected_bet.get("risk_dollars", 10.0))
+    p_val = float(selected_bet.get("payout_dollars", selected_bet.get("payout", 19.0)))
+    profit_locked = float(selected_bet.get("locked_profit", p_val - r_val))
+
+    wm1.metric("Risk", f"${r_val:.2f}")
+    wm2.metric("Payout", f"${p_val:.2f}")
+    wm3.metric("Profit Potential", f"+${profit_locked:.2f}")
+    wm4.metric("Status", selected_bet.get("status", "Pending"))
+    wm5.metric("🎲 Live Win Prob", live_ticket_win_prob)
+
+    if live_g:
+        c1, c2, c3 = st.columns([2, 1, 2])
+        c1.image(live_g.get("away_logo", DEFAULT_LOGO), width=45)
+        c1.metric(live_g['away_short'], live_g['away_score'])
+        c2.metric("Clock", live_g.get('displayClock', live_g['status']))
+        c3.image(live_g.get("home_logo", DEFAULT_LOGO), width=45)
+        c3.metric(live_g['home_short'], live_g['home_score'])
+    st.stop()
+
 # =========================================================================
 # 1. MY DASHBOARD
 # =========================================================================
@@ -867,7 +977,6 @@ if menu_choice == "📊 My Dashboard":
 
     clean_u = active_uname.lower()
     clean_disp = current_user_profile.get("display_name", "").strip().lower()
-    
     my_bets = [b for b in st.session_state.saved_bets if str(b.get("user", "")).strip().lower() in [clean_u, clean_disp]]
 
     if not my_bets:
@@ -910,110 +1019,595 @@ if menu_choice == "📊 My Dashboard":
         p4.metric("Pending In Play", f"{len(pending_bets)} Slips")
 
 # =========================================================================
-# 2. SINGLE GAME ENGINE
+# 2. SINGLE GAME ENGINE (COMPLETE WITH AI STRATEGY ENGINE & DRIFT METRICS)
 # =========================================================================
 elif menu_choice == "⚡ Single Game Engine":
     st.subheader("⚡ Single Game Analytics Engine")
     form_ver = st.session_state.single_form_version
 
+    f_col1, f_col2 = st.columns([1, 2])
+    with f_col1:
+        timing_view = st.selectbox(
+            "Game Status Filter",
+            ["⏳ Upcoming Games", "⚡ Live Games", "📜 Past / Completed Games", "🌐 All Matchups"]
+        )
+    with f_col2:
+        search_query = st.text_input("🔍 Search Matchup or Team", placeholder="e.g. Delaware, WKU, Eagles, Chiefs...")
+
+    pool = games_data
+    if timing_view == "⏳ Upcoming Games":
+        pool = [g for g in pool if not g.get("completed", False) and (g.get("state_text") == "pre" or g.get("period", 0) == 0)]
+    elif timing_view == "⚡ Live Games":
+        pool = [g for g in pool if not g.get("completed", False) and g.get("state_text") != "pre" and g.get("period", 0) > 0]
+    elif timing_view == "📜 Past / Completed Games":
+        pool = [g for g in pool if g.get("completed", False)]
+
+    if search_query.strip():
+        q = search_query.strip().lower()
+        pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g["home_short"].lower() or q in g["away_short"].lower()]
+
+    # UNIVERSAL BET SLIP & SCREENSHOT PARSER
     with st.expander("📸 Auto-Fill via Slip Screenshot (Robinhood, DraftKings, FanDuel, etc.)", expanded=False):
+        st.caption("Upload any sportsbook or event contract screenshot to automatically detect teams, match lines, and extract payout amounts.")
         uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key=f"slip_uploader_v{form_ver}")
+        
         if uploaded_slip is not None and st.button("⚡ Extract & Auto-Fill Form", use_container_width=True):
-            with st.spinner("Analyzing screenshot..."):
+            with st.spinner("Analyzing screenshot with vision model..."):
                 parsed_res, err_msg = parse_bet_slip_image(uploaded_slip.read())
                 if parsed_res:
                     away_t = parsed_res.get("away_team", "")
                     home_t = parsed_res.get("home_team", "")
                     picked_t = parsed_res.get("picked_team", "")
-                    matched_idx = match_game_in_pool(away_t, home_t, games_data, picked_t)
                     
-                    w_risk = float(parsed_res.get("risk", 10.0))
-                    w_payout = float(parsed_res.get("payout", 20.0))
-                    w_profit = float(parsed_res.get("profit", w_payout - w_risk))
+                    matched_idx = match_game_in_pool(away_t, home_t, pool, picked_t)
+                    if matched_idx == 0 and pool and games_data:
+                        full_idx = match_game_in_pool(away_t, home_t, games_data, picked_t)
+                        if games_data[full_idx] not in pool:
+                            pool.insert(0, games_data[full_idx])
+                        matched_idx = pool.index(games_data[full_idx])
+
+                    is_settled_flag = parsed_res.get("is_settled", False)
+                    wager_cat = parsed_res.get("wager_type", "Game Total")
+                    wager_side = parsed_res.get("side", "Under")
+                    w_line = float(parsed_res.get("line", 44.5)) if parsed_res.get("line") is not None else 44.5
+                    w_payout = float(parsed_res.get("payout", 20.00))
+                    w_profit = float(parsed_res.get("profit", 10.00)) if parsed_res.get("profit") is not None else 10.00
+                    w_risk = float(parsed_res.get("risk", w_payout - w_profit))
 
                     st.session_state.single_selected_idx = matched_idx
                     st.session_state.single_applied_pick = {
-                        "category": parsed_res.get("wager_type", "Game Total"),
-                        "side": parsed_res.get("side", "Under"),
-                        "target_line": float(parsed_res.get("line", 44.5)) if parsed_res.get("line") is not None else 44.5,
+                        "category": wager_cat,
+                        "side": wager_side,
+                        "target_line": w_line,
                         "risk": w_risk,
                         "payout": w_payout,
                         "profit": w_profit,
+                        "prob": 0.65,
+                        "est_payout_multiplier": (w_payout / max(w_risk, 0.01)),
                         "override_away": away_t,
                         "override_home": home_t,
                         "picked_team": picked_t,
-                        "status": "Won" if parsed_res.get("is_settled") else "Pending"
+                        "status": "Won" if is_settled_flag else "Pending"
                     }
                     st.session_state.single_form_version += 1
+                    st.session_state.scroll_to_form = True
+                    status_msg = "🏆 Won & Settled" if is_settled_flag else "⏳ Pending"
+                    st.success(f"Matched {wager_cat}: {wager_side} {w_line} ({away_t} vs {home_t})! Status: {status_msg} | Stake: ${w_risk:.2f}, Payout: ${w_payout:.2f}")
                     st.rerun()
                 else:
-                    st.error(f"Error parsing image: {err_msg}")
+                    st.error(f"Could not parse image: {err_msg}")
 
-    # Render Matchup Selection
-    pool = games_data
     if pool:
         game_options = [f"[{g['kickoff']}] [{g['league']}] {g['away_short']} @ {g['home_short']}" for g in pool]
         if st.session_state.single_selected_idx >= len(game_options):
             st.session_state.single_selected_idx = 0
-        selected_idx = st.selectbox("Select Matchup", range(len(game_options)), index=st.session_state.single_selected_idx, format_func=lambda x: game_options[x])
+            
+        selected_idx = st.selectbox("Select Matchup", range(len(game_options)), index=st.session_state.single_selected_idx, format_func=lambda x: game_options[x], key=f"single_matchup_dropdown_v{form_ver}")
+        st.session_state.single_selected_idx = selected_idx
+        
         g = pool[selected_idx]
+        g_id = g.get("id", str(selected_idx))
+        detected_stage = g["checkpoint"]
+        espn_ou = round_half_point(g["market_ou"])
+        espn_spread = round_half_point(g["market_spread"])
     else:
-        st.info("No games currently available.")
+        st.info("No matchups found matching your filter.")
         st.stop()
 
+    h_pts = g["home_score"]
+    a_pts = g["away_score"]
+    pts_scored = h_pts + a_pts
+    is_completed = g.get("completed", False) or "final" in g["status"].lower()
+    pregame_tot = float(espn_ou)
+
+    if is_completed:
+        final_proj = float(pts_scored)
+        std_bracket = 0.01
+    elif detected_stage == "Pre-Game":
+        final_proj = pregame_tot
+        std_bracket = 8.5
+    else:
+        period_weight = 0.25 if detected_stage == "Q1" else (0.50 if "half" in detected_stage.lower() else 0.75)
+        expected_pts_so_far = pregame_tot * period_weight
+        pace_shock_ratio = pts_scored / max(expected_pts_so_far, 1.0)
+        if pace_shock_ratio > 1.25:
+            final_proj = pregame_tot + ((pts_scored - expected_pts_so_far) * 0.85)
+            std_bracket = 9.5
+        else:
+            final_proj = pregame_tot + ((pts_scored - expected_pts_so_far) * 0.30)
+            std_bracket = 6.0 if "half" in detected_stage.lower() else 4.0
+
+    final_proj = round_half_point(final_proj)
+    delta_full = final_proj - pregame_tot
+    pregame_2h = round_half_point(pregame_tot * 0.525)
+    live_2h_proj = round_half_point((pregame_tot * 0.475) + ((pts_scored - (pregame_tot * 0.50)) * 0.45) if "half" in detected_stage.lower() else pregame_2h + (delta_full * 0.45))
+    delta_2h = live_2h_proj - pregame_2h
+
+    market_spd = float(espn_spread)
+    pregame_proj_margin = -market_spd
+    current_margin = h_pts - a_pts
+    live_proj_margin = round_half_point((pregame_proj_margin * 0.45) + (current_margin * 0.55) if "half" in detected_stage.lower() else pregame_proj_margin)
+    spread_drift = live_proj_margin - pregame_proj_margin
+    home_cover_exp = calculate_spread_prob(live_proj_margin, market_spd, std_bracket)
+    live_h_prob = calculate_moneyline_prob(h_pts + (final_proj / 2.0), a_pts + (final_proj / 2.0), g.get("home_record", "0-0"), g.get("away_record", "0-0"), is_final=is_completed)
+
+    sync_game_snapshot(g, final_proj, live_proj_margin)
+
+    # Section 1: Matchup Overview
+    with st.expander("📊 Section 1: Matchup Overview & Live Drift Projections", expanded=True):
+        b1, b2, b3 = st.columns([1, 4, 1])
+        b1.image(g.get("away_logo", DEFAULT_LOGO), width=45)
+        b2.markdown(f"### **{g['away_short']}** @ **{g['home_short']}**\n{g['kickoff']}")
+        b3.image(g.get("home_logo", DEFAULT_LOGO), width=45)
+
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        m_col1.metric("Full Game Total", f"{final_proj:.1f} pts", delta=f"{delta_full:+.1f} vs open ({pregame_tot:.1f})")
+        m_col2.metric("2nd Half Total", f"{live_2h_proj:.1f} pts", delta=f"{delta_2h:+.1f} vs 2H base ({pregame_2h:.1f})")
+        m_col3.metric(f"{g['home_short']} Win %", f"{live_h_prob*100:.1f}%")
+        m_col4.metric(f"ATS Margin ({g['home_short']} {market_spd:+.1f})", f"{live_proj_margin:+.1f} pts", delta=f"{spread_drift:+.1f} pts vs line")
+
+    # Section 2: AI Strategy Engine
+    with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
+        col_scope, col_type_filter = st.columns(2)
+        scope_choice = col_scope.selectbox("Target Slate", ["🎯 Focus on Selected Game Above", "⚡ Scan Full Slate for Highest Discrepancy"])
+        filter_choice = col_type_filter.selectbox("Type of Bet", [
+            "⚡ Let the System Pick (All Markets Combined)", 
+            "📊 Full Game Total Score Over/Under", 
+            "🛡️ Spread (ATS Cover)",
+            "🏆 Team Win/Loser (Moneyline)", 
+            "🏈 Player Anytime Touchdown Scorer"
+        ])
+        
+        strategy_dial = st.select_slider(
+            "Model Objective", 
+            options=[
+                "🛡️ Safe Floor (High Win %, Low Drawdown)", 
+                "⚖️ Balanced Edge (+EV Sweet Spot)", 
+                "🚀 High Profit (Max Multiplier & Value Underdogs)"
+            ], 
+            value="⚖️ Balanced Edge (+EV Sweet Spot)"
+        )
+
+        active_game_for_strat = g
+        strat_game_index = pool.index(active_game_for_strat)
+        if "Scan Full Slate" in scope_choice and pool:
+            live_pool = [gm for gm in pool if not gm.get("completed", False)]
+            if live_pool:
+                active_game_for_strat = max(live_pool, key=lambda x: abs((x["home_score"] + x["away_score"] + (x.get("market_ou", 47.5)*0.475)) - x.get("market_ou", 47.5)))
+                strat_game_index = pool.index(active_game_for_strat)
+
+        tg_away_logo = active_game_for_strat.get("away_logo", DEFAULT_LOGO)
+        tg_home_logo = active_game_for_strat.get("home_logo", DEFAULT_LOGO)
+        tg_away_short = active_game_for_strat.get("away_short", "AWAY")
+        tg_home_short = active_game_for_strat.get("home_short", "HOME")
+        tg_date_str = active_game_for_strat.get("kickoff", "Scheduled Game")
+        tg_league_str = active_game_for_strat.get("league", "NFL")
+
+        s_val = market_spd if home_cover_exp >= 0.5 else -market_spd
+        s_team = active_game_for_strat["home_team"] if home_cover_exp >= 0.5 else active_game_for_strat["away_team"]
+        s_abbr = tg_home_short if home_cover_exp >= 0.5 else tg_away_short
+
+        if "Safe Floor" in strategy_dial:
+            obj_tag, p_mult, spd_shift, tot_shift = "Safe Floor", 1.55, 3.5 if s_val > 0 else 4.0, 4.5
+        elif "High Profit" in strategy_dial:
+            obj_tag, p_mult, spd_shift, tot_shift = "High Profit", 2.45, -3.5 if s_val > 0 else -4.0, -3.5
+        else:
+            obj_tag, p_mult, spd_shift, tot_shift = "Balanced Edge", 1.91, 0.0, 0.0
+
+        tot_dir = "Under" if delta_full <= 0 else "Over"
+        base_tot_1 = round_half_point(final_proj + tot_shift)
+        p_tot_1 = calculate_win_prob(base_tot_1, final_proj, std_bracket, is_under=(tot_dir == "Under"))
+        full_totals_bets = [
+            {
+                "type": f"Full Game Total ({obj_tag} Consensus)",
+                "pick": f"{tot_dir} {base_tot_1:.1f}",
+                "prob": p_tot_1,
+                "category": "Total",
+                "side": tot_dir,
+                "target_line": base_tot_1,
+                "picked_team": None,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": p_mult,
+                "roi_label": f"+{int((p_mult-1)*100)}% Profit",
+                "rationale": f"Scoring pace indicates {final_proj:.1f} pts vs open line of {pregame_tot:.1f}."
+            }
+        ]
+
+        line_spd_1 = round_half_point(s_val + spd_shift)
+        p_spd_1 = calculate_spread_prob(live_proj_margin if s_team == active_game_for_strat["home_team"] else -live_proj_margin, line_spd_1, std_bracket)
+        spread_bets = [
+            {
+                "type": f"Spread ({obj_tag} Standard)",
+                "pick": f"{s_abbr} {line_spd_1:+.1f}",
+                "prob": p_spd_1,
+                "category": "Spread",
+                "side": "Spread",
+                "target_line": line_spd_1,
+                "picked_team": s_team,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": p_mult,
+                "roi_label": f"+{int((p_mult-1)*100)}% Profit",
+                "rationale": f"{s_abbr} is outperforming point differential expectations."
+            }
+        ]
+
+        home_players = get_live_team_players(active_game_for_strat.get("home_id") or tg_home_short, tg_league_str)
+        p1_name, p1_pos = home_players[0]
+        touchdown_bets = [
+            {
+                "type": f"Anytime Touchdown ({obj_tag})",
+                "pick": f"{p1_name} ({p1_pos} - {tg_home_short}) Any Time TD",
+                "prob": 0.55,
+                "category": "Anytime TD",
+                "side": "TD",
+                "target_line": 1.0,
+                "picked_team": p1_name,
+                "game_index": strat_game_index,
+                "est_payout_multiplier": 1.95,
+                "roi_label": "+95% Profit",
+                "rationale": f"{p1_name} ({p1_pos}) commands goal-line opportunities in active red zone personnel packages."
+            }
+        ]
+
+        if filter_choice == "📊 Full Game Total Score Over/Under":
+            strat_candidates = full_totals_bets
+        elif filter_choice == "🛡️ Spread (ATS Cover)":
+            strat_candidates = spread_bets
+        elif filter_choice == "🏈 Player Anytime Touchdown Scorer":
+            strat_candidates = touchdown_bets
+        else:
+            strat_candidates = [spread_bets[0], full_totals_bets[0], touchdown_bets[0]]
+
+        for idx, sc in enumerate(strat_candidates[:3]):
+            tier_lbl = ["🥇 BEST", "🥈 BETTER", "🥉 GOOD"][idx]
+            st.markdown(f"""
+            <div class="rec-card-box">
+                <div class="rec-header-row">
+                    <div><strong>{tier_lbl}</strong> • <code>{sc['type']}</code></div>
+                    <div class="rec-matchup-meta">
+                        <img src="{tg_away_logo}" width="20" height="20" style="border-radius:50%;">
+                        <strong>{tg_away_short}</strong> @
+                        <img src="{tg_home_logo}" width="20" height="20" style="border-radius:50%;">
+                        <strong>{tg_home_short}</strong>
+                    </div>
+                </div>
+                <div class="rec-pick-row">
+                    <strong style="color:#4ade80; font-size:1.15rem;">{sc['pick']}</strong>
+                    <span class="badge-roi">{sc['roi_label']}</span>
+                    <span class="badge-prob">{sc['prob']*100:.1f}% Win Prob</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.info(f"💡 **Why This Bet Was Selected:** {sc['rationale']}")
+            if st.button("📥 Load to Form", key=f"apply_{idx}_{sc['pick']}", use_container_width=True):
+                st.session_state.single_applied_pick = sc
+                st.session_state.single_selected_idx = sc["game_index"]
+                st.session_state.single_form_version += 1
+                st.session_state.scroll_to_form = True
+                st.rerun()
+
+    # Section 3: Bet Slip Lock-In
+    st.markdown("<div id='bet-slip-anchor'></div>", unsafe_allow_html=True)
     applied = st.session_state.single_applied_pick
-    with st.form(f"single_entry_form_v{form_ver}"):
-        st.markdown(f"#### 📝 Lock In Bet: **{g['away_short']} @ {g['home_short']}**")
+    with st.expander("📝 Section 3: Wager Type & Lock In Bet Slip", expanded=True):
         c1, c2 = st.columns(2)
-        home_team = c1.text_input("Home Team", value=applied.get("override_home", g["home_team"]) if applied else g["home_team"])
-        away_team = c2.text_input("Away Team", value=applied.get("override_away", g["away_team"]) if applied else g["away_team"])
+        with c1:
+            home_default = applied.get("override_home", g["home_team"]) if (applied and applied.get("override_home")) else g["home_team"]
+            away_default = applied.get("override_away", g["away_team"]) if (applied and applied.get("override_away")) else g["away_team"]
+            home_team = st.text_input("Home Team", value=home_default, key=f"h_{g_id}_v{form_ver}")
+            away_team = st.text_input("Away Team", value=away_default, key=f"a_{g_id}_v{form_ver}")
+        with c2:
+            h_pts_in = st.number_input(f"{g['home_short']} Pts", min_value=0, value=g["home_score"], key=f"hp_{g_id}_v{form_ver}")
+            a_pts_in = st.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"ap_{g_id}_v{form_ver}")
 
-        bet_type = st.radio("Wager Type", ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)"], horizontal=True)
-        r_col, p_col = st.columns(2)
-        risk_amt = r_col.number_input("Risk ($)", min_value=1.0, value=float(applied.get("risk", 10.0)) if applied else 10.0, step=5.0)
-        payout_amt = p_col.number_input("Payout ($)", min_value=1.0, value=float(applied.get("payout", 19.10)) if applied else 19.10, step=5.0)
+        default_wtype = 0
+        if applied:
+            cat = str(applied.get("category", "")).lower()
+            if "spread" in cat or "ats" in cat: default_wtype = 1
+            elif "moneyline" in cat or "winner" in cat: default_wtype = 2
+            elif "td" in cat or "touchdown" in cat: default_wtype = 3
 
-        if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
-            profit = float(payout_amt) - float(risk_amt)
-            initial_status = applied.get("status", "Pending") if applied else "Pending"
-            ticket_record = {
+        bet_type = st.radio("Wager Type", ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Anytime Touchdown Scorer"], index=default_wtype, horizontal=True)
+
+        with st.form(f"single_form_{g_id}_v{form_ver}"):
+            if bet_type == "Game Total":
+                f1, f2 = st.columns(2)
+                side_idx = 0 if (applied and applied.get("side") == "Under") else 1
+                side = f1.selectbox("Side", ["Under", "Over"], index=side_idx)
+                default_strike = round_half_point(applied["target_line"]) if (applied and applied.get("target_line") is not None) else round_half_point(final_proj)
+                strike = f2.number_input("Target Line (pts)", value=float(default_strike), step=0.5, format="%.1f")
+                picked_t = None
+            elif bet_type == "Point Spread (ATS)":
+                f1, f2 = st.columns(2)
+                team_choices = [home_team, away_team]
+                p_cand = applied.get("picked_team", "") if applied else ""
+                def_team_idx = 1 if (p_cand and p_cand.lower() in away_team.lower()) else 0
+                picked_t = f1.selectbox("Covering Team", team_choices, index=def_team_idx)
+                default_spread = float(applied["target_line"]) if (applied and applied.get("target_line") is not None and "spread" in str(applied.get("category", "")).lower()) else float(espn_spread)
+                strike = f2.number_input("Spread Line", value=float(default_spread), step=0.5, format="%.1f")
+                side = "Spread"
+            elif bet_type == "Straight Up Winner (Moneyline)":
+                picked_t = st.selectbox("Outright Winner", [home_team, away_team])
+                strike = None
+                side = "Moneyline"
+            else:
+                default_p = applied["picked_team"] if (applied and applied.get("picked_team")) else p1_name
+                picked_t = st.text_input("Player to Score TD", value=default_p)
+                strike = 1.0
+                side = "Anytime TD"
+
+            p1, p2 = st.columns(2)
+            risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=float(applied.get("risk", 10.0)) if applied else 10.0, step=5.0)
+            payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=float(applied.get("payout", 19.10)) if applied else 19.10, step=5.0)
+
+            if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
+                actual_risk = float(risk_amt)
+                actual_payout = float(payout_amt)
+                actual_profit = actual_payout - actual_risk
+                initial_status = "Won" if (applied and applied.get("status") == "Won") else ("Won" if is_completed and (h_pts + a_pts < strike if side == "Under" else h_pts + a_pts > strike) else "Pending")
+
+                bet_lbl = f"{side} {strike:.1f}" if strike else f"{picked_t} ML"
+                ticket_record = {
+                    "id": str(datetime.now().timestamp()),
+                    "user": current_user.strip(),
+                    "date": get_current_et_time().strftime("%Y-%m-%d %H:%M ET"),
+                    "type": "Single",
+                    "bet_category": bet_type,
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "matchup": f"{clean_abbr(away_team, '')} @ {clean_abbr(home_team, '')}",
+                    "bet": bet_lbl,
+                    "target_line": strike,
+                    "bet_direction": side,
+                    "risk_dollars": actual_risk,
+                    "payout_dollars": actual_payout,
+                    "payout": actual_payout,
+                    "locked_profit": actual_profit,
+                    "status": initial_status,
+                    "notes": f"Locked {bet_type}"
+                }
+                st.session_state.saved_bets.insert(0, ticket_record)
+                save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                st.session_state.single_applied_pick = None
+                st.success("Ticket locked successfully!")
+                st.rerun()
+
+# =========================================================================
+# 3. MULTI-LEG COMBO BUILDER (RESTORED COMPLETE ENGINE)
+# =========================================================================
+elif menu_choice == "🔗 Multi-Leg Combo Builder":
+    st.subheader("🔗 Multi-Leg Combo Builder (Up to 12 Legs)")
+    st.caption("Automated cross-slate parlay scanner, compound probability calculator, and slip builder.")
+
+    c_fcol1, c_fcol2 = st.columns([1, 2])
+    with c_fcol1:
+        c_timing_view = c_fcol1.selectbox("Game Status Filter (Combo)", ["⏳ Upcoming Games", "⚡ Live Games", "🌐 All Matchups"])
+    with c_fcol2:
+        c_search = c_fcol2.text_input("🔍 Search Game Slate", placeholder="e.g. Chiefs, Lions, Ravens...")
+
+    c_pool = games_data
+    if c_timing_view == "⏳ Upcoming Games":
+        c_pool = [g for g in c_pool if not g.get("completed", False) and (g.get("state_text") == "pre" or g.get("period", 0) == 0)]
+    elif c_timing_view == "⚡ Live Games":
+        c_pool = [g for g in c_pool if not g.get("completed", False) and g.get("state_text") != "pre" and g.get("period", 0) > 0]
+
+    if c_search.strip():
+        cq = c_search.strip().lower()
+        c_pool = [g for g in c_pool if cq in g["home_team"].lower() or cq in g["away_team"].lower() or cq in g["home_short"].lower() or cq in g["away_short"].lower()]
+
+    if not c_pool:
+        st.info("No games match the selected filter.")
+        st.stop()
+
+    game_choices = [f"[{gm['kickoff']}] [{gm['league']}] {gm['away_short']} @ {gm['home_short']}" for gm in c_pool]
+
+    if not st.session_state.combo_active_legs and c_pool:
+        st.session_state.combo_active_legs = []
+        for j in range(min(3, len(c_pool))):
+            g_item = c_pool[j]
+            st.session_state.combo_active_legs.append({
+                "matchup_idx": j,
+                "type": "Game Total",
+                "side": "Under",
+                "line": round_half_point(g_item.get("market_ou", 47.5)),
+                "picked_team": g_item["home_team"]
+            })
+
+    ver = st.session_state.combo_version
+    ctrl_c1, ctrl_c2 = st.columns([3, 1], vertical_alignment="center")
+    ctrl_c1.markdown(f"#### Active Ticket Slip ({len(st.session_state.combo_active_legs)} Legs)")
+    if ctrl_c2.button("➕ Add Leg", use_container_width=True, disabled=(len(st.session_state.combo_active_legs) >= 12 or not c_pool)):
+        next_idx = min(len(st.session_state.combo_active_legs), len(c_pool) - 1)
+        g_next = c_pool[next_idx]
+        st.session_state.combo_active_legs.append({
+            "matchup_idx": next_idx,
+            "type": "Game Total",
+            "side": "Under",
+            "line": round_half_point(g_next.get("market_ou", 47.5)),
+            "picked_team": g_next["home_team"]
+        })
+        st.rerun()
+
+    combo_legs = []
+    compound_prob = 1.0
+
+    for i, leg_data in enumerate(st.session_state.combo_active_legs):
+        with st.container(border=True):
+            safe_m_idx = min(max(leg_data.get("matchup_idx", 0), 0), len(game_choices) - 1)
+            sel_matchup = st.selectbox(f"Leg {i+1} Matchup", range(len(game_choices)), index=safe_m_idx, format_func=lambda x: game_choices[x], key=f"m_sel_{i}_v{ver}")
+            leg_data["matchup_idx"] = sel_matchup
+            leg_g = c_pool[sel_matchup]
+
+            wager_cat = st.radio(f"Wager Type (Leg {i+1})", ["Game Total", "Straight Up Winner"], horizontal=True, index=0 if leg_data["type"] == "Game Total" else 1, key=f"wtype_{i}_v{ver}")
+            leg_data["type"] = wager_cat
+
+            if wager_cat == "Game Total":
+                col_b, col_c = st.columns(2)
+                side = col_b.selectbox("Side", ["Under", "Over"], index=0 if leg_data.get("side", "Under") == "Under" else 1, key=f"lside_{i}_v{ver}")
+                strike = col_c.number_input("Line (pts)", value=float(round_half_point(leg_data.get("line", leg_g.get("market_ou", 44.5)))), step=0.5, format="%.1f", key=f"lstrike_{i}_v{ver}")
+                leg_data["side"], leg_data["line"] = side, strike
+                leg_prob = calculate_win_prob(strike, 42.0, 7.0, is_under=(side == "Under"))
+                leg_desc = f"{leg_g['away_short']} @ {leg_g['home_short']}: {side} {strike:.1f}"
+            else:
+                col_b, col_c = st.columns(2)
+                teams_opt = [leg_g["home_team"], leg_g["away_team"]]
+                prev_pick = leg_data.get("picked_team", leg_g["home_team"])
+                pick_idx = teams_opt.index(prev_pick) if prev_pick in teams_opt else 0
+                winner = col_b.selectbox("Pick Winner", teams_opt, index=pick_idx, key=f"lwinner_{i}_v{ver}")
+                leg_data["picked_team"] = winner
+                h_prob = calculate_moneyline_prob(leg_g["home_score"] + 14, leg_g["away_score"] + 14, leg_g["home_record"], leg_g["away_record"])
+                leg_prob = h_prob if winner == leg_g["home_team"] else (1.0 - h_prob)
+                leg_desc = f"{leg_g['away_short']} @ {leg_g['home_short']}: {clean_abbr(winner, '')} ML"
+
+            compound_prob *= leg_prob
+            combo_legs.append({"desc": leg_desc, "prob": leg_prob})
+
+    st.metric("Compound Ticket Win Expectancy", f"{compound_prob * 100:.1f}%")
+
+    with st.form("save_combo_form"):
+        c_r1, c_r2 = st.columns(2)
+        c_risk = c_r1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
+        c_payout = c_r2.number_input("Payout ($)", min_value=1.0, value=50.0, step=10.0)
+        if st.form_submit_button(f"Lock In {len(combo_legs)}-Leg Ticket", use_container_width=True):
+            parsed_legs = [
+                {
+                    "matchup": f"{c_pool[min(item['matchup_idx'], len(c_pool) - 1)]['away_short']} @ {c_pool[min(item['matchup_idx'], len(c_pool) - 1)]['home_short']}",
+                    "type": item["type"],
+                    "side": item.get("side", ""),
+                    "line": round_half_point(item.get("line", 0.0)),
+                    "picked_team": item.get("picked_team", "")
+                }
+                for item in st.session_state.combo_active_legs
+            ]
+            actual_combo_risk = float(c_risk)
+            actual_combo_payout = float(c_payout)
+            actual_combo_profit = actual_combo_payout - actual_combo_risk
+
+            combo_record = {
                 "id": str(datetime.now().timestamp()),
                 "user": current_user.strip(),
                 "date": get_current_et_time().strftime("%Y-%m-%d %H:%M ET"),
-                "type": "Single",
-                "bet_category": bet_type,
-                "home_team": home_team,
-                "away_team": away_team,
-                "matchup": f"{clean_abbr(away_team, '')} @ {clean_abbr(home_team, '')}",
-                "bet": f"{bet_type} Ticket",
-                "risk_dollars": float(risk_amt),
-                "payout_dollars": float(payout_amt),
-                "payout": float(payout_amt),
-                "locked_profit": profit,
-                "status": initial_status,
-                "notes": f"Locked {bet_type}"
+                "type": f"{len(combo_legs)}-Leg Combo",
+                "bet_category": "Combo",
+                "matchup": " | ".join([cl["desc"] for cl in combo_legs]),
+                "bet": f"{len(combo_legs)} Legs ({compound_prob * 100:.1f}% Prob)",
+                "risk_dollars": actual_combo_risk,
+                "payout_dollars": actual_combo_payout,
+                "payout": actual_combo_payout,
+                "locked_profit": actual_combo_profit,
+                "win_prob": f"{compound_prob * 100:.1f}%",
+                "status": "Pending",
+                "parsed_legs": parsed_legs,
+                "notes": f"{len(combo_legs)}-Leg Parlay"
             }
-            st.session_state.saved_bets.insert(0, ticket_record)
+            st.session_state.saved_bets.insert(0, combo_record)
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-            st.session_state.single_applied_pick = None
-            st.success("Ticket locked successfully!")
+            st.success(f"{len(combo_legs)}-Leg combo ticket locked in!")
             st.rerun()
 
 # =========================================================================
-# 3. FEEDBACK, SUPPORT & TICKET SYSTEM
+# 4. LOCKED BETS HISTORY
+# =========================================================================
+elif menu_choice == "📜 Locked Bets History":
+    st.subheader("📜 Locked Bets History")
+    clean_u = active_uname.lower()
+    my_tickets = [b for b in st.session_state.saved_bets if str(b.get("user", "")).strip().lower() in [clean_u, current_user.lower()]]
+
+    if not my_tickets:
+        st.info("No tickets recorded yet.")
+    else:
+        for b in my_tickets:
+            real_idx = st.session_state.saved_bets.index(b)
+            render_ticket_card(b, real_idx, games_data, can_delete=True)
+
+# =========================================================================
+# 5. LEADERBOARD
+# =========================================================================
+elif menu_choice == "🏆 Leaderboard":
+    st.subheader("🏆 Leaderboard")
+    st.caption("Consensus standings and profit rankings.")
+    user_stats = {}
+    for b in st.session_state.saved_bets:
+        u_raw = str(b.get("user", "Bettor")).strip().lower()
+        if u_raw not in user_stats:
+            user_stats[u_raw] = {"name": b.get("user"), "won": 0, "lost": 0, "net": 0.0}
+        try:
+            r = float(b.get("risk_dollars", 0))
+            p = float(b.get("payout_dollars", b.get("payout", 0)))
+            profit = float(b.get("locked_profit", p - r))
+        except:
+            profit = 0.0
+        if b.get("status") == "Won":
+            user_stats[u_raw]["won"] += 1
+            user_stats[u_raw]["net"] += profit
+        elif b.get("status") == "Lost":
+            user_stats[u_raw]["lost"] += 1
+            user_stats[u_raw]["net"] -= r
+
+    board = sorted(user_stats.values(), key=lambda x: x["net"], reverse=True)
+    for u in board:
+        with st.container(border=True):
+            st.write(f"**{u['name']}** — Net Profit: **${u['net']:+.2f}** ({u['won']}W - {u['lost']}L)")
+
+# =========================================================================
+# 6. LIVE SQUAD FEED
+# =========================================================================
+elif menu_choice == "🔥 Live Squad Feed":
+    st.subheader("🔥 Live Squad Feed")
+    for idx, b in enumerate(st.session_state.saved_bets[:25]):
+        render_ticket_card(b, idx, games_data, can_delete=False)
+
+# =========================================================================
+# 7. THE LOCKER ROOM
+# =========================================================================
+elif menu_choice == "💬 The Locker Room":
+    st.subheader("💬 The Locker Room")
+    with st.form("locker_room_chat"):
+        msg_in = st.text_input("Message")
+        if st.form_submit_button("Post") and msg_in.strip():
+            st.session_state.chat_messages.insert(0, {
+                "user": current_user, "text": msg_in.strip(), "time": get_current_et_time().strftime("%I:%M %p ET")
+            })
+            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+            st.rerun()
+
+    for m in st.session_state.chat_messages[:30]:
+        st.write(f"**{m.get('user')}** ({m.get('time')}): {m.get('text')}")
+
+# =========================================================================
+# 8. FEEDBACK & SUPPORT
 # =========================================================================
 elif menu_choice == "📩 Feedback & Support":
-    st.subheader("📩 Feedback, Support & Ticket Desk")
-    st.caption("Submit bug reports, feature suggestions, or account assistance requests directly to the team.")
-
+    st.subheader("📩 Feedback & Support")
     tab_sub, tab_view = st.tabs(["📝 Submit a Ticket", "📂 My Ticket History"])
     
     with tab_sub:
         with st.form("new_support_ticket_form"):
-            t_category = st.selectbox("Category", ["🐛 Bug Report / Broken Line", "💡 Feature Suggestion", "📸 OCR Vision Parser Issue", "💼 Account & Billing", "💬 General Feedback"])
+            t_category = st.selectbox("Category", ["🐛 Bug Report / Broken Line", "💡 Feature Suggestion", "📸 OCR Vision Parser Issue", "💼 Account Assistance", "💬 General Feedback"])
             t_priority = st.select_slider("Priority", options=["Low", "Medium", "High", "Critical"], value="Medium")
-            t_subject = st.text_input("Subject", placeholder="e.g. Screenshot failed on DraftKings parlay")
-            t_description = st.text_area("Details", placeholder="Provide relevant matchup, wager amounts, or description of what happened...")
+            t_subject = st.text_input("Subject", placeholder="Brief description...")
+            t_description = st.text_area("Details", placeholder="Provide relevant details...")
             
             if st.form_submit_button("Submit Support Ticket", use_container_width=True):
                 if t_subject.strip() and t_description.strip():
@@ -1031,119 +1625,53 @@ elif menu_choice == "📩 Feedback & Support":
                     }
                     st.session_state.support_tickets.insert(0, new_ticket)
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-                    st.success("Support ticket submitted! Our team will review your report.")
+                    st.success("Support ticket submitted!")
                     st.rerun()
-                else:
-                    st.error("Please provide both a subject and details.")
 
     with tab_view:
         user_tickets = [t for t in st.session_state.support_tickets if t.get("username") == active_uname or is_user_admin]
         if not user_tickets:
-            st.info("You haven't submitted any tickets yet.")
+            st.info("No support tickets on record.")
         else:
             for tkt in user_tickets:
                 with st.container(border=True):
-                    stat_color = "#22c55e" if tkt.get("status") == "Resolved" else "#eab308"
-                    st.markdown(f"**[{tkt.get('id')}] {tkt.get('subject')}** &nbsp; <span style='background:{stat_color};color:#000;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.75rem;'>{tkt.get('status')}</span>", unsafe_allow_html=True)
-                    st.caption(f"🗓️ Logged: {tkt.get('date')} | Category: **{tkt.get('category')}** | Priority: **{tkt.get('priority')}**")
+                    st.write(f"**[{tkt.get('id')}] {tkt.get('subject')}** | Status: **{tkt.get('status')}**")
                     st.write(tkt.get("description"))
                     if tkt.get("admin_reply"):
-                        st.info(f"👑 **Response from Team:** {tkt.get('admin_reply')}")
+                        st.info(f"Team Response: {tkt.get('admin_reply')}")
 
 # =========================================================================
-# 4. HOW IT WORKS
+# 9. HOW IT WORKS
 # =========================================================================
 elif menu_choice == "💡 How It Works":
-    st.subheader("💡 How It Works: The Comprehensive User Guide")
+    st.subheader("💡 How It Works: User Manual")
     st.markdown("""
-    Welcome to **Flurkstradamus** — the algorithmic sports betting dashboard built for live second-half modeling, positive expectation (+EV) market exploitation, and automated bankroll tracking.
-    
-    ---
-    ### 🔑 Core Features & System Architecture
-    
-    * **📸 Universal Screenshot & Slip Parser**: Upload screenshots from any major sportsbook (DraftKings, FanDuel, BetMGM, Caesars, Kalshi, or Robinhood Derivatives)[cite: 5]. Our multimodal vision engine automatically matches competing teams, wager type, covering spread or total, stake, and payout, automatically grading settled tickets as **Won** without manual entry.
-    * **📊 Bankroll & Telemetry Dashboard**: Complete visibility across your betting portfolio:
-        * **Settled Realized P&L**: Tracks pure cash won, money lost, and net return on investment (ROI).
-        * **Capital at Risk**: Real-time dollar volume of all active, in-flight tickets.
-        * **Probability-Adjusted EV Profit**: True mathematical return calculated from live Bayesian quarter-by-quarter score decay.
-    * **⚡ Single Game Analytics Engine**: Scan full NFL and NCAA slates with live Bayesian pace regression. Tracks scoring momentum, second-half total drift, and ATS cover probabilities across quarters.
-    * **🔗 Multi-Leg Combo Builder**: Scan cross-slate parlay combinations with automated compound true probability modeling and cross-game line cushion optimization.
-    * **🏟️ In-Game War Room**: Click any ticket in your history to enter the live game operations room. View projection drift history, real-time possession clock updates, and dynamically shifting cover odds.
-    * **🛡️ Immutable Slip Protection**: Your risk stake and entered payout amounts are locked at entry and preserved permanently against container restarts.
+    * **📸 Slip & Contract Vision Parser**: Upload screenshots from any sportsbook (Robinhood, DraftKings, FanDuel, BetMGM, Kalshi) to extract line, direction, stake, and payout without manual entry.
+    * **📊 Bankroll Telemetry**: Realized performance calculates your exact dollar P&L and ROI. Capital at Risk and Expected Profit (EV) show in-flight statistical value.
+    * **⚡ Single Game Engine**: Analyzes in-game scoring momentum, live half-time projections, point spread drift, and touchdown props with active rosters.
+    * **🔗 Multi-Leg Combo Builder**: Compound true probability model with automated cross-game parlay optimization up to 12 legs.
     """)
 
 # =========================================================================
-# 5. ABOUT THIS APP & DEVELOPER ATTRIBUTION
+# 10. ABOUT THIS APP
 # =========================================================================
 elif menu_choice == "ℹ️ About Flurkstradamus":
     st.subheader("ℹ️ About Flurkstradamus")
-    
     with st.container(border=True):
         st.markdown("""
         ### 🔮 Flurkstradamus Edge Engine
-        
-        **Flurkstradamus** is a predictive sports analytics and bankroll intelligence platform engineered for modern sports investors and market traders. The system pairs real-time game telemetry with automated vision-based bet parsing to give bettors an analytical edge.
+        **Flurkstradamus** is an algorithmic sports betting analytics and bankroll intelligence platform built for modern market investors and bettors.
         
         ---
-        
         #### 👨‍💻 Developer & Company Information
-        
         * **Architect & Developer:** Adam Sowers
-        * **Engineering Firm:** Sowers Web Technologies
+        * **Company:** Sowers Web Technologies
         * **Location:** Altamonte Springs, Florida, United States
         * **Official Website:** [sweetcustomwebsites.com](https://sweetcustomwebsites.com)
-        
-        ---
-        
-        *Engineered with Streamlit, Python, Google Gemini Multimodal Vision, and Bayesian Tempo Regression Models.*
         """)
 
 # =========================================================================
-# 6. LOCKED BETS HISTORY
-# =========================================================================
-elif menu_choice == "📜 Locked Bets History":
-    st.subheader(f"📜 {current_user}'s Locked Bets")
-    clean_u = active_uname.lower()
-    my_tickets = [b for b in st.session_state.saved_bets if str(b.get("user", "")).strip().lower() in [clean_u, current_user.lower()]]
-
-    if not my_tickets:
-        st.info("No tickets recorded yet.")
-    else:
-        for b in my_tickets:
-            real_idx = st.session_state.saved_bets.index(b)
-            render_ticket_card(b, real_idx, games_data, can_delete=True)
-
-# =========================================================================
-# 7. LEADERBOARD
-# =========================================================================
-elif menu_choice == "🏆 Leaderboard":
-    st.subheader("🏆 Leaderboard")
-    st.info("Leaderboard active.")
-
-# =========================================================================
-# 8. LIVE SQUAD FEED
-# =========================================================================
-elif menu_choice == "🔥 Live Squad Feed":
-    st.subheader("🔥 Live Squad Feed")
-    for idx, b in enumerate(st.session_state.saved_bets[:25]):
-        render_ticket_card(b, idx, games_data, can_delete=False)
-
-# =========================================================================
-# 9. THE LOCKER ROOM
-# =========================================================================
-elif menu_choice == "💬 The Locker Room":
-    st.subheader("💬 The Locker Room")
-    with st.form("locker_room_chat"):
-        msg_in = st.text_input("Message")
-        if st.form_submit_button("Post") and msg_in.strip():
-            st.session_state.chat_messages.insert(0, {
-                "user": current_user, "text": msg_in.strip(), "time": get_current_et_time().strftime("%I:%M %p ET")
-            })
-            save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-            st.rerun()
-
-# =========================================================================
-# 10. MODEL METHODOLOGY & MATH
+# 11. MODEL METHODOLOGY & MATH
 # =========================================================================
 elif menu_choice == "📖 Model Methodology & Math":
     st.subheader("📖 Machine Learning Architecture & Core Math")
@@ -1151,7 +1679,7 @@ elif menu_choice == "📖 Model Methodology & Math":
     st.latex(r"P(\text{Under}) = \frac{1}{2} \left[ 1 + \text{erf}\left( \frac{Z}{\sqrt{2}} \right) \right]")
 
 # =========================================================================
-# 11. ACCOUNT SETTINGS
+# 12. ACCOUNT SETTINGS
 # =========================================================================
 elif menu_choice == "⚙️ Account Settings":
     st.subheader("⚙️ Account Settings")
@@ -1166,27 +1694,21 @@ elif menu_choice == "⚙️ Account Settings":
             st.rerun()
 
 # =========================================================================
-# 12. COMMISSIONER ADMIN CONSOLE
+# 13. ADMIN CONSOLE
 # =========================================================================
 elif menu_choice == "🛡️ Admin" and is_user_admin:
     st.subheader("🛡️ Commissioner Admin Console")
-    st.markdown("##### 📩 Inbound Support Tickets")
+    st.write(f"Total Users: **{len(st.session_state.user_accounts)}**")
     
-    if not st.session_state.support_tickets:
-        st.info("No support tickets currently pending.")
-    else:
-        for t_idx, tkt in enumerate(st.session_state.support_tickets):
-            with st.container(border=True):
-                st.write(f"**[{tkt.get('id')}] {tkt.get('subject')}** by `{tkt.get('user')}` ({tkt.get('date')})")
-                st.write(f"Category: **{tkt.get('category')}** | Priority: **{tkt.get('priority')}** | Status: **{tkt.get('status')}**")
-                st.write(tkt.get("description"))
-                
-                with st.form(f"reply_tkt_{tkt.get('id')}"):
-                    reply_text = st.text_input("Admin Response", value=tkt.get("admin_reply") or "")
-                    new_status = st.selectbox("Update Status", ["Open", "In Review", "Resolved"], index=0 if tkt.get("status") == "Open" else (1 if tkt.get("status") == "In Review" else 2))
-                    if st.form_submit_button("Save Ticket Status"):
-                        tkt["admin_reply"] = reply_text
-                        tkt["status"] = new_status
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-                        st.success("Ticket updated!")
-                        st.rerun()
+    for tkt in st.session_state.support_tickets:
+        with st.container(border=True):
+            st.write(f"**[{tkt.get('id')}] {tkt.get('subject')}** by `{tkt.get('user')}`")
+            with st.form(f"reply_{tkt.get('id')}"):
+                reply = st.text_input("Response", value=tkt.get("admin_reply") or "")
+                status_sel = st.selectbox("Status", ["Open", "In Review", "Resolved"], index=0 if tkt.get("status") == "Open" else (1 if tkt.get("status") == "In Review" else 2))
+                if st.form_submit_button("Save Reply"):
+                    tkt["admin_reply"] = reply
+                    tkt["status"] = status_sel
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                    st.success("Reply saved!")
+                    st.rerun()
