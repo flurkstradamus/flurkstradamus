@@ -22,6 +22,9 @@ def parse_bet_slip_image(image_bytes):
     raw_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     gemini_key = str(raw_key).strip().strip('"').strip("'") if raw_key else ""
 
+    if not gemini_key:
+        return None, "No GEMINI_API_KEY or GOOGLE_API_KEY found in Streamlit Secrets."
+
     try:
         pil_img = Image.open(io.BytesIO(image_bytes))
         if pil_img.mode != "RGB":
@@ -33,16 +36,17 @@ def parse_bet_slip_image(image_bytes):
         buf = io.BytesIO()
         pil_img.save(buf, format="JPEG", quality=85)
         b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
-    except Exception:
+    except Exception as e:
         b64_img = base64.b64encode(image_bytes).decode("utf-8")
 
     prompt = """
-    You are an expert sports betting OCR parser.
-    Extract the bet parameters into valid JSON:
+    You are an expert sports betting and prediction market OCR parser.
+    Examine this screenshot of a bet slip, Robinhood contract, DraftKings, FanDuel, or sports betting ticket.
+    Extract the bet details into a strictly valid JSON object:
     {
         "away_team": "string or null",
         "home_team": "string or null",
-        "picked_team": "string or null",
+        "picked_team": "string or null (team or player name chosen)",
         "wager_type": "Point Spread" | "Game Total" | "Moneyline" | "Player Points Prop" | "Anytime TD",
         "side": "Under" | "Over" | "Spread" | "Moneyline",
         "line": float or null,
@@ -51,49 +55,82 @@ def parse_bet_slip_image(image_bytes):
         "risk": float or null,
         "is_settled": boolean
     }
-    Return ONLY raw JSON without markdown.
+    Rules:
+    1. If contract says "Over X points Payout" and user chose "No", side is "Under", line is X, wager_type is "Game Total".
+    2. If user chose "Yes", side is "Over", line is X, wager_type is "Game Total".
+    3. If profit is present but risk is missing: risk = payout - profit.
+    4. If risk and payout are present: profit = payout - risk.
+    5. Return ONLY raw JSON without markdown markers or backticks.
     """
+
     payload = {
-        "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": b64_img}}]}],
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": "image/jpeg", "data": b64_img}}
+            ]
+        }],
         "generationConfig": {"response_mime_type": "application/json"}
     }
-    failover_models = ["models/gemini-2.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-flash"]
-    if gemini_key:
-        for m in failover_models:
-            url = f"https://generativelanguage.googleapis.com/v1beta/{m}:generateContent?key={gemini_key}"
-            try:
-                r = requests.post(url, json=payload, timeout=20.0)
-                if r.status_code == 200:
-                    txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                    cleaned = re.sub(r"^```json\s*", "", txt.strip())
-                    cleaned = re.sub(r"```$", "", cleaned.strip())
-                    return json.loads(cleaned), None
-            except Exception:
-                continue
 
-    return {
-        "away_team": "Delaware", "home_team": "Western Kentucky", "picked_team": None,
-        "wager_type": "Game Total", "side": "Under", "line": 77.5,
-        "payout": 31.00, "profit": 12.09, "risk": 18.91, "is_settled": True
-    }, None
+    failover_models = [
+        "models/gemini-2.5-flash",
+        "models/gemini-2.0-flash",
+        "models/gemini-1.5-flash"
+    ]
+
+    last_err = ""
+    for m in failover_models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/{m}:generateContent?key={gemini_key}"
+        try:
+            r = requests.post(url, json=payload, timeout=20.0)
+            if r.status_code == 200:
+                txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                cleaned = re.sub(r"^```json\s*", "", txt.strip())
+                cleaned = re.sub(r"```$", "", cleaned.strip())
+                return json.loads(cleaned), None
+            else:
+                last_err = f"{m} HTTP {r.status_code}: {r.text[:100]}"
+        except Exception as e:
+            last_err = f"{m} exception: {str(e)}"
+            continue
+
+    return None, last_err
 
 def match_game_in_pool(away_name, home_name, pool, picked_name=""):
-    if not pool: return 0
+    if not pool:
+        return 0
     a_target = (away_name or "").lower().strip()
     h_target = (home_name or "").lower().strip()
     p_target = (picked_name or "").lower().strip()
+
+    # Pass 1: exact/partial match on both teams
     for idx, gm in enumerate(pool):
         gm_h, gm_a = gm["home_team"].lower(), gm["away_team"].lower()
-        if (h_target in gm_h or gm_h in h_target) and (a_target in gm_a or gm_a in a_target):
+        gm_hs, gm_as = gm.get("home_short", "").lower(), gm.get("away_short", "").lower()
+        h_ok = (h_target in gm_h or gm_h in h_target or h_target in gm_hs) if h_target else True
+        a_ok = (a_target in gm_a or gm_a in a_target or a_target in gm_as) if a_target else True
+        if h_ok and a_ok and (h_target or a_target):
             return idx
+
+    # Pass 2: match single team or picked name
     for idx, gm in enumerate(pool):
+        gm_h, gm_a = gm["home_team"].lower(), gm["away_team"].lower()
         for mc in [h_target, a_target, p_target]:
-            if mc and len(mc) >= 3 and (mc in gm["home_team"].lower() or mc in gm["away_team"].lower()):
+            if mc and len(mc) >= 3 and (mc in gm_h or gm_h in mc or mc in gm_a or gm_a in mc):
                 return idx
     return 0
 
 def render_single_game(curr_user, active_uname, games_data, get_current_et_time_fn):
     st.subheader("⚡ Single Game Analytics Engine")
+
+    if "single_form_version" not in st.session_state:
+        st.session_state.single_form_version = 0
+    if "single_selected_idx" not in st.session_state:
+        st.session_state.single_selected_idx = 0
+    if "single_applied_pick" not in st.session_state:
+        st.session_state.single_applied_pick = None
+
     form_ver = st.session_state.single_form_version
 
     f_col1, f_col2 = st.columns([1, 2])
@@ -110,35 +147,60 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
     if search_query.strip():
         q = search_query.strip().lower()
-        pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g["home_short"].lower() or q in g["away_short"].lower()]
+        pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
-    with st.expander("📸 Auto-Fill via Slip Screenshot (Robinhood, DraftKings, FanDuel, etc.)", expanded=False):
+    with st.expander("📸 Auto-Fill via Slip Screenshot (Robinhood, DraftKings, FanDuel, etc.)", expanded=True):
+        st.caption("Upload any sportsbook or prediction contract screenshot to detect teams, lines, risk, and potential payouts.")
         uploaded_slip = st.file_uploader("Upload Slip Screenshot (PNG, JPG)", type=["png", "jpg", "jpeg"], key=f"slip_uploader_v{form_ver}")
-        if uploaded_slip is not None and st.button("⚡ Extract & Auto-Fill Form", use_container_width=True):
-            with st.spinner("Analyzing screenshot..."):
-                parsed_res, _ = parse_bet_slip_image(uploaded_slip.read())
-                if parsed_res:
-                    matched_idx = match_game_in_pool(parsed_res.get("away_team", ""), parsed_res.get("home_team", ""), pool, parsed_res.get("picked_team", ""))
-                    st.session_state.single_selected_idx = matched_idx
-                    st.session_state.single_applied_pick = {
-                        "category": parsed_res.get("wager_type", "Game Total"),
-                        "side": parsed_res.get("side", "Under"),
-                        "target_line": float(parsed_res.get("line", 44.5)) if parsed_res.get("line") is not None else 44.5,
-                        "risk": float(parsed_res.get("risk", 10.0)),
-                        "payout": float(parsed_res.get("payout", 20.0)),
-                        "picked_team": parsed_res.get("picked_team"),
-                        "status": "Won" if parsed_res.get("is_settled") else "Pending"
-                    }
-                    st.session_state.single_form_version += 1
-                    st.success("Slip auto-extracted!")
-                    st.rerun()
+        if uploaded_slip is not None:
+            if st.button("⚡ Extract & Auto-Fill Form", use_container_width=True, key=f"btn_extract_v{form_ver}"):
+                with st.spinner("Analyzing screenshot with vision model..."):
+                    parsed_res, err_msg = parse_bet_slip_image(uploaded_slip.read())
+                    if parsed_res:
+                        away_t = parsed_res.get("away_team") or ""
+                        home_t = parsed_res.get("home_team") or ""
+                        picked_t = parsed_res.get("picked_team") or ""
+
+                        matched_idx = match_game_in_pool(away_t, home_t, pool, picked_t)
+                        wager_cat = parsed_res.get("wager_type") or "Game Total"
+                        wager_side = parsed_res.get("side") or "Under"
+                        w_line = float(parsed_res.get("line")) if parsed_res.get("line") is not None else 47.5
+                        w_payout = float(parsed_res.get("payout") or 20.0)
+                        w_profit = float(parsed_res.get("profit") or (w_payout * 0.5))
+                        w_risk = float(parsed_res.get("risk") or max(1.0, w_payout - w_profit))
+                        is_settled_flag = parsed_res.get("is_settled", False)
+
+                        st.session_state.single_selected_idx = matched_idx
+                        st.session_state.single_applied_pick = {
+                            "category": wager_cat,
+                            "side": wager_side,
+                            "target_line": w_line,
+                            "risk": w_risk,
+                            "payout": w_payout,
+                            "profit": w_profit,
+                            "override_away": away_t,
+                            "override_home": home_t,
+                            "picked_team": picked_t,
+                            "status": "Won" if is_settled_flag else "Pending"
+                        }
+                        st.session_state.single_form_version += 1
+                        st.success(f"✅ Extracted: {wager_side} {w_line} ({away_t} vs {home_t}) | Risk: ${w_risk:.2f}, Return: ${w_payout:.2f}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Analysis failed: {err_msg}")
 
     if not pool:
-        st.info("No matchups found matching your filter.")
+        st.info("No matchups found matching your current filter.")
         return
 
     game_options = [f"[{g['kickoff']}] [{g['league']}] {g['away_short']} @ {g['home_short']}" for g in pool]
-    sel_idx = st.selectbox("Select Matchup", range(len(game_options)), index=min(st.session_state.single_selected_idx, len(game_options)-1), format_func=lambda x: game_options[x], key=f"matchup_sel_v{form_ver}")
+    sel_idx = st.selectbox(
+        "Select Matchup",
+        range(len(game_options)),
+        index=min(st.session_state.single_selected_idx, len(game_options) - 1),
+        format_func=lambda x: game_options[x],
+        key=f"matchup_sel_v{form_ver}"
+    )
     st.session_state.single_selected_idx = sel_idx
     g = pool[sel_idx]
     is_nba_game = (g.get("league") == "NBA")
@@ -180,10 +242,10 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
     if is_nba_game:
         h_players = get_live_nba_roster(g["home_id"] or g["home_short"])
-        a_players = get_live_nba_roster(g["away_id"] or g["away_short"])
+        away_players = get_live_nba_roster(g["away_id"] or g["away_short"])
     else:
         h_players = get_live_football_roster(g["home_id"] or g["home_short"], g["league"])
-        a_players = get_live_football_roster(g["away_id"] or g["away_short"], g["league"])
+        away_players = get_live_football_roster(g["away_id"] or g["away_short"], g["league"])
 
     with st.expander("🤖 Section 2: AI Strategy Engine & Market Filters", expanded=True):
         strat_opts = ["⚡ Consensus Edge", "📊 Full Game Total", "🛡️ Spread (ATS)", "🏆 Moneyline"]
@@ -227,7 +289,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         </div>
         """, unsafe_allow_html=True)
 
-        if st.button("📥 Load to Form", use_container_width=True):
+        if st.button("📥 Load to Form", use_container_width=True, key=f"btn_load_rec_{form_ver}"):
             st.session_state.single_applied_pick = {
                 "category": rec_type, "side": rec_side, "target_line": rec_line,
                 "risk": 10.0, "payout": 19.10, "picked_team": rec_team, "status": "Pending"
@@ -237,6 +299,15 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
     applied = st.session_state.single_applied_pick
     with st.expander("📝 Section 3: Wager Type & Lock In Bet Slip", expanded=True):
+        c1, c2 = st.columns(2)
+        home_def = (applied.get("override_home") if applied and applied.get("override_home") else g["home_team"])
+        away_def = (applied.get("override_away") if applied and applied.get("override_away") else g["away_team"])
+
+        home_team = c1.text_input("Home Team", value=home_def, key=f"in_h_{form_ver}")
+        away_team = c1.text_input("Away Team", value=away_def, key=f"in_a_{form_ver}")
+        h_pts_in = c2.number_input(f"{g['home_short']} Pts", min_value=0, value=g["home_score"], key=f"in_hp_{form_ver}")
+        a_pts_in = c2.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"in_ap_{form_ver}")
+
         w_types = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)"]
         w_types.append("Player Points Prop" if is_nba_game else "Player Anytime Touchdown Scorer")
         def_w_idx = 0
@@ -246,56 +317,98 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             elif "moneyline" in cat or "winner" in cat: def_w_idx = 2
             elif "points" in cat or "td" in cat: def_w_idx = 3
 
-        bet_type = st.radio("Market", w_types, index=def_w_idx, horizontal=True)
+        bet_type = st.radio("Market", w_types, index=def_w_idx, horizontal=True, key=f"in_wtype_{form_ver}")
+
         with st.form(f"single_bet_form_v{form_ver}"):
             p_target = None
             if bet_type == "Game Total":
                 f1, f2 = st.columns(2)
-                s_side = f1.selectbox("Side", ["Under", "Over"], index=0 if (applied and applied.get("side") == "Under") else 1)
-                s_line = f2.number_input("Total Line", value=float(applied.get("target_line", final_proj)) if applied else float(final_proj), step=0.5)
+                def_side_idx = 0 if (applied and applied.get("side") == "Under") else 1
+                s_side = f1.selectbox("Side", ["Under", "Over"], index=def_side_idx)
+                def_strike = float(applied.get("target_line", final_proj)) if applied else float(final_proj)
+                s_line = f2.number_input("Total Line", value=def_strike, step=0.5)
             elif bet_type == "Point Spread (ATS)":
                 f1, f2 = st.columns(2)
-                p_target = f1.selectbox("Covering Team", [g["home_team"], g["away_team"]])
+                p_cand = applied.get("picked_team", "") if applied else ""
+                def_cov_idx = 1 if (p_cand and p_cand.lower() in away_team.lower()) else 0
+                p_target = f1.selectbox("Covering Team", [home_team, away_team], index=def_cov_idx)
                 s_side = "Spread"
-                s_line = f2.number_input("Spread Line", value=float(espn_spread), step=0.5)
+                def_spd = float(applied.get("target_line", espn_spread)) if applied else float(espn_spread)
+                s_line = f2.number_input("Spread Line", value=def_spd, step=0.5)
             elif bet_type == "Straight Up Winner (Moneyline)":
-                p_target = st.selectbox("Outright Winner", [g["home_team"], g["away_team"]])
+                p_cand = applied.get("picked_team", "") if applied else ""
+                def_win_idx = 1 if (p_cand and p_cand.lower() in away_team.lower()) else 0
+                p_target = st.selectbox("Outright Winner", [home_team, away_team], index=def_win_idx)
                 s_side, s_line = "Moneyline", None
             elif bet_type == "Player Points Prop":
                 f1, f2 = st.columns(2)
-                all_r = [p[0] for p in (h_players + a_players)]
-                p_target = f1.selectbox("Player", all_r)
-                s_side = f2.selectbox("Side", ["Over", "Under"])
-                s_line = st.number_input("Points Line", value=22.5, step=0.5)
+                all_r = [p[0] for p in (h_players + away_players)]
+                p_cand = applied.get("picked_team", "") if applied else ""
+                def_p_idx = all_r.index(p_cand) if p_cand in all_r else 0
+                p_target = f1.selectbox("Player", all_r, index=def_p_idx)
+                s_side = f2.selectbox("Side", ["Over", "Under"], index=0 if (applied and applied.get("side") == "Over") else 1)
+                def_pts_strike = float(applied.get("target_line", 22.5)) if applied else 22.5
+                s_line = st.number_input("Points Line", value=def_pts_strike, step=0.5)
             else:
-                all_r = [p[0] for p in (h_players + a_players)]
-                p_target = st.selectbox("Player", all_r)
+                all_r = [p[0] for p in (h_players + away_players)]
+                p_cand = applied.get("picked_team", "") if applied else ""
+                def_td_idx = all_r.index(p_cand) if p_cand in all_r else 0
+                p_target = st.selectbox("Player", all_r, index=def_td_idx)
                 s_side, s_line = "TD", 1.0
 
             c_r, c_p = st.columns(2)
-            r_amt = c_r.number_input("Risk ($)", min_value=1.0, value=float(applied.get("risk", 10.0)) if applied else 10.0, step=5.0)
-            p_amt = c_p.number_input("Payout ($)", min_value=1.0, value=float(applied.get("payout", 19.10)) if applied else 19.10, step=5.0)
+            def_risk = float(applied.get("risk", 10.0)) if applied else 10.0
+            def_payout = float(applied.get("payout", 19.10)) if applied else 19.10
+            r_amt = c_r.number_input("Risk ($)", min_value=1.0, value=def_risk, step=5.0)
+            p_amt = c_p.number_input("Payout ($)", min_value=1.0, value=def_payout, step=5.0)
 
             if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
-                lbl = f"{p_target} {s_side} {s_line} Pts" if bet_type == "Player Points Prop" else \
-                      (f"{p_target} TD" if bet_type == "Player Anytime Touchdown Scorer" else \
-                      (f"{s_side} {s_line}" if s_line is not None else f"{p_target} ML"))
+                actual_risk = float(r_amt)
+                actual_payout = float(p_amt)
+                actual_profit = actual_payout - actual_risk
+
+                if bet_type == "Player Points Prop":
+                    bet_lbl = f"{p_target} {s_side} {s_line} Pts"
+                elif bet_type == "Player Anytime Touchdown Scorer":
+                    bet_lbl = f"{p_target} Any Time TD"
+                elif s_line is not None:
+                    bet_lbl = f"{s_side} {s_line}" if bet_type == "Game Total" else f"{p_target} {s_line:+.1f}"
+                else:
+                    bet_lbl = f"{p_target} ML"
+
+                init_status = "Won" if (applied and applied.get("status") == "Won") else (
+                    "Won" if is_completed and (pts_scored < s_line if s_side == "Under" and s_line else False) else "Pending"
+                )
 
                 tkt = {
                     "id": str(datetime.now().timestamp()),
                     "user": curr_user.get("display_name", active_uname),
                     "date": get_current_et_time_fn().strftime("%Y-%m-%d %H:%M ET"),
-                    "type": "Single", "bet_category": bet_type,
-                    "home_team": g["home_team"], "away_team": g["away_team"],
-                    "picked_team": p_target, "matchup": f"{g['away_short']} @ {g['home_short']}",
-                    "bet": lbl, "target_line": s_line, "bet_direction": s_side,
-                    "risk_dollars": float(r_amt), "payout_dollars": float(p_amt),
-                    "locked_profit": float(p_amt) - float(r_amt),
-                    "status": "Won" if is_completed and (pts_scored < s_line if s_side == "Under" and s_line else False) else "Pending",
+                    "type": "Single",
+                    "bet_category": bet_type,
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "picked_team": p_target,
+                    "matchup": f"{g['away_short']} @ {g['home_short']}",
+                    "bet": bet_lbl,
+                    "target_line": s_line,
+                    "bet_direction": s_side,
+                    "risk_dollars": actual_risk,
+                    "payout_dollars": actual_payout,
+                    "payout": actual_payout,
+                    "locked_profit": actual_profit,
+                    "status": init_status,
                     "notes": f"[{g['league']}] {bet_type}"
                 }
                 st.session_state.saved_bets.insert(0, tkt)
-                save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                save_all_storage(
+                    st.session_state.saved_bets,
+                    st.session_state.chat_messages,
+                    st.session_state.user_accounts,
+                    st.session_state.banned_emails,
+                    st.session_state.game_snapshots,
+                    st.session_state.support_tickets
+                )
                 st.session_state.single_applied_pick = None
                 st.success("Ticket locked successfully!")
                 st.rerun()
