@@ -1555,9 +1555,17 @@ elif menu_choice == "⚡ Single Game Engine":
                 dynamic_note = f"Touchdown Prop: {picked_t} Any Time TD | Red zone share & goal-line touch volume play"
 
             p1, p2 = st.columns(2)
-            risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
+            risk_amt = p1.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0, key=f"risk_in_{g_id}_v{form_ver}")
             mult = applied.get("est_payout_multiplier", 1.91) if applied else 1.91
-            payout_amt = p2.number_input("Payout ($)", min_value=1.0, value=round(risk_amt * mult, 2))
+            default_payout = round(risk_amt * mult, 2)
+            
+            payout_amt = p2.number_input(
+                "Payout ($)", 
+                min_value=1.0, 
+                value=float(default_payout), 
+                step=5.0, 
+                key=f"payout_in_{g_id}_v{form_ver}"
+            )
             ticket_notes = st.text_input("Notes", value=dynamic_note)
 
             if st.form_submit_button("Lock In Bet Slip", use_container_width=True):
@@ -1568,7 +1576,9 @@ elif menu_choice == "⚡ Single Game Engine":
                     bet_lbl = f"{side} {strike:.1f}" if strike else f"{picked_t} ML"
                     cat_lbl = "Spread" if bet_type == "Point Spread (ATS)" else ("Total" if bet_type == "Game Total" else "Moneyline")
 
-                profit_to_lock = float(payout_amt) - float(risk_amt)
+                actual_risk = float(risk_amt)
+                actual_payout = float(payout_amt)
+                actual_profit = actual_payout - actual_risk
 
                 ticket_record = {
                     "id": str(datetime.now().timestamp()),
@@ -1583,10 +1593,10 @@ elif menu_choice == "⚡ Single Game Engine":
                     "bet": bet_lbl,
                     "target_line": strike,
                     "bet_direction": side,
-                    "risk_dollars": float(risk_amt),
-                    "payout_dollars": float(payout_amt),
-                    "payout": float(payout_amt),
-                    "locked_profit": float(profit_to_lock),
+                    "risk_dollars": actual_risk,
+                    "payout_dollars": actual_payout,
+                    "payout": actual_payout,
+                    "locked_profit": actual_profit,
                     "model_proj": round(final_proj, 1),
                     "win_prob": f"{applied['prob']*100:.1f}%" if applied else "55.0%",
                     "status": "Pending",
@@ -1595,7 +1605,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 st.session_state.saved_bets.insert(0, ticket_record)
                 save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
                 st.session_state.single_applied_pick = None
-                st.success("Ticket locked into your account history!")
+                st.success(f"Ticket locked in! Stake: ${actual_risk:.2f} | Payout: ${actual_payout:.2f} | Profit: +${actual_profit:.2f}")
 
 # =========================================================================
 # 3. MULTI-LEG COMBO BUILDER
@@ -1844,7 +1854,9 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 }
                 for item in st.session_state.combo_active_legs
             ]
-            profit_to_lock = float(c_payout) - float(c_risk)
+            actual_combo_risk = float(c_risk)
+            actual_combo_payout = float(c_payout)
+            actual_combo_profit = actual_combo_payout - actual_combo_risk
 
             combo_record = {
                 "id": str(datetime.now().timestamp()),
@@ -1856,10 +1868,10 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
                 "bet": f"{len(combo_legs)} Legs ({compound_prob * 100:.1f}% Prob)",
                 "target_line": None,
                 "bet_direction": None,
-                "risk_dollars": float(c_risk),
-                "payout_dollars": float(c_payout),
-                "payout": float(c_payout),
-                "locked_profit": float(profit_to_lock),
+                "risk_dollars": actual_combo_risk,
+                "payout_dollars": actual_combo_payout,
+                "payout": actual_combo_payout,
+                "locked_profit": actual_combo_profit,
                 "win_prob": f"{compound_prob * 100:.1f}%",
                 "status": "Pending",
                 "parsed_legs": parsed_legs,
@@ -1867,7 +1879,7 @@ elif menu_choice == "🔗 Multi-Leg Combo Builder":
             }
             st.session_state.saved_bets.insert(0, combo_record)
             save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots)
-            st.success(f"{len(combo_legs)}-Leg combo ticket locked in!")
+            st.success(f"{len(combo_legs)}-Leg combo ticket locked in! Payout: ${actual_combo_payout:.2f} | Profit: +${actual_combo_profit:.2f}")
 
 # =========================================================================
 # 4. LOCKED BETS HISTORY
@@ -2236,7 +2248,6 @@ elif menu_choice == "🛡️ Admin" and is_user_admin:
                     for ub in u_bets:
                         st.markdown(f"• **{ub.get('date')}** — `{ub.get('matchup')}`: **{ub.get('bet')}** | Stake: ${ub.get('risk_dollars', 10):.2f} | Status: `{ub.get('status')}`")
 
-            # Check if target is admin before rendering delete/ban options
             admin_cred = get_admin_credentials()
             if selected_u != admin_cred["username"].lower():
                 st.markdown("##### ⚙️ Administrative Actions:")
