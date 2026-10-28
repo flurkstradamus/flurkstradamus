@@ -5,6 +5,8 @@ import json
 import base64
 import random
 import string
+import io
+from PIL import Image
 from datetime import datetime, timezone, timedelta
 import streamlit.components.v1 as components
 
@@ -371,7 +373,7 @@ def get_numeric_prob(bet_obj, games_data):
                 "picked_team": l_item.get("picked_team"),
                 "win_prob": "65.0%"
             }, m_g)
-            try: compound_p *= (float(p_str.replace("%", "").strip()) / 100.0)
+            try: compound_p *= (float(p_str.replace("%", "")) / 100.0)
             except: compound_p *= 0.50
         return max(0.001, min(0.999, compound_p))
     else:
@@ -380,14 +382,31 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH DYNAMIC MODEL RESOLUTION
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER WITH FAST IMAGE PRE-COMPRESSION
 def parse_bet_slip_image(image_bytes):
-    gemini_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
-    
-    if not gemini_key:
-        return None, "GEMINI_API_KEY is not defined in Streamlit Secrets. Please add GEMINI_API_KEY to your Secrets."
+    raw_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
+    if not raw_key:
+        return None, "GEMINI_API_KEY is not defined in Streamlit Secrets. Please add GEMINI_API_KEY to your Streamlit Secrets."
 
-    b64_img = base64.b64encode(image_bytes).decode("utf-8")
+    gemini_key = str(raw_key).strip().strip('"').strip("'")
+
+    # Compress and downscale screenshot to prevent upload timeouts
+    try:
+        pil_img = Image.open(io.BytesIO(image_bytes))
+        if pil_img.mode != "RGB":
+            pil_img = pil_img.convert("RGB")
+        if pil_img.width > 1024:
+            ratio = 1024 / float(pil_img.width)
+            new_h = int(float(pil_img.height) * ratio)
+            pil_img = pil_img.resize((1024, new_h), Image.Resampling.LANCZOS)
+        
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=85)
+        compressed_bytes = buf.getvalue()
+        b64_img = base64.b64encode(compressed_bytes).decode("utf-8")
+    except Exception:
+        b64_img = base64.b64encode(image_bytes).decode("utf-8")
+
     prompt = """
     You are an expert sports betting and event contracts OCR parser.
     Analyze this bet slip or event contract screenshot (Robinhood, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
@@ -418,56 +437,56 @@ def parse_bet_slip_image(image_bytes):
         "contents": [{
             "parts": [
                 {"text": prompt},
-                {"inline_data": {"mime_type": "image/png", "data": b64_img}}
+                {"inline_data": {"mime_type": "image/jpeg", "data": b64_img}}
             ]
         }],
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    # Discover and query active supported multimodal models
+    # Production supported multimodal models in Google Generative AI
     candidate_endpoints = [
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-        "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent"
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent"
     ]
 
     last_error = ""
     for endpoint_url in candidate_endpoints:
         url = f"{endpoint_url}?key={gemini_key}"
         try:
-            r = requests.post(url, json=payload, timeout=12.0)
+            r = requests.post(url, json=payload, timeout=22.0)
             if r.status_code == 200:
                 txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                 cleaned = re.sub(r"^```json\s*", "", txt.strip())
                 cleaned = re.sub(r"```$", "", cleaned.strip())
                 return json.loads(cleaned), None
             else:
-                last_error = f"{r.status_code}: {r.text[:180]}"
+                last_error = f"HTTP {r.status_code}: {r.text[:160]}"
         except Exception as e:
             last_error = str(e)
 
-    # If static candidates fail, query Google's listModels to find the exact available vision model for this key
+    # Dynamic Discovery: Call models list to see which models are activated for this user's key
     try:
         list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
-        lr = requests.get(list_url, timeout=5.0)
+        lr = requests.get(list_url, timeout=6.0)
         if lr.status_code == 200:
-            available_models = [
+            m_list = [
                 m["name"] for m in lr.json().get("models", [])
                 if "generateContent" in m.get("supportedGenerationMethods", [])
             ]
-            for m_name in available_models:
-                if "flash" in m_name or "pro" in m_name:
-                    dyn_url = f"https://generativelanguage.googleapis.com/v1beta/{m_name}:generateContent?key={gemini_key}"
-                    r = requests.post(dyn_url, json=payload, timeout=12.0)
+            for m_full in m_list:
+                if "flash" in m_full or "pro" in m_full:
+                    dyn_url = f"https://generativelanguage.googleapis.com/v1beta/{m_full}:generateContent?key={gemini_key}"
+                    r = requests.post(dyn_url, json=payload, timeout=20.0)
                     if r.status_code == 200:
                         txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                         cleaned = re.sub(r"^```json\s*", "", txt.strip())
                         cleaned = re.sub(r"```$", "", cleaned.strip())
                         return json.loads(cleaned), None
     except Exception as e:
-        last_error = f"{last_error} | ListModels fallback failed: {str(e)}"
+        last_error = f"{last_error} | Dynamic lookup failed: {str(e)}"
 
-    return None, f"Could not connect to Gemini models ({last_error}). Please check your API key in Streamlit Secrets."
+    return None, f"Vision API error ({last_error}). Please check your API key in Streamlit Secrets."
 
 def match_game_in_pool(away_name, home_name, pool, picked_name=""):
     """Finds the index of a game in pool based on partial team name matches."""
@@ -1324,7 +1343,6 @@ elif menu_choice == "⚡ Single Game Engine":
                         home_t = parsed_res.get("home_team", "")
                         picked_t = parsed_res.get("picked_team", "")
                         
-                        # Match against current pool or all games (past 3 days + upcoming 7 days)
                         matched_idx = match_game_in_pool(away_t, home_t, pool, picked_t)
                         if matched_idx == 0 and pool and games_data:
                             full_idx = match_game_in_pool(away_t, home_t, games_data, picked_t)
@@ -1690,6 +1708,7 @@ elif menu_choice == "⚡ Single Game Engine":
             a_pts_in = st.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"ap_{g_id}_v{form_ver}")
             spread_line = st.number_input(f"{g['home_short']} Spread", value=float(espn_spread), step=0.5, format="%.1f", key=f"spd_{g_id}_v{form_ver}")
 
+        # Precise Wager Type Selection from Parser/Recommendation
         default_wtype = 0
         if applied:
             cat = str(applied.get("category", "")).lower()
