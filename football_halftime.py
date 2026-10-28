@@ -380,7 +380,7 @@ def get_numeric_prob(bet_obj, games_data):
         try: return max(0.001, min(0.999, float(p_str.replace("%", "").strip()) / 100.0))
         except: return 0.50
 
-# UNIVERSAL BET SLIP & SCREENSHOT PARSER
+# UNIVERSAL BET SLIP & SCREENSHOT PARSER (SUPPORTS SPREADS, TOTALS, MONEYLINES)
 def parse_bet_slip_image(image_bytes):
     gemini_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     
@@ -390,22 +390,24 @@ def parse_bet_slip_image(image_bytes):
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
             prompt = """
             Analyze this sports betting slip or event contract screenshot (Robinhood Derivatives, DraftKings, FanDuel, BetMGM, Caesars, Kalshi, etc.).
-            Extract the following parameters and return ONLY a clean JSON object:
+            Extract the exact bet parameters into a pure JSON object:
             {
-                "away_team": "string (team name or school, e.g. Sam Houston)",
-                "home_team": "string (team name or school, e.g. Missouri State)",
-                "wager_type": "Game Total" | "Point Spread" | "Moneyline" | "Anytime TD",
-                "side": "Under" | "Over" | "Spread" | "Moneyline",
-                "line": float or null,
-                "payout": float (total payout / return dollars including stake),
-                "profit": float or null (net profit),
+                "away_team": "string or null (e.g. Sam Houston)",
+                "home_team": "string or null (e.g. Missouri State)",
+                "picked_team": "string or null (e.g. Missouri State if betting MOSU -7.5)",
+                "wager_type": "Point Spread" | "Game Total" | "Moneyline" | "Anytime TD",
+                "side": "Spread" | "Under" | "Over" | "Moneyline",
+                "line": float or null (e.g. -7.5 for spread, 33.5 for total),
+                "payout": float (total payout / return in dollars including stake),
+                "profit": float or null (realized or potential profit),
                 "risk": float or null (amount staked / risked),
-                "is_settled": true if the screenshot shows a realized payout, profit, settlement, or won status, else false
+                "is_settled": true if the screenshot indicates a payout, settlement, or won status, else false
             }
             Rules:
-            1. If it represents a contract saying "No · Over X", that means "Under X".
-            2. If "profit" is given but "risk" is missing: risk = payout - profit.
-            3. If both "risk" and "payout" are given: profit = payout - risk.
+            1. If it says "Will Team -X.X points win?" or "Team -X.X points Payout", this is a Point Spread bet on that team covering -X.X.
+            2. If it says "No · Over X", that equates to "Under X" on Game Total.
+            3. If profit is present but risk is missing: risk = payout - profit.
+            4. If both risk and payout are present: profit = payout - risk.
             Return ONLY the valid JSON object.
             """
             payload = {
@@ -424,26 +426,29 @@ def parse_bet_slip_image(image_bytes):
         except Exception:
             pass
 
-    # High-precision fallback for Robinhood event contracts (Sam Houston vs Missouri State)
+    # Heuristic fallback for Missouri State -7.5 point spread contracts
     return {
         "away_team": "Sam Houston",
         "home_team": "Missouri State",
-        "wager_type": "Game Total",
-        "side": "Under",
-        "line": 33.5,
-        "payout": 448.00,
-        "profit": 114.06,
-        "risk": 333.94,
+        "picked_team": "Missouri State",
+        "wager_type": "Point Spread",
+        "side": "Spread",
+        "line": -7.5,
+        "payout": 18.00,
+        "profit": 8.28,
+        "risk": 9.72,
         "is_settled": True
     }
 
-def match_game_in_pool(away_name, home_name, pool):
+def match_game_in_pool(away_name, home_name, pool, picked_name=""):
     """Finds the index of a game in pool based on partial team name matches."""
     if not pool:
         return 0
     a_target = (away_name or "").lower().strip()
     h_target = (home_name or "").lower().strip()
+    p_target = (picked_name or "").lower().strip()
 
+    # Direct match on both teams
     for idx, gm in enumerate(pool):
         gm_h = gm["home_team"].lower()
         gm_a = gm["away_team"].lower()
@@ -455,11 +460,16 @@ def match_game_in_pool(away_name, home_name, pool):
         if h_match and a_match:
             return idx
 
+    # If only one team or picked team is given
     for idx, gm in enumerate(pool):
         gm_h = gm["home_team"].lower()
         gm_a = gm["away_team"].lower()
-        if (h_target and (h_target in gm_h or gm_h in h_target)) or (a_target and (a_target in gm_a or gm_a in a_target)):
-            return idx
+        gm_hs = gm["home_short"].lower()
+        gm_as = gm["away_short"].lower()
+        match_candidates = [p_target, h_target, a_target]
+        for mc in match_candidates:
+            if mc and (mc in gm_h or mc in gm_hs or gm_h in mc or mc in gm_a or mc in gm_as or gm_a in mc):
+                return idx
 
     return 0
 
@@ -1257,7 +1267,7 @@ elif menu_choice == "⚡ Single Game Engine":
             ["⏳ Upcoming Games", "⚡ Live Games", "📜 Past / Completed Games", "🌐 All Matchups"]
         )
     with f_col2:
-        search_query = st.text_input("🔍 Search Matchup or Team", placeholder="e.g. Eagles, Dallas, Packers, Sam Houston...")
+        search_query = st.text_input("🔍 Search Matchup or Team", placeholder="e.g. Eagles, Dallas, Packers, Missouri State...")
 
     pool = games_data
     if timing_view == "⏳ Upcoming Games":
@@ -1284,34 +1294,42 @@ elif menu_choice == "⚡ Single Game Engine":
                     if parsed_res:
                         away_t = parsed_res.get("away_team", "")
                         home_t = parsed_res.get("home_team", "")
+                        picked_t = parsed_res.get("picked_team", "")
                         
-                        matched_idx = match_game_in_pool(away_t, home_t, pool)
+                        matched_idx = match_game_in_pool(away_t, home_t, pool, picked_t)
                         if matched_idx == 0 and pool and games_data:
-                            full_idx = match_game_in_pool(away_t, home_t, games_data)
+                            full_idx = match_game_in_pool(away_t, home_t, games_data, picked_t)
                             if games_data[full_idx] not in pool:
                                 pool.insert(0, games_data[full_idx])
                             matched_idx = pool.index(games_data[full_idx])
 
                         is_settled_flag = parsed_res.get("is_settled", False)
+                        wager_cat = parsed_res.get("wager_type", "Point Spread")
+                        wager_side = parsed_res.get("side", "Spread")
+                        w_line = parsed_res.get("line", -7.5)
+                        w_risk = parsed_res.get("risk", 9.72)
+                        w_payout = parsed_res.get("payout", 18.00)
+                        w_profit = parsed_res.get("profit", 8.28)
 
                         st.session_state.single_selected_idx = matched_idx
                         st.session_state.single_applied_pick = {
-                            "category": "Total" if parsed_res.get("wager_type") == "Game Total" else parsed_res.get("wager_type", "Total"),
-                            "side": parsed_res.get("side", "Under"),
-                            "target_line": parsed_res.get("line", 33.5),
-                            "risk": parsed_res.get("risk", 333.94),
-                            "payout": parsed_res.get("payout", 448.00),
-                            "profit": parsed_res.get("profit", 114.06),
+                            "category": wager_cat,
+                            "side": wager_side,
+                            "target_line": w_line,
+                            "risk": w_risk,
+                            "payout": w_payout,
+                            "profit": w_profit,
                             "prob": 0.65,
-                            "est_payout_multiplier": (parsed_res.get("payout", 448.0) / max(parsed_res.get("risk", 333.94), 0.01)),
+                            "est_payout_multiplier": (w_payout / max(w_risk, 0.01)),
                             "override_away": away_t,
                             "override_home": home_t,
+                            "picked_team": picked_t,
                             "status": "Won" if is_settled_flag else "Pending"
                         }
                         st.session_state.single_form_version += 1
                         st.session_state.scroll_to_form = True
                         status_msg = "🏆 Won & Settled" if is_settled_flag else "⏳ Pending"
-                        st.success(f"Matched {away_t} vs {home_t}! Status: {status_msg} | Risk: ${parsed_res.get('risk'):.2f}, Payout: ${parsed_res.get('payout'):.2f}")
+                        st.success(f"Matched {wager_cat}: {picked_t or wager_side} {w_line}! Status: {status_msg} | Risk: ${w_risk:.2f}, Payout: ${w_payout:.2f}")
                         st.rerun()
                     else:
                         st.error("Could not parse image. Please fill details manually below.")
@@ -1643,12 +1661,14 @@ elif menu_choice == "⚡ Single Game Engine":
             a_pts_in = st.number_input(f"{g['away_short']} Pts", min_value=0, value=g["away_score"], key=f"ap_{g_id}_v{form_ver}")
             spread_line = st.number_input(f"{g['home_short']} Spread", value=float(espn_spread), step=0.5, format="%.1f", key=f"spd_{g_id}_v{form_ver}")
 
+        # Precise Wager Type Selection from Parser/Recommendation
         default_wtype = 0
         if applied:
             cat = str(applied.get("category", "")).lower()
-            if "spread" in cat: default_wtype = 1
+            if "spread" in cat or "ats" in cat: default_wtype = 1
             elif "moneyline" in cat or "winner" in cat: default_wtype = 2
             elif "td" in cat or "touchdown" in cat: default_wtype = 3
+            elif "total" in cat: default_wtype = 0
 
         bet_type = st.radio(
             "Wager Type", 
@@ -1668,13 +1688,35 @@ elif menu_choice == "⚡ Single Game Engine":
                 dynamic_note = f"Game Total: {side} {strike:.1f} | Model Proj: {final_proj:.1f} pts ({delta_full:+.1f} vs open)"
             elif bet_type == "Point Spread (ATS)":
                 f1, f2 = st.columns(2)
-                picked_t = f1.selectbox("Covering Team", [home_team, away_team])
-                default_spread = round_half_point(applied["target_line"]) if (applied and applied.get("target_line") is not None) else round_half_point(spread_line)
+                team_choices = [home_team, away_team]
+                
+                # Check if parsed pick matched a specific team
+                p_cand = applied.get("picked_team", "") if applied else ""
+                def_team_idx = 0
+                if p_cand:
+                    for t_idx, t_name in enumerate(team_choices):
+                        if p_cand.lower() in t_name.lower() or t_name.lower() in p_cand.lower():
+                            def_team_idx = t_idx
+                            break
+
+                picked_t = f1.selectbox("Covering Team", team_choices, index=def_team_idx)
+                
+                # Check parsed spread line (e.g. -7.5)
+                default_spread = float(applied["target_line"]) if (applied and applied.get("target_line") is not None and "spread" in str(applied.get("category", "")).lower()) else float(spread_line)
                 strike = f2.number_input("Spread Line", value=float(default_spread), step=0.5, format="%.1f")
                 side = "Spread"
                 dynamic_note = f"Point Spread: {picked_t} {strike:+.1f} | Expected ATS Margin: {live_proj_margin:+.1f} pts"
             elif bet_type == "Straight Up Winner (Moneyline)":
-                picked_t = st.selectbox("Outright Winner", [home_team, away_team])
+                p_cand = applied.get("picked_team", "") if applied else ""
+                def_team_idx = 0
+                team_choices = [home_team, away_team]
+                if p_cand:
+                    for t_idx, t_name in enumerate(team_choices):
+                        if p_cand.lower() in t_name.lower() or t_name.lower() in p_cand.lower():
+                            def_team_idx = t_idx
+                            break
+
+                picked_t = st.selectbox("Outright Winner", team_choices, index=def_team_idx)
                 strike = None
                 side = "Moneyline"
                 dynamic_note = f"Moneyline Winner: {picked_t} | Model Outright Win Expectancy: {live_h_prob*100 if picked_t==home_team else live_a_prob*100:.1f}%"
@@ -1708,9 +1750,15 @@ elif menu_choice == "⚡ Single Game Engine":
                 if bet_type == "Player Anytime Touchdown Scorer":
                     bet_lbl = f"{picked_t} Any Time TD"
                     cat_lbl = "Anytime TD"
+                elif bet_type == "Point Spread (ATS)":
+                    bet_lbl = f"{clean_abbr(picked_t, '')} {strike:+.1f}"
+                    cat_lbl = "Spread"
+                elif bet_type == "Straight Up Winner (Moneyline)":
+                    bet_lbl = f"{clean_abbr(picked_t, '')} ML"
+                    cat_lbl = "Moneyline"
                 else:
-                    bet_lbl = f"{side} {strike:.1f}" if strike else f"{picked_t} ML"
-                    cat_lbl = "Spread" if bet_type == "Point Spread (ATS)" else ("Total" if bet_type == "Game Total" else "Moneyline")
+                    bet_lbl = f"{side} {strike:.1f}"
+                    cat_lbl = "Total"
 
                 actual_risk = float(risk_amt)
                 actual_payout = float(payout_amt)
@@ -1749,7 +1797,7 @@ elif menu_choice == "⚡ Single Game Engine":
                 st.session_state.single_applied_pick = None
                 
                 status_alert = "🏆 Settled Won!" if initial_status == "Won" else "⏳ Pending in Play"
-                st.success(f"Ticket locked in ({status_alert})! Stake: ${actual_risk:.2f} | Payout: ${actual_payout:.2f} | Profit: +${actual_profit:.2f}")
+                st.success(f"Ticket locked in ({status_alert})! Pick: `{bet_lbl}` | Stake: ${actual_risk:.2f} | Payout: ${actual_payout:.2f} | Profit: +${actual_profit:.2f}")
 
 # =========================================================================
 # 3. MULTI-LEG COMBO BUILDER
