@@ -19,7 +19,6 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         target_game.get("away_record", "0-0")
     )
 
-    is_mixed = "Mixed" in strat_choice
     is_safe_profile = "Safe Floor" in strat_choice
     is_high_profit = "High Profit" in strat_choice
     is_balanced = "Balanced" in strat_choice
@@ -74,12 +73,10 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
 
         if is_nba:
             p_line = max(10.5, round_half_point(float(base_pts) - 5.5))
-            bst_pick = f"{star_nba_player} Over {p_line:.1f} Pts"
-            best_card = make_card("🥇 BEST (Elite Floor Clearance)", "#4ade80", bst_pick, "Player Points Prop", "Over", p_line, star_nba_player, 0.74, f"Heavy usage baseline for {star_nba_player} bought down 5+ pts.")
+            best_card = make_card("🥇 BEST (Elite Floor Clearance)", "#4ade80", f"{star_nba_player} Over {p_line:.1f} Pts", "Player Points Prop", "Over", p_line, star_nba_player, 0.74, f"Heavy usage baseline for {star_nba_player} bought down 5+ pts.")
         else:
             u_line = round_half_point(ou_open + 5.5)
-            bst_pick = f"Under {u_line:.1f}"
-            best_card = make_card("🥇 BEST (High Probability Under)", "#4ade80", bst_pick, "Game Total", "Under", u_line, target_game["home_team"], 0.72, "Defensive tempo margin creates exceptional clearance probability.")
+            best_card = make_card("🥇 BEST (High Probability Under)", "#4ade80", f"Under {u_line:.1f}", "Game Total", "Under", u_line, target_game["home_team"], 0.72, "Defensive tempo margin creates exceptional clearance probability.")
 
         return {"good": good_card, "better": better_card, "best": best_card}
 
@@ -89,7 +86,7 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         g_line = round_half_point(fav_spread - 2.5)
         good_card = make_card("🥉 GOOD (Aggressive Spread Lay)", "#38bdf8", f"{g_team} {g_line:+.1f}", "Point Spread (ATS)", "Spread", g_line, g_team, 0.49, f"Alternate chalk lay on {g_team} for amplified multiplier yield.")
 
-        better_card = make_card("🥈 BETTER (Outright Dog Alpha)", "#fbbf24", f"{dog_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, dog_team, 0.44, f"Outright dog play capitalizing on matchup tempo variance.")
+        better_card = make_card("🥈 BETTER (Outright Dog Alpha)", "#fbbf24", f"{dog_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, dog_team, 0.44, "Outright dog play capitalizing on matchup tempo variance.")
 
         if is_nba:
             p_line = round_half_point(float(base_pts) + 3.5)
@@ -104,7 +101,7 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         g_line = round_half_point(ou_open + (2.5 if is_nba else 1.5))
         good_card = make_card("🥉 GOOD (Solid Edge Total)", "#38bdf8", f"Under {g_line:.1f}", "Game Total", "Under", g_line, target_game["home_team"], 0.58, "Balanced total retaining a favorable expected-value cushion.")
 
-        better_card = make_card("🥈 BETTER (Consensus ATS Edge)", "#fbbf24", f"{fav_team} {fav_spread:+.1f}", "Point Spread (ATS)", "Spread", fav_spread, fav_team, 0.55, f"Core power ratings confirm edge vs consensus market line.")
+        better_card = make_card("🥈 BETTER (Consensus ATS Edge)", "#fbbf24", f"{fav_team} {fav_spread:+.1f}", "Point Spread (ATS)", "Spread", fav_spread, fav_team, 0.55, "Core power ratings confirm edge vs consensus market line.")
 
         if is_nba:
             best_card = make_card("🥇 BEST (Balanced Volume Prop)", "#4ade80", f"{star_nba_player} Over {float(base_pts):.1f} Pts", "Player Points Prop", "Over", float(base_pts), star_nba_player, 0.59, "Steady volume and defensive mismatch align with consensus strike.")
@@ -129,6 +126,9 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
 
         return {"good": good_card, "better": better_card, "best": best_card}
 
+def trigger_tier_auto_refresh():
+    st.session_state.sg_needs_tier_calc = True
+
 def render_single_game(curr_user, active_uname, games_data, get_current_et_time_fn):
     st.subheader("⚡ Single Game Analytics Engine")
     st.caption("Algorithmic single-matchup scanner, pace regression model, and tiered Good/Better/Best recommendations.")
@@ -137,14 +137,12 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         st.session_state.single_tier_picks = None
     if "single_active_bet" not in st.session_state:
         st.session_state.single_active_bet = None
-    if "single_engine_version" not in st.session_state:
-        st.session_state.single_engine_version = 0
-    if "sg_last_config" not in st.session_state:
-        st.session_state.sg_last_config = None
+    if "sg_form_nonce" not in st.session_state:
+        st.session_state.sg_form_nonce = 0
+    if "sg_needs_tier_calc" not in st.session_state:
+        st.session_state.sg_needs_tier_calc = False
 
-    eng_ver = st.session_state.single_engine_version
-
-    # AI Optimizer Controls
+    # AI Optimizer Controls (Fixed permanent keys with on_change callbacks)
     with st.container(border=True):
         st.markdown("#### 🤖 AI Single Game Optimizer")
 
@@ -152,15 +150,15 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         league_choice = c1.selectbox(
             "Primary League / Slate Scope",
             options=["All Games (Cross-Sport)", "NBA", "NFL", "NCAA Football"],
-            index=0,
-            key=f"sg_league_{eng_ver}"
+            key="sg_static_league",
+            on_change=trigger_tier_auto_refresh
         )
 
         t_filter = c2.selectbox(
             "Game Filter Status",
             options=["⏳ Upcoming Games", "⚡ Live Games", "🌐 All Matchups"],
-            index=0,
-            key=f"sg_t_filter_{eng_ver}"
+            key="sg_static_filter",
+            on_change=trigger_tier_auto_refresh
         )
 
         if league_choice == "NBA":
@@ -193,8 +191,8 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         chosen_market = c3.selectbox(
             "Target Bet / Market Type",
             market_options,
-            index=0,
-            key=f"sg_market_{eng_ver}"
+            key="sg_static_market",
+            on_change=trigger_tier_auto_refresh
         )
 
         strat_options = [
@@ -206,13 +204,14 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         strat_choice = c4.selectbox(
             "Model Strategy Profile",
             options=strat_options,
-            index=0,
-            key=f"sg_strat_{eng_ver}"
+            key="sg_static_strat",
+            on_change=trigger_tier_auto_refresh
         )
 
         col_q, col_btn = st.columns([3.5, 1.5], vertical_alignment="bottom")
-        q_filter = col_q.text_input("🔍 Search Matchup", placeholder="e.g. Celtics, Lakers, Chiefs...", key=f"sg_q_filter_{eng_ver}")
+        q_filter = col_q.text_input("🔍 Search Matchup", placeholder="e.g. Celtics, Lakers, Chiefs...", key="sg_static_search", on_change=trigger_tier_auto_refresh)
 
+        # Matchup Pool Resolution
         pool = games_data
         if league_choice == "NBA":
             pool = [g for g in pool if g.get("league") == "NBA"]
@@ -230,26 +229,15 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             q = q_filter.strip().lower()
             pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
-        # Active configuration signature
-        current_cfg = (
-            league_choice,
-            t_filter,
-            chosen_market,
-            strat_choice,
-            pool[0].get("game_id", pool[0].get("home_short")) if pool else None
-        )
-
-        # REACTION LOGIC: If tiers are already showing and settings change, auto-update instantly
-        if st.session_state.single_tier_picks is not None and pool:
-            if st.session_state.sg_last_config is not None and st.session_state.sg_last_config != current_cfg:
+        # Auto-recalculate if an input changed and tiers were already generated
+        if st.session_state.sg_needs_tier_calc and st.session_state.single_tier_picks is not None:
+            if pool:
                 st.session_state.single_tier_picks = build_single_game_tiers(pool[0], chosen_market, strat_choice)
-                st.session_state.sg_last_config = current_cfg
-                st.session_state.single_engine_version += 1
-                st.rerun()
+            st.session_state.sg_needs_tier_calc = False
 
         if col_btn.button("⚡ Generate Tiers", use_container_width=True, disabled=len(pool) == 0):
             st.session_state.single_tier_picks = build_single_game_tiers(pool[0], chosen_market, strat_choice)
-            st.session_state.sg_last_config = current_cfg
+            st.session_state.sg_needs_tier_calc = False
             st.rerun()
 
     # 3-Tier Recommendation Cards
@@ -292,9 +280,9 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                     """, unsafe_allow_html=True)
 
                     btn_type = "primary" if t_key == "best" else "secondary"
-                    if st.button(f"📥 Load {t_key.capitalize()} Pick", key=f"btn_load_{t_key}_{eng_ver}", type=btn_type, use_container_width=True):
+                    if st.button(f"📥 Load {t_key.capitalize()} Pick", key=f"btn_load_{t_key}", type=btn_type, use_container_width=True):
                         st.session_state.single_active_bet = dict(pick_data)
-                        st.session_state.single_engine_version += 1
+                        st.session_state.sg_form_nonce += 1
                         st.toast(f"✅ Loaded {pick_data['pick_label']} into ticket slip below!", icon="📥")
                         st.rerun()
 
@@ -312,11 +300,12 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         if st.button("➕ Set Up Bet Manually", use_container_width=True):
             def_tiers = build_single_game_tiers(pool[0], chosen_market, strat_choice)
             st.session_state.single_active_bet = dict(def_tiers["better"])
-            st.session_state.single_engine_version += 1
+            st.session_state.sg_form_nonce += 1
             st.rerun()
         return
 
     cur_bet = st.session_state.single_active_bet
+    f_nonce = st.session_state.sg_form_nonce
 
     default_matchup_idx = 0
     cur_matchup_str = cur_bet.get("matchup_str", "")
@@ -331,7 +320,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             range(len(choices)),
             index=default_matchup_idx,
             format_func=lambda x: choices[x],
-            key=f"sg_matchup_dropdown_{eng_ver}"
+            key=f"sg_matchup_sel_{f_nonce}"
         )
         selected_gm = pool[sel_idx]
         is_nba = (selected_gm.get("league") == "NBA")
@@ -349,15 +338,15 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                 w_idx = i_wt
                 break
 
-        chosen_wtype = st.radio("Market", m_types, index=w_idx, horizontal=True, key=f"sg_wtype_radio_{eng_ver}")
+        chosen_wtype = st.radio("Market", m_types, index=w_idx, horizontal=True, key=f"sg_radio_wtype_{f_nonce}")
 
         if chosen_wtype == "Game Total":
             c1, c2 = st.columns(2)
             cur_s = cur_bet.get("side", "Under")
             s_idx = 0 if str(cur_s).lower() == "under" else 1
-            c_side = c1.selectbox("Side", ["Under", "Over"], index=s_idx, key=f"sg_side_{eng_ver}")
+            c_side = c1.selectbox("Side", ["Under", "Over"], index=s_idx, key=f"sg_side_{f_nonce}")
             default_line = float(round_half_point(cur_bet.get("line") if cur_bet.get("line") is not None else selected_gm.get("market_ou", 224.5 if is_nba else 47.5)))
-            c_line = c2.number_input("Line (pts)", value=default_line, step=0.5, key=f"sg_line_{eng_ver}")
+            c_line = c2.number_input("Line (pts)", value=default_line, step=0.5, key=f"sg_line_{f_nonce}")
             bet_title = f"{c_side} {c_line:.1f}"
             picked_t = selected_gm["home_team"]
             prob_est = calculate_win_prob(c_line, (218.0 if is_nba else 43.0), (12.0 if is_nba else 7.0), is_under=(c_side == "Under"))
@@ -366,9 +355,9 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             c1, c2 = st.columns(2)
             cur_p = str(cur_bet.get("picked_team", selected_gm["home_team"])).lower()
             cov_idx = 1 if cur_p in selected_gm["away_team"].lower() else 0
-            picked_t = c1.selectbox("Covering Team", [selected_gm["home_team"], selected_gm["away_team"]], index=cov_idx, key=f"sg_cover_{eng_ver}")
+            picked_t = c1.selectbox("Covering Team", [selected_gm["home_team"], selected_gm["away_team"]], index=cov_idx, key=f"sg_cov_{f_nonce}")
             default_spd = float(round_half_point(cur_bet.get("line") if cur_bet.get("line") is not None else selected_gm.get("market_spread", -3.5)))
-            c_line = c2.number_input("Spread", value=default_spd, step=0.5, key=f"sg_spd_{eng_ver}")
+            c_line = c2.number_input("Spread", value=default_spd, step=0.5, key=f"sg_spd_{f_nonce}")
             c_side = "Spread"
             bet_title = f"{picked_t} {c_line:+.1f}"
             prob_est = 0.54
@@ -376,7 +365,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         elif chosen_wtype == "Straight Up Winner (Moneyline)":
             cur_p = str(cur_bet.get("picked_team", selected_gm["home_team"])).lower()
             win_idx = 1 if cur_p in selected_gm["away_team"].lower() else 0
-            picked_t = st.selectbox("Outright Winner", [selected_gm["home_team"], selected_gm["away_team"]], index=win_idx, key=f"sg_ml_{eng_ver}")
+            picked_t = st.selectbox("Outright Winner", [selected_gm["home_team"], selected_gm["away_team"]], index=win_idx, key=f"sg_ml_{f_nonce}")
             c_side, c_line = "Moneyline", 0.0
             bet_title = f"{picked_t} ML"
             add_score = 40 if is_nba else 14
@@ -390,11 +379,11 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             all_p = [p[0] for p in (h_roster + a_roster)]
             cur_p = cur_bet.get("picked_team")
             p_idx_sel = all_p.index(cur_p) if cur_p in all_p else 0
-            picked_t = c1.selectbox("Player", all_p, index=p_idx_sel, key=f"sg_nba_p_{eng_ver}")
+            picked_t = c1.selectbox("Player", all_p, index=p_idx_sel, key=f"sg_pts_p_{f_nonce}")
             s_prop_idx = 0 if cur_bet.get("side", "Over") == "Over" else 1
-            c_side = c2.selectbox("Side", ["Over", "Under"], index=s_prop_idx, key=f"sg_nba_s_{eng_ver}")
+            c_side = c2.selectbox("Side", ["Over", "Under"], index=s_prop_idx, key=f"sg_pts_s_{f_nonce}")
             default_pts = float(cur_bet.get("line") if cur_bet.get("line") is not None else 22.5)
-            c_line = st.number_input("Points Line", value=default_pts, step=0.5, key=f"sg_nba_l_{eng_ver}")
+            c_line = st.number_input("Points Line", value=default_pts, step=0.5, key=f"sg_pts_l_{f_nonce}")
             bet_title = f"{picked_t} {c_side} {c_line:.1f} Pts"
             prob_est = 0.58
 
@@ -404,12 +393,12 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             all_p = [p[0] for p in (h_roster + a_roster)]
             cur_p = cur_bet.get("picked_team")
             td_idx_sel = all_p.index(cur_p) if cur_p in all_p else 0
-            picked_t = st.selectbox("Player to Score TD", all_p, index=td_idx_sel, key=f"sg_nfl_p_{eng_ver}")
+            picked_t = st.selectbox("Player to Score TD", all_p, index=td_idx_sel, key=f"sg_td_p_{f_nonce}")
             c_side, c_line = "TD", 1.0
             bet_title = f"{picked_t} Any Time TD"
             prob_est = 0.48
 
-        with st.form(f"single_ticket_submit_form_{eng_ver}"):
+        with st.form(f"single_ticket_submit_form_{f_nonce}"):
             rc, pc = st.columns(2)
             risk = rc.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
             payout = pc.number_input("Payout ($)", min_value=1.0, value=19.10, step=5.0)
