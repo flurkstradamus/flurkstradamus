@@ -3,18 +3,8 @@ from datetime import datetime
 from config import DEFAULT_LOGO
 from database import save_all_storage
 from sports.football import round_half_point, get_live_football_roster
-from sports.basketball import get_live_nba_roster
+from sports.basketball import get_live_nba_roster, get_live_nba_3pm_roster
 from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
-
-try:
-    from sports.basketball import get_live_nba_3pm_roster
-except ImportError:
-    def get_live_nba_3pm_roster(t_id):
-        return [
-            ("Donovan Mitchell", "SG", 3.5, 26.5),
-            ("Darius Garland", "PG", 2.5, 19.5),
-            ("Sam Merrill", "SG", 2.5, 12.0)
-        ]
 
 def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
     if not target_gm:
@@ -102,8 +92,8 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
 
     # 2. SPECIFIC MARKET: NBA PLAYER POINTS PROPS
     if is_points_prop and is_nba:
-        h_roster = get_live_nba_roster(target_gm.get("home_id") or target_gm.get("home_short")) or [("Home Star", "G", 24.5)]
-        a_roster = get_live_nba_roster(target_gm.get("away_id") or target_gm.get("away_short")) or [("Away Star", "G", 22.5)]
+        h_roster = get_live_nba_roster(target_gm.get("home_short") or target_gm.get("home_id"))
+        a_roster = get_live_nba_roster(target_gm.get("away_short") or target_gm.get("away_id"))
 
         combined_players = []
         max_len = max(len(h_roster), len(a_roster))
@@ -385,7 +375,7 @@ def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice, lead
             })
 
             # Points Prop
-            h_roster = get_live_nba_roster(gm.get("home_id") or gm.get("home_short")) or [("Primary Scorer", "G", 22.5)]
+            h_roster = get_live_nba_roster(gm.get("home_short") or gm.get("home_id"))
             star_player, _, base_pts = h_roster[0]
             p_pts_l = max(9.5, round_half_point(float(base_pts) - 5.5)) if is_safe else float(base_pts)
             candidates.append({
@@ -503,6 +493,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             on_change=trigger_combo_auto_refresh
         )
 
+        # Dynamic options list based on active league
         if league_choice == "NBA":
             market_options = [
                 "⚡ Let the System Pick (Best NBA Discrepancy)",
