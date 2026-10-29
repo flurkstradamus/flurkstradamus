@@ -2,7 +2,8 @@ import streamlit as st
 from datetime import datetime
 from config import DEFAULT_LOGO
 from database import save_all_storage
-from sports.football import round_half_point
+from sports.football import round_half_point, get_live_football_roster
+from sports.basketball import get_live_nba_roster
 from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
 
 def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice):
@@ -18,6 +19,8 @@ def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice):
     is_totals_only = "Totals" in chosen_market
     is_spreads_only = "Spreads" in chosen_market
     is_ml_only = "Straight Up" in chosen_market or "Moneyline" in chosen_market
+    is_points_prop = "Player Points" in chosen_market
+    is_td_prop = "Touchdown" in chosen_market
 
     candidates = []
 
@@ -124,12 +127,56 @@ def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice):
             "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}"
         })
 
+        # 4. PLAYER PROPS CANDIDATES
+        if is_nba:
+            h_roster = get_live_nba_roster(gm.get("home_id") or gm.get("home_short")) or [("Primary Scorer", "G", 22.5)]
+            star_player, _, base_pts = h_roster[0]
+            if is_safe:
+                prop_line = max(9.5, round_half_point(float(base_pts) - 5.5))
+                prop_prob = 0.74
+            elif is_high_profit:
+                prop_line = round_half_point(float(base_pts) + 3.5)
+                prop_prob = 0.44
+            else:
+                prop_line = float(base_pts)
+                prop_prob = 0.58
+
+            candidates.append({
+                "game": gm,
+                "type": "Player Points Prop",
+                "side": "Over",
+                "line": prop_line,
+                "picked_team": star_player,
+                "desc": f"{star_player} Over {prop_line:.1f} Pts",
+                "prob": prop_prob,
+                "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}"
+            })
+        else:
+            f_roster = get_live_football_roster(gm.get("home_id") or gm.get("home_short"), gm.get("league")) or [("Primary RB", "RB")]
+            star_fb = f_roster[0][0]
+            td_prob = 0.46 if is_high_profit else (0.54 if is_safe else 0.49)
+            candidates.append({
+                "game": gm,
+                "type": "Football Anytime Touchdown Scorer",
+                "side": "TD",
+                "line": 1.0,
+                "picked_team": star_fb,
+                "desc": f"{star_fb} Any Time TD",
+                "prob": td_prob,
+                "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}"
+            })
+
+    # Filter candidates by chosen market
     if is_totals_only:
         filtered = [c for c in candidates if c["type"] == "Game Total"]
     elif is_spreads_only:
         filtered = [c for c in candidates if c["type"] == "Point Spread (ATS)"]
     elif is_ml_only:
         filtered = [c for c in candidates if "Moneyline" in c["type"]]
+    elif is_points_prop:
+        filtered = [c for c in candidates if c["type"] == "Player Points Prop"]
+    elif is_td_prop:
+        filtered = [c for c in candidates if "Touchdown" in c["type"]]
     else:
         filtered = candidates
 
@@ -165,7 +212,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     with st.container(border=True):
         st.markdown("#### 🤖 AI Multi-Leg Optimizer")
 
-        # ROW 1 (3 Columns): League, Game Filter, Target # of Legs
+        # ROW 1 (3 Columns): Primary League / Slate Scope, Game Filter Status, Target # of Legs
         r1_c1, r1_c2, r1_c3 = st.columns(3)
 
         league_choice = r1_c1.selectbox(
@@ -182,7 +229,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             on_change=trigger_combo_auto_refresh
         )
 
-        # Whole integer stepper (moves by 1 at a time)
         num_legs = r1_c3.number_input(
             "Target # of Legs",
             min_value=2,
@@ -193,34 +239,38 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             on_change=trigger_combo_auto_refresh
         )
 
-        # Dynamic Market Focus List Based on League
+        # Dynamic Market Focus List Based on League (matching Single Game Engine)
         if league_choice == "NBA":
             market_options = [
-                "⚡ Let the System Pick (Best NBA Multi-Market Mix)",
-                "📊 Game Totals Only (Over / Under)",
-                "🛡️ Point Spreads Only (ATS Cover)",
-                "🏆 Straight Up Winners Only (Moneyline)"
+                "⚡ Let the System Pick (Best NBA Discrepancy)",
+                "📊 Game Totals (Over / Under)",
+                "🛡️ Point Spreads (ATS Cover)",
+                "🏆 Straight Up Winners (Moneyline)",
+                "🏀 NBA Player Points Prop"
             ]
         elif league_choice in ["NFL", "NCAA Football"]:
             market_options = [
-                "⚡ Let the System Pick (Best Football Multi-Market Mix)",
-                "📊 Game Totals Only (Over / Under)",
-                "🛡️ Point Spreads Only (ATS Cover)",
-                "🏆 Straight Up Winners Only (Moneyline)"
+                "⚡ Let the System Pick (Best Football Discrepancy)",
+                "📊 Game Totals (Over / Under)",
+                "🛡️ Point Spreads (ATS Cover)",
+                "🏆 Straight Up Winners (Moneyline)",
+                "🏈 Football Anytime Touchdown Scorer"
             ]
         else:
             market_options = [
-                "⚡ Let the System Pick (Best Cross-Sport Mix)",
-                "📊 Game Totals Only (Over / Under)",
-                "🛡️ Point Spreads Only (ATS Cover)",
-                "🏆 Straight Up Winners Only (Moneyline)"
+                "⚡ Let the System Pick (Best Discrepancy)",
+                "📊 Game Totals (Over / Under)",
+                "🛡️ Point Spreads (ATS Cover)",
+                "🏆 Straight Up Winners (Moneyline)",
+                "🏀 NBA Player Points Prop",
+                "🏈 Football Anytime Touchdown Scorer"
             ]
 
-        # ROW 2 (2 Columns): Target Market Focus, Combo Strategy Profile
+        # ROW 2 (2 Columns): Target Bet / Market Type, Model Strategy Profile
         r2_c1, r2_c2 = st.columns(2)
 
         chosen_market = r2_c1.selectbox(
-            "Target Market Focus",
+            "Target Bet / Market Type",
             options=market_options,
             key="cb_static_market",
             on_change=trigger_combo_auto_refresh
@@ -233,7 +283,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             "🚀 High Profit (Max Multiplier & Longshots)"
         ]
         strat_choice = r2_c2.selectbox(
-            "Combo Strategy Profile",
+            "Model Strategy Profile",
             options=strat_options,
             index=0,
             key="cb_static_strat",
