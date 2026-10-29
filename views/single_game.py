@@ -11,10 +11,9 @@ try:
 except ImportError:
     def get_live_nba_3pm_roster(t_id):
         return [
-            ("Primary Guard", "PG", 2.5, 24.5),
-            ("Sharpshooter Wing", "SG", 2.5, 20.5),
-            ("Starting Forward", "SF", 1.5, 18.0),
-            ("Stretch Big", "PF", 1.5, 15.5)
+            ("Donovan Mitchell", "SG", 3.5, 26.5),
+            ("Darius Garland", "PG", 2.5, 19.5),
+            ("Sam Merrill", "SG", 2.5, 12.0)
         ]
 
 def build_single_game_tiers(target_game, chosen_market, strat_choice):
@@ -43,7 +42,7 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
     is_td_prop = "Touchdown" in chosen_market and not is_nba
 
     h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short")) if is_nba else []
-    h_3pm_roster = get_live_nba_3pm_roster(target_game.get("home_id") or target_game.get("home_short")) if is_nba else []
+    h_3pm_roster = get_live_nba_3pm_roster(target_game.get("home_short") or target_game.get("home_id")) if is_nba else []
     f_roster = get_live_football_roster(target_game.get("home_id") or target_game.get("home_short"), target_game.get("league")) if not is_nba else []
 
     star_nba_player, _, base_pts = h_roster[0] if h_roster else ("Primary Scorer", "G", 22.5)
@@ -481,8 +480,8 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
         elif chosen_wtype == "NBA Player 3-Pointers Made":
             c1, c2 = st.columns(2)
-            h_roster = get_live_nba_3pm_roster(selected_gm.get("home_id") or selected_gm.get("home_short"))
-            a_roster = get_live_nba_3pm_roster(selected_gm.get("away_id") or selected_gm.get("away_short"))
+            h_roster = get_live_nba_3pm_roster(selected_gm.get("home_short") or selected_gm.get("home_id"))
+            a_roster = get_live_nba_3pm_roster(selected_gm.get("away_short") or selected_gm.get("away_id"))
             all_p = [p[0] for p in (h_roster + a_roster)]
             cur_p = cur_bet.get("picked_team")
             p_idx_sel = all_p.index(cur_p) if cur_p in all_p else 0
