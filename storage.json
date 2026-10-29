@@ -1,6 +1,27 @@
 {
   "saved_bets": [
     {
+      "id": "1793293916.427736",
+      "user": "Flurk",
+      "date": "2026-10-29 13:11 ET",
+      "type": "Single",
+      "bet_category": "Game Total",
+      "home_team": "Atlanta Hawks",
+      "away_team": "Cleveland Cavaliers",
+      "picked_team": "Atlanta Hawks",
+      "matchup": "CLE @ ATL",
+      "bet": "Under 246.5",
+      "target_line": 246.5,
+      "bet_direction": "Under",
+      "risk_dollars": 10.0,
+      "payout_dollars": 13.0,
+      "payout": 13.0,
+      "locked_profit": 3.0,
+      "win_prob": "99.1%",
+      "status": "Pending",
+      "notes": "[NBA] Game Total"
+    },
+    {
       "id": "1793292974.5430871936",
       "user": "Flurk",
       "date": "2026-10-29 12:56 ET",
@@ -335,7 +356,7 @@
       "share_feed": true,
       "searches": [],
       "reset_token": null,
-      "session_token": "KkcM49LgOMYJgzcSa1R5BzCffe8WszQh",
+      "session_token": "S9RN64xBo1JSyDHeU5Lso9IpNWWgw1ET",
       "is_verified": true
     }
   },
