@@ -207,14 +207,12 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         st.session_state.cb_form_nonce = 0
     if "cb_needs_refresh" not in st.session_state:
         st.session_state.cb_needs_refresh = False
-    if "cb_editing_idx" not in st.session_state:
-        st.session_state.cb_editing_idx = None
 
     # AI Combo Optimizer Controls
     with st.container(border=True):
         st.markdown("#### 🤖 AI Multi-Leg Optimizer")
 
-        # ROW 1 (3 Columns): Primary League / Slate Scope, Game Filter Status, Target # of Legs
+        # ROW 1 (3 Columns): Primary League, Filter Status, Target # of Legs
         r1_c1, r1_c2, r1_c3 = st.columns(3)
 
         league_choice = r1_c1.selectbox(
@@ -323,7 +321,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 st.session_state.combo_active_legs = generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice)
                 st.session_state.cb_needs_refresh = False
                 st.session_state.cb_form_nonce += 1
-                st.session_state.cb_editing_idx = None
                 st.rerun()
 
     # MANUAL LEG BUILDER SECTION
@@ -394,14 +391,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     if legs:
         st.markdown("---")
-        h_col1, h_col2 = st.columns([3.5, 1.5], vertical_alignment="center")
-        with h_col1:
-            st.markdown(f"#### 🎟️ Active {len(legs)}-Leg Combo Ticket")
-        with h_col2:
-            if st.button("🗑️ Clear All Legs", use_container_width=True):
-                st.session_state.combo_active_legs = []
-                st.session_state.cb_editing_idx = None
-                st.rerun()
 
         # Compound probability calculation
         compound_p = 1.0
@@ -413,25 +402,42 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         fair_mult = max(1.1, round(1.0 / compound_p, 2))
         est_roi_pct = int((fair_mult - 1.0) * 100)
 
-        # Header Telemetry Row
+        # Header Telemetry Row with Clean Popover Edit Trigger
         with st.container(border=True):
-            st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+            hdr_left, hdr_right = st.columns([3.5, 2.5], vertical_alignment="center")
+            with hdr_left:
+                st.markdown(f"""
                 <div style="font-size:1.05rem; font-weight:700;">
                     🔗 {len(legs)}-Leg Parlay <span style="opacity:0.6; font-size:0.80rem;">({strat_choice.split()[1]})</span>
                 </div>
-                <div style="display:flex; gap:6px;">
-                    <span style="background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 10px; border-radius:6px; font-weight:700; font-size:0.82rem;">
-                        🎲 Compound Win Prob: {compound_p * 100:.1f}%
-                    </span>
-                    <span style="background:#22c55e; color:#000; padding:3px 10px; border-radius:6px; font-weight:800; font-size:0.82rem;">
-                        Est. Fair Payout: {fair_mult:.2f}x (+{est_roi_pct}%)
-                    </span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            with hdr_right:
+                r_c1, r_c2, r_c3 = st.columns([2.0, 2.0, 1.4], vertical_alignment="center")
+                with r_c1:
+                    st.markdown(f"<span style='background:rgba(56,189,248,0.15); color:#38bdf8; padding:3px 8px; border-radius:6px; font-weight:700; font-size:0.78rem; white-space:nowrap;'>🎲 {compound_p * 100:.1f}% Prob</span>", unsafe_allow_html=True)
+                with r_c2:
+                    st.markdown(f"<span style='background:#22c55e; color:#000; padding:3px 8px; border-radius:6px; font-weight:800; font-size:0.78rem; white-space:nowrap;'>{fair_mult:.2f}x (+{est_roi_pct}%)</span>", unsafe_allow_html=True)
+                with r_c3:
+                    # Clean Popover for Managing/Removing Legs
+                    with st.popover("✏️ Edit", use_container_width=True):
+                        st.markdown("**Manage Ticket Legs**")
+                        st.caption("Remove or deselect any leg from this ticket.")
+                        for idx, l_item in enumerate(legs):
+                            col_txt, col_del = st.columns([4.2, 1.0], vertical_alignment="center")
+                            with col_txt:
+                                st.markdown(f"<div style='font-size:0.82rem;'><strong>#{idx+1}</strong> {l_item.get('desc')} <span style='opacity:0.6;'>({l_item.get('matchup')})</span></div>", unsafe_allow_html=True)
+                            with col_del:
+                                if st.button("🗑️", key=f"pop_del_{idx}_{l_item.get('desc')}", help="Remove this leg"):
+                                    st.session_state.combo_active_legs.pop(idx)
+                                    st.rerun()
+                        st.divider()
+                        if st.button("🗑️ Clear All Legs", type="secondary", use_container_width=True):
+                            st.session_state.combo_active_legs = []
+                            st.rerun()
 
-            # Render Each Leg Item with Inline Edit and Remove
+            st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+            # Clean Full-Width Leg Rows (No cluttering individual buttons)
             for idx, leg_item in enumerate(legs):
                 gm = leg_item["game"]
                 a_logo = gm.get("away_logo") or DEFAULT_LOGO
@@ -440,107 +446,28 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 h_sh = gm.get("home_short", "HOME")
                 p_val = leg_item.get("prob", 0.55) * 100
 
-                row_col1, row_col2, row_col3 = st.columns([4.8, 0.6, 0.6], vertical_alignment="center")
-                with row_col1:
-                    st.markdown(f"""
-                    <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:10px 14px; margin-bottom:4px; flex-wrap:wrap; gap:8px;">
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <span style="background:rgba(255,255,255,0.08); color:#f8fafc; font-weight:800; padding:2px 8px; border-radius:4px; font-size:0.80rem;">
-                                #{idx+1}
-                            </span>
-                            <img src="{a_logo}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
-                            <strong>{a_sh}</strong>
-                            <span style="opacity:0.35;">@</span>
-                            <img src="{h_logo}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
-                            <strong>{h_sh}</strong>
-                            <span style="opacity:0.6; font-size:0.75rem;">[{gm.get('league', 'SPORTS')}]</span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:12px;">
-                            <span style="font-weight:700; color:#4ade80; font-size:0.95rem;">{leg_item.get('desc')}</span>
-                            <span style="opacity:0.6; font-size:0.78rem;">{leg_item.get('type')}</span>
-                            <span style="background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700;">
-                                {p_val:.1f}% Leg Win
-                            </span>
-                        </div>
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:10px 14px; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="background:rgba(255,255,255,0.08); color:#f8fafc; font-weight:800; padding:2px 8px; border-radius:4px; font-size:0.80rem;">
+                            #{idx+1}
+                        </span>
+                        <img src="{a_logo}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
+                        <strong>{a_sh}</strong>
+                        <span style="opacity:0.35;">@</span>
+                        <img src="{h_logo}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
+                        <strong>{h_sh}</strong>
+                        <span style="opacity:0.6; font-size:0.75rem;">[{gm.get('league', 'SPORTS')}]</span>
                     </div>
-                    """, unsafe_allow_html=True)
-
-                with row_col2:
-                    is_editing = (st.session_state.cb_editing_idx == idx)
-                    btn_label = "✖️" if is_editing else "✏️"
-                    if st.button(btn_label, key=f"edit_toggle_{idx}_{leg_item.get('desc')}", help="Edit this leg"):
-                        st.session_state.cb_editing_idx = None if is_editing else idx
-                        st.rerun()
-
-                with row_col3:
-                    if st.button("🗑️", key=f"del_leg_{idx}_{leg_item.get('desc')}", help="Remove this leg"):
-                        st.session_state.combo_active_legs.pop(idx)
-                        if st.session_state.cb_editing_idx == idx:
-                            st.session_state.cb_editing_idx = None
-                        st.rerun()
-
-                # INLINE EDIT EXPANDER FOR THIS LEG
-                if st.session_state.cb_editing_idx == idx:
-                    with st.container(border=True):
-                        st.caption(f"🔧 **Editing Leg #{idx+1}: {a_sh} @ {h_sh}**")
-                        e_c1, e_c2, e_c3 = st.columns(3)
-                        
-                        curr_type = leg_item.get("type", "Game Total")
-                        type_opts = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Custom / Player Prop"]
-                        type_idx = type_opts.index(curr_type) if curr_type in type_opts else 0
-                        new_type = e_c1.selectbox("Wager Type", type_opts, index=type_idx, key=f"edit_type_{idx}")
-
-                        if new_type == "Game Total":
-                            curr_side = "Under" if leg_item.get("side") == "Under" else "Over"
-                            new_side = e_c2.selectbox("Side", ["Under", "Over"], index=0 if curr_side == "Under" else 1, key=f"edit_side_{idx}")
-                            curr_line = float(leg_item.get("line") if leg_item.get("line") is not None else 224.5)
-                            new_line = e_c3.number_input("Line (pts)", value=curr_line, step=0.5, key=f"edit_line_{idx}")
-                            new_desc = f"{new_side} {new_line:.1f}"
-                            new_team = gm.get("home_team", a_sh)
-                            new_p = 0.56 if "Under" in new_side else 0.52
-
-                        elif new_type == "Point Spread (ATS)":
-                            teams = [gm.get("home_team", h_sh), gm.get("away_team", a_sh)]
-                            cur_p_t = leg_item.get("picked_team", teams[0])
-                            t_idx = 1 if cur_p_t in teams[1] else 0
-                            new_team = e_c2.selectbox("Covering Team", teams, index=t_idx, key=f"edit_team_{idx}")
-                            curr_spd = float(leg_item.get("line") if leg_item.get("line") is not None else -3.5)
-                            new_line = e_c3.number_input("Spread", value=curr_spd, step=0.5, key=f"edit_spd_{idx}")
-                            new_side = "Spread"
-                            new_desc = f"{new_team} {new_line:+.1f}"
-                            new_p = 0.55
-
-                        elif new_type == "Straight Up Winner (Moneyline)":
-                            teams = [gm.get("home_team", h_sh), gm.get("away_team", a_sh)]
-                            cur_p_t = leg_item.get("picked_team", teams[0])
-                            t_idx = 1 if cur_p_t in teams[1] else 0
-                            new_team = e_c2.selectbox("Winner", teams, index=t_idx, key=f"edit_ml_{idx}")
-                            new_line = None
-                            new_side = "Moneyline"
-                            new_desc = f"{new_team} ML"
-                            new_p = 0.62
-
-                        else:
-                            new_desc = e_c2.text_input("Custom Pick Label", value=leg_item.get("desc", ""), key=f"edit_custom_{idx}")
-                            new_line = None
-                            new_side = "Custom"
-                            new_team = leg_item.get("picked_team", a_sh)
-                            new_p = float(leg_item.get("prob", 0.52))
-
-                        if st.button("💾 Apply Leg Update", key=f"save_leg_{idx}", type="primary", use_container_width=True):
-                            st.session_state.combo_active_legs[idx] = {
-                                "game": gm,
-                                "type": new_type,
-                                "side": new_side,
-                                "line": new_line,
-                                "picked_team": new_team,
-                                "desc": new_desc,
-                                "prob": new_p,
-                                "matchup": leg_item.get("matchup")
-                            }
-                            st.session_state.cb_editing_idx = None
-                            st.toast(f"✅ Updated Leg #{idx+1} to {new_desc}!", icon="💾")
-                            st.rerun()
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <span style="font-weight:700; color:#4ade80; font-size:0.95rem;">{leg_item.get('desc')}</span>
+                        <span style="opacity:0.6; font-size:0.78rem;">{leg_item.get('type')}</span>
+                        <span style="background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700;">
+                            {p_val:.1f}% Leg Win
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
         # LOCK-IN FORM
         f_nonce = st.session_state.cb_form_nonce
@@ -592,7 +519,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     st.session_state.support_tickets
                 )
                 st.session_state.combo_active_legs = []
-                st.session_state.cb_editing_idx = None
                 st.toast(f"🎉 Locked in {len(legs)}-Leg Combo!", icon="✅")
                 st.session_state.active_nav_page = "📜 Locked Bets History"
                 st.rerun()
