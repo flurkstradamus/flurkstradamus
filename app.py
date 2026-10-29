@@ -51,7 +51,7 @@ def inject_google_analytics():
 
 inject_google_analytics()
 
-# CSS Layout, Mobile Optimization & Absolute Left Alignment
+# CSS Layout, Mobile Optimization & Action Button Alignment
 st.markdown("""
 <style>
     @media (min-width: 768px) {
@@ -64,7 +64,8 @@ st.markdown("""
         }
         .dashboard-header-desktop { display: block !important; }
         .dashboard-header-mobile { display: none !important; }
-        .mobile-only-btn-wrap { display: none !important; }
+        .ticket-card-desktop { display: block !important; }
+        .ticket-card-mobile { display: none !important; }
     }
     @media (max-width: 767px) {
         .block-container { 
@@ -80,11 +81,8 @@ st.markdown("""
             font-weight: 700 !important; 
             margin-bottom: 0.3rem !important; 
         }
-        .desktop-only-btn-wrap { display: none !important; }
-        .mobile-only-btn-wrap { 
-            display: block !important; 
-            margin-top: 14px !important; 
-        }
+        .ticket-card-desktop { display: none !important; }
+        .ticket-card-mobile { display: block !important; }
 
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
             display: grid !important;
@@ -152,15 +150,10 @@ st.markdown("""
         margin: 0 !important;
     }
 
-    /* Subtle padding for bet cards */
+    /* Padding for bet cards */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         padding: 12px 16px !important;
         margin-bottom: 10px !important;
-    }
-
-    /* Prevent clipping on action icons */
-    div[data-testid="column"]:has(button:contains("🗑️")) {
-        min-width: 44px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -274,6 +267,7 @@ def get_numeric_prob(bet_obj, games_data):
 def render_ticket_card(b, real_idx, games_data, can_delete=False):
     status_val = b.get("status", "Pending")
     is_combo = (b.get("bet_category") == "Combo" or "Leg" in b.get("type", ""))
+    legs_list = b.get("parsed_legs", [])
 
     live_m = None
     if not is_combo:
@@ -293,7 +287,6 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
     if not is_ticket_settled:
         if is_combo:
             compound_p = 1.0
-            legs_list = b.get("parsed_legs", [])
             for l_item in legs_list:
                 m_g = find_game_for_bet({"matchup": l_item.get("matchup", "")}, games_data)
                 p_str = calculate_live_bet_prob({
@@ -326,7 +319,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
     user_name = b.get('user', 'Bettor')
 
     if is_combo:
-        header_title_html = f"<span style='font-size:0.95rem;font-weight:700;'>🔗 {len(b.get('parsed_legs', []))}-Leg Parlay</span><span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span>"
+        header_title_html = f"<span style='font-size:0.95rem;font-weight:700;'>🔗 {len(legs_list)}-Leg Parlay</span><span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span>"
     elif live_m:
         a_sh = live_m.get("away_short", "AWAY")
         h_sh = live_m.get("home_short", "HOME")
@@ -354,6 +347,17 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
     cat_label = b.get("bet_category", b.get("type", "Single"))
     bet_pick_str = str(b.get("bet", "N/A"))
 
+    # Generate Leg Chips for Combo Bets
+    combo_legs_html = ""
+    if is_combo and legs_list:
+        chips = []
+        for idx, leg_item in enumerate(legs_list):
+            m_name = leg_item.get("picked_team") or leg_item.get("matchup", f"Leg #{idx+1}")
+            s_side = leg_item.get("side", "")
+            s_line = f" {leg_item.get('line')}" if leg_item.get("line") is not None else ""
+            chips.append(f"<span style='background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);padding:2px 8px;border-radius:4px;font-size:0.75rem;white-space:nowrap;'><strong>#{idx+1}</strong> {m_name} {s_side}{s_line}</span>")
+        combo_legs_html = f"<div style='display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;'>{''.join(chips)}</div>"
+
     with st.container(border=True):
         # Header Row
         st.markdown(f"""
@@ -363,19 +367,22 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         </div>
         """, unsafe_allow_html=True)
 
-        # 4-Column Layout (Generous action column prevents text clipping and gives trash room)
-        c1, c2, c3, c4 = st.columns([2.9, 2.9, 2.1, 2.1], vertical_alignment="center")
+        # 1. DESKTOP VIEW CONTAINER (Class: ticket-card-desktop)
+        st.markdown("<div class='ticket-card-desktop'>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns([3.0, 2.8, 2.2, 2.0], vertical_alignment="center")
 
         with c1:
             st.markdown(f"""
             <div style="font-size:0.88rem;"><strong>Pick:</strong> <span style="color:#4ade80;font-weight:700;">{bet_pick_str}</span></div>
             <div style="font-size:0.76rem;opacity:0.65;margin-top:2px;">🗓️ Logged: {b.get('date', 'N/A')}</div>
+            {combo_legs_html}
             """, unsafe_allow_html=True)
 
         with c2:
+            profit_color = "#ef4444" if profit_locked < 0 else "#4ade80"
             st.markdown(f"""
             <div style="font-size:0.88rem;">Risk: <strong>${r_val:.2f}</strong> ➔ Payout: <strong>${p_val:.2f}</strong></div>
-            <div style="font-size:0.78rem;color:#4ade80;font-weight:700;margin-top:2px;">Potential Profit: +${profit_locked:.2f} (+{roi_pct:.1f}%)</div>
+            <div style="font-size:0.78rem;color:{profit_color};font-weight:700;margin-top:2px;">Potential Profit: {'+' if profit_locked>=0 else ''}${profit_locked:.2f} ({roi_pct:+.1f}%)</div>
             """, unsafe_allow_html=True)
 
         with c3:
@@ -387,20 +394,63 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
 
         with c4:
             if can_delete:
-                b1, b2 = st.columns([2.8, 1.2], vertical_alignment="center")
+                b1, b2 = st.columns([2.6, 1.4], vertical_alignment="center")
                 with b1:
-                    if st.button("🏟️ War Room", key=f"wr_btn_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                    if st.button("🏟️ War Room", key=f"wr_d_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                         st.session_state.selected_bet_id = b["id"]
                         st.rerun()
                 with b2:
-                    if st.button("🗑️", key=f"del_btn_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
+                    if st.button("🗑️", key=f"del_d_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
                         st.session_state.saved_bets.pop(real_idx)
                         save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
                         st.rerun()
             else:
-                if st.button("🏟️ War Room", key=f"wr_btn_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                if st.button("🏟️ War Room", key=f"wr_d_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                     st.session_state.selected_bet_id = b["id"]
                     st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # 2. MOBILE VIEW CONTAINER (Class: ticket-card-mobile)
+        st.markdown(f"""
+        <div class="ticket-card-mobile" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.85rem;opacity:0.7;">Pick</span>
+                <span style="background:rgba(255,255,255,0.06);color:#4ade80;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.9rem;">{bet_pick_str}</span>
+            </div>
+            {combo_legs_html}
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+                <span style="font-size:0.85rem;opacity:0.7;">Risk ➔ Payout</span>
+                <span style="font-size:0.88rem;font-weight:600;">${r_val:.2f} ➔ <strong style="color:#f8fafc;">${p_val:.2f}</strong></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.85rem;opacity:0.7;">Potential Profit</span>
+                <span style="color:{'#ef4444' if profit_locked < 0 else '#4ade80'};font-weight:700;font-size:0.88rem;">{'+' if profit_locked>=0 else ''}${profit_locked:.2f} ({roi_pct:+.1f}%)</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem;opacity:0.65;border-top:1px solid rgba(255,255,255,0.04);padding-top:4px;">
+                <span>Type: {cat_label}</span>
+                <span>Logged: {b.get('date', 'N/A')}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Mobile 50/50 Side-by-Side Action Buttons
+        st.markdown("<div class='ticket-card-mobile' style='margin-top: 10px;'>", unsafe_allow_html=True)
+        if can_delete:
+            m_c1, m_c2 = st.columns(2)
+            with m_c1:
+                if st.button("🏟️ War Room", key=f"wr_m_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                    st.session_state.selected_bet_id = b["id"]
+                    st.rerun()
+            with m_c2:
+                if st.button("🗑️ Delete", key=f"del_m_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                    st.session_state.saved_bets.pop(real_idx)
+                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                    st.rerun()
+        else:
+            if st.button("🏟️ War Room", key=f"wr_m_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
+                st.session_state.selected_bet_id = b["id"]
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # State initialization
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
