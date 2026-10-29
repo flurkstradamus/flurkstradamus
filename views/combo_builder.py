@@ -9,7 +9,6 @@ def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice):
     if not pool:
         return []
 
-    is_mixed = "Mixed" in strat_choice
     is_safe = "Safe Floor" in strat_choice
     is_high_profit = "High Profit" in strat_choice
     is_balanced = "Balanced" in strat_choice
@@ -151,7 +150,7 @@ def trigger_combo_auto_refresh():
 
 def render_combo_builder(curr_user, active_uname, games_data, get_current_et_time_fn):
     st.subheader("🔗 Multi-Leg Combo Builder")
-    st.caption("Algorithmic parlay optimizer with cross-sport leg modeling, compound win probability, and automated bankroll tracking.")
+    st.caption("Algorithmic parlay optimizer with cross-sport leg modeling, custom manual leg entry, and automated bankroll tracking.")
 
     if "combo_active_legs" not in st.session_state:
         st.session_state.combo_active_legs = []
@@ -161,7 +160,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         st.session_state.cb_needs_refresh = False
 
     # AI Combo Optimizer Controls
-    # Sequence: 1. League, 2. Filter Status, 3. Target # of Legs, 4. Target Market Focus, 5. Combo Strategy Profile
     with st.container(border=True):
         st.markdown("#### 🤖 AI Multi-Leg Optimizer")
 
@@ -265,21 +263,94 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 st.session_state.cb_form_nonce += 1
                 st.rerun()
 
+    # MANUAL LEG BUILDER SECTION
+    with st.expander("➕ Add Custom Leg Manually", expanded=False):
+        st.caption("Select a live match from the active slate or type in your own custom match, line, and selection.")
+        
+        # Build Matchup Dropdown List from Pool
+        game_choices = ["📝 Custom / Other Matchup"] + [f"{gm.get('away_short')} @ {gm.get('home_short')} [{gm.get('league')}]" for gm in pool]
+        sel_gm_idx = st.selectbox("Select Matchup", range(len(game_choices)), format_func=lambda x: game_choices[x], key="man_gm_select")
+
+        if sel_gm_idx == 0:
+            man_matchup_str = st.text_input("Custom Matchup Name", placeholder="e.g. DET @ KC, Lakers @ Warriors, etc.")
+            chosen_gm_obj = {"away_short": "CUSTOM", "home_short": "WAGER", "league": league_choice}
+        else:
+            chosen_gm_obj = pool[sel_gm_idx - 1]
+            man_matchup_str = f"{chosen_gm_obj.get('away_short')} @ {chosen_gm_obj.get('home_short')}"
+
+        m_c1, m_c2, m_c3 = st.columns(3)
+        man_type = m_c1.selectbox("Wager Type", ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Custom / Player Prop"], key="man_wtype")
+        
+        if man_type == "Game Total":
+            man_side = m_c2.selectbox("Side", ["Under", "Over"], key="man_side_total")
+            man_line = m_c3.number_input("Line (pts)", value=float(round_half_point(chosen_gm_obj.get("market_ou", 224.5 if chosen_gm_obj.get("league")=="NBA" else 47.5))), step=0.5, key="man_line_total")
+            man_desc = f"{man_side} {man_line:.1f}"
+            man_team = chosen_gm_obj.get("home_team", man_matchup_str)
+            calc_p = 0.55
+        elif man_type == "Point Spread (ATS)":
+            teams_opt = [chosen_gm_obj.get("home_team", "Home"), chosen_gm_obj.get("away_team", "Away")]
+            man_team = m_c2.selectbox("Covering Team", teams_opt, key="man_team_spread")
+            man_line = m_c3.number_input("Spread", value=float(round_half_point(chosen_gm_obj.get("market_spread", -3.5))), step=0.5, key="man_line_spread")
+            man_side = "Spread"
+            man_desc = f"{man_team} {man_line:+.1f}"
+            calc_p = 0.54
+        elif man_type == "Straight Up Winner (Moneyline)":
+            teams_opt = [chosen_gm_obj.get("home_team", "Home"), chosen_gm_obj.get("away_team", "Away")]
+            man_team = m_c2.selectbox("Outright Winner", teams_opt, key="man_team_ml")
+            man_line = None
+            man_side = "Moneyline"
+            man_desc = f"{man_team} ML"
+            calc_p = 0.60
+        else:
+            man_desc = m_c2.text_input("Pick Label / Prop", placeholder="e.g. Over 24.5 Pts, Anytime TD", key="man_custom_desc")
+            man_side = "Custom"
+            man_line = None
+            man_team = man_matchup_str
+            calc_p = 0.52
+
+        if st.button("➕ Append Leg to Ticket", type="secondary", use_container_width=True):
+            if not man_matchup_str.strip():
+                st.error("Please enter a matchup description.")
+            else:
+                new_leg = {
+                    "game": chosen_gm_obj,
+                    "type": man_type,
+                    "side": man_side,
+                    "line": man_line,
+                    "picked_team": man_team,
+                    "desc": man_desc,
+                    "prob": calc_p,
+                    "matchup": man_matchup_str
+                }
+                st.session_state.combo_active_legs.append(new_leg)
+                st.session_state.cb_form_nonce += 1
+                st.toast(f"✅ Appended {man_desc} to combo!", icon="➕")
+                st.rerun()
+
     # ACTIVE TICKET DISPLAY & SUBMISSION
     legs = st.session_state.combo_active_legs
 
     if legs:
         st.markdown("---")
-        st.markdown(f"#### 🎟️ Active {len(legs)}-Leg Combo Ticket")
+        h_col1, h_col2 = st.columns([3.5, 1.5], vertical_alignment="center")
+        with h_col1:
+            st.markdown(f"#### 🎟️ Active {len(legs)}-Leg Combo Ticket")
+        with h_col2:
+            if st.button("🗑️ Clear All Legs", use_container_width=True):
+                st.session_state.combo_active_legs = []
+                st.rerun()
 
+        # Compound probability calculation
         compound_p = 1.0
         for lg in legs:
             compound_p *= float(lg.get("prob", 0.55))
         compound_p = max(0.001, min(0.999, compound_p))
 
+        # Suggested Fair Multiplier & Odds
         fair_mult = max(1.1, round(1.0 / compound_p, 2))
         est_roi_pct = int((fair_mult - 1.0) * 100)
 
+        # Header Telemetry Row
         with st.container(border=True):
             st.markdown(f"""
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
@@ -297,6 +368,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             </div>
             """, unsafe_allow_html=True)
 
+            # Render Each Leg Item with Remove Option
             for idx, leg_item in enumerate(legs):
                 gm = leg_item["game"]
                 a_logo = gm.get("away_logo") or DEFAULT_LOGO
@@ -305,28 +377,35 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 h_sh = gm.get("home_short", "HOME")
                 p_val = leg_item.get("prob", 0.55) * 100
 
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:10px 14px; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <span style="background:rgba(255,255,255,0.08); color:#f8fafc; font-weight:800; padding:2px 8px; border-radius:4px; font-size:0.80rem;">
-                            #{idx+1}
-                        </span>
-                        <img src="{a_logo}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
-                        <strong>{a_sh}</strong>
-                        <span style="opacity:0.35;">@</span>
-                        <img src="{h_logo}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
-                        <strong>{h_sh}</strong>
-                        <span style="opacity:0.6; font-size:0.75rem;">[{gm.get('league')}]</span>
+                row_col1, row_col2 = st.columns([5.2, 0.8], vertical_alignment="center")
+                with row_col1:
+                    st.markdown(f"""
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:10px 14px; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <span style="background:rgba(255,255,255,0.08); color:#f8fafc; font-weight:800; padding:2px 8px; border-radius:4px; font-size:0.80rem;">
+                                #{idx+1}
+                            </span>
+                            <img src="{a_logo}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
+                            <strong>{a_sh}</strong>
+                            <span style="opacity:0.35;">@</span>
+                            <img src="{h_logo}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
+                            <strong>{h_sh}</strong>
+                            <span style="opacity:0.6; font-size:0.75rem;">[{gm.get('league', 'SPORTS')}]</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <span style="font-weight:700; color:#4ade80; font-size:0.95rem;">{leg_item.get('desc')}</span>
+                            <span style="opacity:0.6; font-size:0.78rem;">{leg_item.get('type')}</span>
+                            <span style="background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700;">
+                                {p_val:.1f}% Leg Win
+                            </span>
+                        </div>
                     </div>
-                    <div style="display:flex; align-items:center; gap:12px;">
-                        <span style="font-weight:700; color:#4ade80; font-size:0.95rem;">{leg_item.get('desc')}</span>
-                        <span style="opacity:0.6; font-size:0.78rem;">{leg_item.get('type')}</span>
-                        <span style="background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:700;">
-                            {p_val:.1f}% Leg Win
-                        </span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
+
+                with row_col2:
+                    if st.button("🗑️", key=f"del_leg_{idx}_{leg_item.get('desc')}", help="Remove this leg"):
+                        st.session_state.combo_active_legs.pop(idx)
+                        st.rerun()
 
         # LOCK-IN FORM
         f_nonce = st.session_state.cb_form_nonce
