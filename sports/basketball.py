@@ -107,6 +107,20 @@ def get_live_nba_roster(team_id_or_abbr):
 
     return [("Lead Guard", "PG", 22.5), ("Lead Wing", "SF", 19.5), ("Starting Center", "C", 14.5)]
 
+def get_live_nba_3pm_roster(team_id_or_abbr):
+    """
+    Returns player roster with estimated 3-pointers baseline (1+, 2+, 3+ targets).
+    Format: list of tuples: (player_name, position, baseline_3pm, baseline_pts)
+    """
+    # Fallback default roster for NBA game simulation / live odds modeling
+    return [
+        ("Primary Guard", "PG", 2.5, 24.5),
+        ("Sharpshooter Wing", "SG", 2.5, 20.5),
+        ("Starting Forward", "SF", 1.5, 18.0),
+        ("Stretch Big", "PF", 1.5, 15.5),
+        ("Sixth Man Sniper", "SG", 1.5, 13.5),
+    ]
+
 @st.cache_data(ttl=30, show_spinner=False)
 def fetch_nba_scoreboard(days_range=(-2, 4)):
     games = []
