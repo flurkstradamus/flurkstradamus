@@ -298,7 +298,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             fair_us_odds = f"+{int((fair_mult - 1.0) * 100)}" if fair_mult >= 2.0 else f"-{int(100 / (fair_mult - 1.0))}"
             ev_pct = round(((fair_mult * 0.95) - 1.0) * 100, 1)
 
-            # Render legs list
+            # Render legs list with responsive mobile layout
             for p_idx, p_leg in enumerate(prev_legs):
                 if p_leg["type"] == "Game Total":
                     leg_pick_text = f"{p_leg['side']} {p_leg['line']:.1f} pts"
@@ -312,28 +312,32 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     leg_pick_text = f"{p_leg['picked_team']} Any Time TD"
 
                 st.markdown(f"""
-                <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:8px 12px; border-radius:8px; margin-bottom:6px;">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <span style="opacity:0.55; font-size:0.80rem; font-weight:600;">#{p_idx+1}</span>
-                        <img src="{p_leg.get('away_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
-                        <strong>{p_leg.get('away_short', 'AWAY')}</strong>
-                        <span style="opacity:0.4;">@</span>
-                        <img src="{p_leg.get('home_logo', DEFAULT_LOGO)}" width="22" height="22" style="border-radius:50%; object-fit:contain;">
-                        <strong>{p_leg.get('home_short', 'HOME')}</strong>
-                        <span style="background:rgba(255,255,255,0.06); color:#94a3b8; padding:2px 7px; border-radius:4px; font-size:0.75rem;">
+                <div style="background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px; margin-bottom:8px;">
+                    <!-- Top Row: Teams, Logos, Kickoff -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:4px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span style="opacity:0.5; font-size:0.80rem; font-weight:700;">#{p_idx+1}</span>
+                            <img src="{p_leg.get('away_logo', DEFAULT_LOGO)}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
+                            <strong>{p_leg.get('away_short', 'AWAY')}</strong>
+                            <span style="opacity:0.35;">@</span>
+                            <img src="{p_leg.get('home_logo', DEFAULT_LOGO)}" width="20" height="20" style="border-radius:50%; object-fit:contain;">
+                            <strong>{p_leg.get('home_short', 'HOME')}</strong>
+                        </div>
+                        <span style="background:rgba(255,255,255,0.06); color:#94a3b8; padding:2px 8px; border-radius:4px; font-size:0.75rem;">
                             🗓️ {p_leg.get('kickoff', 'Upcoming')}
                         </span>
                     </div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <strong style="color:#4ade80; font-size:1.02rem;">{leg_pick_text}</strong>
-                        <span style="background:rgba(56,189,248,0.12); color:#38bdf8; padding:2px 6px; border-radius:4px; font-size:0.72rem; font-weight:600;">
+                    <!-- Bottom Row: Clean Pick Label and Market Badge -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(255,255,255,0.04); padding-top:6px; flex-wrap:wrap; gap:6px;">
+                        <span style="color:#4ade80; font-size:0.95rem; font-weight:700;">{leg_pick_text}</span>
+                        <span style="background:rgba(56,189,248,0.12); color:#38bdf8; padding:2px 7px; border-radius:4px; font-size:0.72rem; font-weight:600;">
                             {p_leg['type']}
                         </span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-            # --- ANALYTICS DASHBOARD CONTAINER UNDER THE LEGS ---
+            # Analytics Dashboard Container
             st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
             with st.container(border=True):
                 st.markdown("##### 📊 Parlay Analytics & Probability Engine")
@@ -343,44 +347,31 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     "Chance of Winning", 
                     f"{compound_calc * 100:.1f}%", 
                     delta=f"{compound_calc * 100 - (100 / fair_mult):+.1f}% vs Book",
-                    help="Compound true probability calculated by compounding the independent Poisson and Bayesian distribution of each leg."
+                    help="Compound true probability calculated across all legs."
                 )
                 m_c2.metric(
                     "Fair Model Odds", 
                     fair_us_odds, 
                     delta=f"{fair_mult:.2f}x Multiplier", 
-                    delta_color="off",
-                    help="The mathematical zero-vig fair odds based purely on live model expectancy."
+                    delta_color="off"
                 )
                 m_c3.metric(
                     "Estimated Edge (+EV)", 
                     f"+{max(1.2, ev_pct):.1f}%", 
-                    delta="Favorable EV" if ev_pct > 0 else "High Variance",
-                    help="The calculated mathematical advantage over closing bookmaker implied probabilities."
+                    delta="Favorable EV" if ev_pct > 0 else "High Variance"
                 )
                 
-                # Volatility assessment
                 if len(prev_legs) <= 3 and "Safe Floor" in strat_choice:
-                    vol_tag = "🟢 Low Drawdown"
-                    vol_desc = "High floor safety"
+                    vol_tag, vol_desc = "🟢 Low Drawdown", "High floor safety"
                 elif len(prev_legs) <= 5:
-                    vol_tag = "🟡 Moderate EV"
-                    vol_desc = "Balanced risk/reward"
+                    vol_tag, vol_desc = "🟡 Moderate EV", "Balanced risk/reward"
                 else:
-                    vol_tag = "🔴 High Multiplier"
-                    vol_desc = "Longshot variance"
+                    vol_tag, vol_desc = "🔴 High Multiplier", "Longshot variance"
 
-                m_c4.metric(
-                    "Volatility Profile", 
-                    vol_tag, 
-                    delta=vol_desc, 
-                    delta_color="off"
-                )
-
-                # Visual probability meter
+                m_c4.metric("Volatility Profile", vol_tag, delta=vol_desc, delta_color="off")
                 st.progress(compound_calc, text=f"Parlay Win Expectancy: {compound_calc * 100:.1f}%")
 
-            # Action controls below the recommendation list
+            # Action controls
             st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
             col_load, col_edit = st.columns([2.5, 2], vertical_alignment="center")
 
@@ -400,8 +391,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             if st.session_state.combo_is_editing:
                 st.markdown("---")
                 st.markdown("##### 📝 Edit Active Legs List")
-                st.caption("Uncheck any legs you want to discard from this slip:")
-
                 leg_indices_to_keep = []
                 for edit_i, e_leg in enumerate(prev_legs):
                     lbl = f"Leg #{edit_i+1}: {e_leg['matchup_str']} — {e_leg.get('picked_team', '')} {e_leg.get('side', '')} ({e_leg['type']})"
@@ -412,8 +401,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 c_save1, c_save2 = st.columns([2, 4], vertical_alignment="center")
                 with c_save1:
                     if st.button("💾 Save & Update", type="primary", use_container_width=True, key="btn_commit_edit_legs"):
-                        updated_list = [dict(prev_legs[k]) for k in leg_indices_to_keep]
-                        st.session_state.combo_preview_legs = updated_list
+                        st.session_state.combo_preview_legs = [dict(prev_legs[k]) for k in leg_indices_to_keep]
                         st.session_state.combo_is_editing = False
                         st.rerun()
                 with c_save2:
@@ -450,9 +438,8 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             st.rerun()
         return
 
-    # Dedicated Accordion for All Leg Rationales Before Active Slip
+    # Accordion for All Leg Rationales
     with st.expander("🧠 AI Model Strategy & Edge Rationales", expanded=False):
-        st.caption("Breakdown of algorithmic discrepancy, pace drift, and edge considerations for active selections:")
         for idx, leg_item in enumerate(st.session_state.combo_active_legs):
             leg_name = leg_item.get("picked_team", leg_item.get("matchup_str", f"Leg #{idx+1}"))
             rat_msg = leg_item.get("rationale") or generate_leg_rationale(
