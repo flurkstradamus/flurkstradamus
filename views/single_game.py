@@ -325,7 +325,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             q = q_filter.strip().lower()
             pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
-        if col_btn.button("⚡ Generate Tiers", use_container_width=True, disabled=len(pool) == 0):
+        if col_btn.button("⚡ Generate Bets", use_container_width=True, disabled=len(pool) == 0):
             st.session_state.single_tier_picks = build_single_game_tiers(pool[0], chosen_market, strat_choice)
             st.rerun()
 
