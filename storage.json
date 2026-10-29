@@ -1,6 +1,27 @@
 {
   "saved_bets": [
     {
+      "id": "1793312776.798818",
+      "user": "Flurk",
+      "date": "2026-10-29 18:26 ET",
+      "type": "Single",
+      "bet_category": "Straight Up Winner (Moneyline)",
+      "home_team": "Green Bay Packers",
+      "away_team": "Carolina Panthers",
+      "picked_team": "Green Bay Packers",
+      "matchup": "CAR @ GB",
+      "bet": "Green Bay Packers ML",
+      "target_line": null,
+      "bet_direction": "Moneyline",
+      "risk_dollars": 10.0,
+      "payout_dollars": 15.0,
+      "payout": 15.0,
+      "locked_profit": 5.0,
+      "win_prob": "51.9%",
+      "status": "Pending",
+      "notes": "[NFL] Straight Up Winner (Moneyline)"
+    },
+    {
       "id": "1793312203.867949",
       "user": "Flurk",
       "date": "2026-10-29 18:16 ET",
