@@ -10,7 +10,12 @@ try:
     from sports.basketball import get_live_nba_3pm_roster
 except ImportError:
     def get_live_nba_3pm_roster(t_id):
-        return [("Primary Guard", "PG", 2.5, 24.5), ("Sharpshooter Wing", "SG", 2.5, 20.5)]
+        return [
+            ("Primary Guard", "PG", 2.5, 24.5),
+            ("Sharpshooter Wing", "SG", 2.5, 20.5),
+            ("Starting Forward", "SF", 1.5, 18.0),
+            ("Stretch Big", "PF", 1.5, 15.5)
+        ]
 
 def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
     if not target_gm:
@@ -27,7 +32,7 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
     is_spreads_only = "Spreads" in chosen_market
     is_ml_only = "Straight Up" in chosen_market or "Moneyline" in chosen_market
     is_points_prop = "Player Points" in chosen_market
-    is_3pm_prop = "Three-Pointers" in chosen_market and is_nba
+    is_3pm_prop = ("Three-Pointers" in chosen_market or "3-Pointers" in chosen_market) and is_nba
     is_td_prop = "Touchdown" in chosen_market
 
     ou_open = round_half_point(target_gm.get("market_ou", 224.5 if is_nba else 47.5))
@@ -47,9 +52,7 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
 
     m_str = f"{target_gm.get('away_short')} @ {target_gm.get('home_short')}"
 
-    # =========================================================================
-    # 1. SPECIFIC MARKET: NBA PLAYER THREE-POINTERS (1+, 2+, 3+)
-    # =========================================================================
+    # 1. SPECIFIC MARKET: NBA THREE-POINTERS (1+, 2+, 3+)
     if is_3pm_prop and is_nba:
         h_roster = get_live_nba_3pm_roster(target_gm.get("home_id") or target_gm.get("home_short")) or [("Home Shooter", "G", 2.5, 22.0)]
         a_roster = get_live_nba_3pm_roster(target_gm.get("away_id") or target_gm.get("away_short")) or [("Away Shooter", "G", 2.5, 20.0)]
@@ -63,12 +66,10 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
         three_legs = []
         for idx, p_name in enumerate(combined_players):
             if is_safe:
-                # 1+ milestone focus
                 m_label = "1+ Three-Pointers" if idx % 2 == 0 else "2+ Three-Pointers"
                 line_val = 0.5 if "1+" in m_label else 1.5
                 prob_val = 0.86 if "1+" in m_label else 0.72
             elif is_high_profit:
-                # 2+ and 3+ milestone focus
                 m_label = "3+ Three-Pointers" if idx % 2 == 0 else "2+ Three-Pointers"
                 line_val = 2.5 if "3+" in m_label else 1.5
                 prob_val = 0.49 if "3+" in m_label else 0.65
@@ -100,9 +101,7 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
 
         return three_legs
 
-    # =========================================================================
     # 2. SPECIFIC MARKET: NBA PLAYER POINTS PROPS
-    # =========================================================================
     if is_points_prop and is_nba:
         h_roster = get_live_nba_roster(target_gm.get("home_id") or target_gm.get("home_short")) or [("Home Star", "G", 24.5)]
         a_roster = get_live_nba_roster(target_gm.get("away_id") or target_gm.get("away_short")) or [("Away Star", "G", 22.5)]
@@ -144,9 +143,7 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
 
         return prop_legs
 
-    # =========================================================================
     # 3. SPECIFIC MARKET: FOOTBALL TOUCHDOWNS
-    # =========================================================================
     if is_td_prop and not is_nba:
         h_fb = get_live_football_roster(target_gm.get("home_id") or target_gm.get("home_short"), target_gm.get("league")) or [("Home RB", "RB")]
         a_fb = get_live_football_roster(target_gm.get("away_id") or target_gm.get("away_short"), target_gm.get("league")) or [("Away RB", "RB")]
@@ -174,9 +171,7 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
                 break
         return td_legs
 
-    # =========================================================================
     # 4. GAME TOTALS
-    # =========================================================================
     if is_totals_only:
         tot_legs = []
         steps = [6.5, 4.5, 2.5, 0.5, -1.5, -3.5]
@@ -196,9 +191,7 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
             })
         return tot_legs
 
-    # =========================================================================
     # 5. POINT SPREADS
-    # =========================================================================
     if is_spreads_only:
         spd_legs = []
         base = abs(fav_spread)
@@ -219,9 +212,7 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
             })
         return spd_legs
 
-    # =========================================================================
     # 6. SYSTEM PICK / MULTI-MARKET MIX
-    # =========================================================================
     candidates = []
 
     # Total leg
@@ -309,7 +300,7 @@ def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice, lead
     is_spreads_only = "Spreads" in chosen_market
     is_ml_only = "Straight Up" in chosen_market or "Moneyline" in chosen_market
     is_points_prop = "Player Points" in chosen_market
-    is_3pm_prop = "Three-Pointers" in chosen_market
+    is_3pm_prop = ("Three-Pointers" in chosen_market or "3-Pointers" in chosen_market)
     is_td_prop = "Touchdown" in chosen_market
 
     eval_pool = list(pool)
@@ -517,6 +508,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             on_change=trigger_combo_auto_refresh
         )
 
+        # Dynamic options list based on active league
         if league_choice == "NBA":
             market_options = [
                 "⚡ Let the System Pick (Best NBA Discrepancy)",
@@ -545,11 +537,16 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 "🏈 Football Anytime Touchdown Scorer"
             ]
 
+        # Prevent Streamlit cache lock if previous choice isn't in current list
+        prev_cb_m = st.session_state.get("cb_static_market")
+        cb_m_idx = market_options.index(prev_cb_m) if prev_cb_m in market_options else 0
+
         r2_c1, r2_c2 = st.columns(2)
 
         chosen_market = r2_c1.selectbox(
             "Target Bet / Market Type",
             options=market_options,
+            index=cb_m_idx,
             key="cb_static_market",
             on_change=trigger_combo_auto_refresh
         )
@@ -637,7 +634,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     # MANUAL LEG BUILDER SECTION
     with st.expander("➕ Add Custom Leg Manually", expanded=False):
         st.caption("Select a live match from the active slate or type in your own custom match, line, and selection.")
-        
+
         game_choices = ["📝 Custom / Other Matchup"] + [f"{gm.get('away_short')} @ {gm.get('home_short')} [{gm.get('league')}]" for gm in pool]
         sel_gm_idx = st.selectbox("Select Matchup", range(len(game_choices)), format_func=lambda x: game_choices[x], key="man_gm_select")
 
@@ -650,7 +647,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
         m_c1, m_c2, m_c3 = st.columns(3)
         man_type = m_c1.selectbox("Wager Type", ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "NBA 3-Pointers Made (1+, 2+, 3+)", "Custom / Player Prop"], key="man_wtype")
-        
+
         if man_type == "Game Total":
             man_side = m_c2.selectbox("Side", ["Under", "Over"], key="man_side_total")
             man_line = m_c3.number_input("Line (pts)", value=float(round_half_point(chosen_gm_obj.get("market_ou", 224.5 if chosen_gm_obj.get("league")=="NBA" else 47.5))), step=0.5, key="man_line_total")
