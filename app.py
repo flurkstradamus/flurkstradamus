@@ -507,6 +507,7 @@ needs_live_data = st.session_state.active_nav_page in [
     "📊 My Dashboard", 
     "⚡ Single Game Engine", 
     "🔗 Multi-Leg Combo Builder", 
+    "📸 Scan Bet Slip",
     "📜 Locked Bets History", 
     "🔥 Live Squad Feed"
 ] or (st.session_state.selected_bet_id is not None)
@@ -577,7 +578,7 @@ elif menu_choice == "⚡ Single Game Engine":
 elif menu_choice == "🔗 Multi-Leg Combo Builder":
     render_combo_builder(curr_user, active_uname, games_data, get_current_et_time)
 elif menu_choice == "📸 Scan Bet Slip":
-    render_slip_scanner(curr_user, active_uname, get_current_et_time)
+    render_slip_scanner(curr_user, active_uname, games_data, get_current_et_time)
 elif menu_choice == "📜 Locked Bets History":
     render_history(curr_user, active_uname, is_admin, games_data, render_ticket_card)
 elif menu_choice == "🔥 Live Squad Feed":
