@@ -71,7 +71,6 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         good_prob = 0.52
         good_rat = f"{good_target} holds goal-line rush volume priority."
     else:
-        # System Pick (Auto-Selects Safe Floor)
         good_side = "Under"
         good_line = round_half_point(ou_open + (7.5 if is_nba else 4.5))
         good_type = "Game Total"
@@ -170,7 +169,6 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         best_prob = 0.54
         best_rat = f"Red-zone touch concentration makes {best_target} the optimal positive expected value wager."
     else:
-        # System Pick (Auto-Selects Top Discrepancy)
         if is_nba:
             h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short"))
             if h_roster:
@@ -241,19 +239,26 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
     eng_ver = st.session_state.single_engine_version
 
-    # AI Optimizer Controls
+    # AI Optimizer Controls (Exact order: League -> Filter Status -> Target Bet -> Model Profile)
     with st.container(border=True):
         st.markdown("#### 🤖 AI Single Game Optimizer")
 
-        c_top1, c_top2 = st.columns(2)
-        league_choice = c_top1.selectbox(
+        c1, c2 = st.columns(2)
+        league_choice = c1.selectbox(
             "Primary League / Slate Scope",
             options=["All Games (Cross-Sport)", "NBA", "NFL", "NCAA Football"],
             index=0,
             key=f"sg_league_{eng_ver}"
         )
 
-        # Dynamic Market Selection depending on League
+        t_filter = c2.selectbox(
+            "Game Filter Status",
+            options=["⏳ Upcoming Games", "⚡ Live Games", "🌐 All Matchups"],
+            index=0,
+            key=f"sg_t_filter_{eng_ver}"
+        )
+
+        # Dynamic Market Focus List Based on Selected League
         if league_choice == "NBA":
             market_options = [
                 "⚡ Let the System Pick (Best NBA Discrepancy)",
@@ -280,18 +285,28 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                 "🏈 Football Anytime Touchdown Scorer"
             ]
 
-        chosen_market = c_top2.selectbox("Target Bet / Market Type", market_options, index=0, key=f"sg_market_{eng_ver}")
+        c3, c4 = st.columns(2)
+        chosen_market = c3.selectbox(
+            "Target Bet / Market Type",
+            market_options,
+            index=0,
+            key=f"sg_market_{eng_ver}"
+        )
 
         strat_options = [
             "🛡️ Safe Floor (High Win %, Low Drawdown)",
             "⚖️ Balanced Edge (+EV Sweet Spot)",
             "🚀 High Profit (Max Multiplier & Longshots)"
         ]
-        strat_choice = st.selectbox("Model Strategy Profile", strat_options, index=1, key=f"sg_strat_{eng_ver}")
+        strat_choice = c4.selectbox(
+            "Model Strategy Profile",
+            options=strat_options,
+            index=1,
+            key=f"sg_strat_{eng_ver}"
+        )
 
-        col_f1, col_f2, col_btn = st.columns([1.5, 2, 1.5], vertical_alignment="bottom")
-        t_filter = col_f1.selectbox("Filter Status", ["⏳ Upcoming Games", "⚡ Live Games", "🌐 All Matchups"], key=f"sg_t_filter_{eng_ver}")
-        q_filter = col_f2.text_input("🔍 Search Matchup", placeholder="e.g. Celtics, Lakers, Chiefs...", key=f"sg_q_filter_{eng_ver}")
+        col_q, col_btn = st.columns([3.5, 1.5], vertical_alignment="bottom")
+        q_filter = col_q.text_input("🔍 Search Matchup", placeholder="e.g. Celtics, Lakers, Chiefs...", key=f"sg_q_filter_{eng_ver}")
 
         pool = games_data
         if league_choice == "NBA":
@@ -310,7 +325,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             q = q_filter.strip().lower()
             pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
-        if col_btn.button("⚡ Auto-Generate Tiers", use_container_width=True, disabled=len(pool) == 0):
+        if col_btn.button("⚡ Generate Tiers", use_container_width=True, disabled=len(pool) == 0):
             st.session_state.single_tier_picks = build_single_game_tiers(pool[0], chosen_market, strat_choice)
             st.rerun()
 
@@ -370,7 +385,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
     st.markdown("#### 📝 Active Single Bet Slip")
 
     if not st.session_state.single_active_bet:
-        st.info("No active bet loaded. Use **⚡ Auto-Generate Tiers** above and click **📥 Load Pick**, or set up a custom ticket manually below.")
+        st.info("No active bet loaded. Use **⚡ Generate Tiers** above and click **📥 Load Pick**, or set up a custom ticket manually below.")
         if st.button("➕ Set Up Bet Manually", use_container_width=True):
             def_tiers = build_single_game_tiers(pool[0], chosen_market, strat_choice)
             st.session_state.single_active_bet = dict(def_tiers["better"])
