@@ -6,7 +6,9 @@ import json
 import requests
 from PIL import Image
 from datetime import datetime
-from database import save_all_storage
+from config import DEFAULT_LOGO
+from database import save_all_storage, find_game_for_bet
+from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
 
 def parse_bet_slip_image(image_bytes):
     raw_key = st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
@@ -64,7 +66,6 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    # Dynamically discover active models supported by the provided API key
     active_models = []
     try:
         models_list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
@@ -74,18 +75,12 @@ def parse_bet_slip_image(image_bytes):
                 m_name = m.get("name", "")
                 methods = m.get("supportedGenerationMethods", [])
                 if "generateContent" in methods and "flash" in m_name.lower():
-                    clean_name = m_name.replace("models/", "")
-                    active_models.append(clean_name)
+                    active_models.append(m_name.replace("models/", ""))
     except Exception:
         pass
 
-    # Reliable fallback priority list using active endpoints
     if not active_models:
-        active_models = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-exp"
-        ]
+        active_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-exp"]
 
     last_err = ""
     for model_name in active_models:
@@ -105,12 +100,60 @@ def parse_bet_slip_image(image_bytes):
             else:
                 last_err = f"{clean_model} (HTTP {r.status_code}): {r.text[:120]}"
         except Exception as e:
-            last_err = f"{clean_model}: {str(e)}"
+            last_err = str(e)
             continue
 
     return None, f"Parsing failed: {last_err}"
 
-def render_slip_scanner(curr_user, active_uname, get_current_et_time_fn):
+def compute_scanned_analytics(data, matched_game):
+    w_type = data.get("wager_type", "Game Total")
+    side = data.get("side", "Under")
+    line = float(data.get("line") or 0.0)
+
+    if not matched_game:
+        return 0.55, "+120", 1.82
+
+    is_nba = (matched_game.get("league") == "NBA")
+    is_completed = matched_game.get("completed", False) or "final" in str(matched_game.get("status", "")).lower()
+
+    if is_completed:
+        tot = matched_game.get("home_score", 0) + matched_game.get("away_score", 0)
+        h_sc = matched_game.get("home_score", 0)
+        a_sc = matched_game.get("away_score", 0)
+        if "Total" in w_type and line > 0:
+            won = (tot < line) if side == "Under" else (tot > line)
+        elif "Spread" in w_type and line != 0:
+            diff = (h_sc - a_sc) if data.get("picked_team") == matched_game.get("home_team") else (a_sc - h_sc)
+            won = (diff + line) > 0
+        elif "Moneyline" in w_type or "Winner" in w_type:
+            won = (h_sc > a_sc) if data.get("picked_team") == matched_game.get("home_team") else (a_sc > h_sc)
+        else:
+            won = True
+        prob = 1.0 if won else 0.0
+    else:
+        if "Total" in w_type and line > 0:
+            proj = float(matched_game.get("market_ou", 224.5 if is_nba else 47.5))
+            prob = calculate_win_prob(line, proj, (12.0 if is_nba else 7.0), is_under=(side == "Under"))
+        elif "Spread" in w_type and line != 0:
+            prob = calculate_spread_prob(0.0, line, (7.5 if is_nba else 5.0))
+        elif "Moneyline" in w_type or "Winner" in w_type:
+            add = 40 if is_nba else 14
+            h_p = calculate_moneyline_prob(
+                matched_game["home_score"] + add,
+                matched_game["away_score"] + add,
+                matched_game.get("home_record", "0-0"),
+                matched_game.get("away_record", "0-0")
+            )
+            prob = h_p if data.get("picked_team") == matched_game.get("home_team") else (1.0 - h_p)
+        else:
+            prob = 0.58
+
+    prob = max(0.01, min(0.99, prob))
+    fair_mult = 1.0 / prob
+    fair_odds = f"+{int((fair_mult - 1.0) * 100)}" if fair_mult >= 2.0 else f"-{int(100 / max(0.01, fair_mult - 1.0))}"
+    return prob, fair_odds, fair_mult
+
+def render_slip_scanner(curr_user, active_uname, games_data, get_current_et_time_fn):
     st.subheader("📸 Scan & Log Bet Slip")
     st.caption("Upload a screenshot from Robinhood, DraftKings, FanDuel, Caesars, or BetMGM to auto-extract details and lock the ticket into your history.")
 
@@ -127,13 +170,81 @@ def render_slip_scanner(curr_user, active_uname, get_current_et_time_fn):
                     parsed, err = parse_bet_slip_image(uploaded_file.read())
                     if parsed:
                         st.session_state.scanner_data = parsed
-                        st.success("✅ Extracted ticket data successfully!")
+                        st.toast("✅ Extracted ticket data successfully!", icon="📸")
                     else:
                         st.error(f"❌ Could not scan slip: {err}")
 
-    # Editable Verification & Lock-In Form
+    # Section Displayed Directly After Scanning
     if st.session_state.scanner_data:
         data = st.session_state.scanner_data
+
+        # Attempt to match against active live or recent scoreboards
+        temp_bet = {
+            "matchup": f"{data.get('away_team', '')} @ {data.get('home_team', '')}",
+            "home_team": data.get("home_team", ""),
+            "away_team": data.get("away_team", "")
+        }
+        matched_game = find_game_for_bet(temp_bet, games_data)
+        prob_val, fair_odds_str, fair_mult_val = compute_scanned_analytics(data, matched_game)
+
+        # Matchup Showcase Card with Official Logos, Telemetry, and Scores
+        st.markdown("#### 🏟️ Matched Matchup & Live Telemetry")
+        with st.container(border=True):
+            if matched_game:
+                a_sh = matched_game.get("away_short", data.get("away_team", "AWAY"))
+                h_sh = matched_game.get("home_short", data.get("home_team", "HOME"))
+                a_sc = matched_game.get("away_score", 0)
+                h_sc = matched_game.get("home_score", 0)
+                a_logo = matched_game.get("away_logo", DEFAULT_LOGO)
+                h_logo = matched_game.get("home_logo", DEFAULT_LOGO)
+                is_fin = matched_game.get("completed", False) or "final" in str(matched_game.get("status", "")).lower()
+                status_label = "🏆 FINAL" if is_fin else (matched_game.get("displayClock") or matched_game.get("status", "Scheduled"))
+
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <img src="{a_logo}" width="30" height="30" style="border-radius:50%; object-fit:contain;">
+                        <span style="font-size:1.15rem; font-weight:800;">{a_sh}</span>
+                        <span style="font-size:1.25rem; font-weight:800; color:#38bdf8;">{a_sc}</span>
+                        <span style="opacity:0.4; font-weight:700;">@</span>
+                        <span style="font-size:1.25rem; font-weight:800; color:#38bdf8;">{h_sc}</span>
+                        <span style="font-size:1.15rem; font-weight:800;">{h_sh}</span>
+                        <img src="{h_logo}" width="30" height="30" style="border-radius:50%; object-fit:contain;">
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="background:rgba(255,255,255,0.08); color:#f8fafc; font-weight:700; font-size:0.80rem; padding:4px 10px; border-radius:6px;">
+                            {status_label}
+                        </span>
+                        <span style="background:rgba(56,189,248,0.12); color:#38bdf8; font-weight:700; font-size:0.80rem; padding:4px 10px; border-radius:6px;">
+                            [{matched_game.get('league', 'SPORTS')}]
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:12px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <img src="{DEFAULT_LOGO}" width="26" height="26">
+                        <strong>{data.get('away_team') or 'Away Team'}</strong>
+                        <span style="opacity:0.4;">@</span>
+                        <strong>{data.get('home_team') or 'Home Team'}</strong>
+                    </div>
+                    <span style="background:rgba(255,255,255,0.06); padding:3px 8px; border-radius:4px; font-size:0.78rem;">Scanned Contract</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Analytics & Probability Grid
+            a1, a2, a3 = st.columns(3)
+            a1.metric("Model Win Probability", f"{prob_val * 100:.1f}%", help="Calculated expectancy based on Poisson scoring models and historical pace.")
+            a2.metric("Fair Zero-Vig Odds", fair_odds_str, delta=f"{fair_mult_val:.2f}x Fair Multiplier", delta_color="off")
+            a3.metric("Scanned Wager Type", data.get("wager_type", "Single"), delta=f"Side: {data.get('side', 'N/A')}", delta_color="off")
+
+            st.progress(prob_val, text=f"Calculated Win Expectancy: {prob_val * 100:.1f}%")
+
+        st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+
+        # Editable Verification & Lock-In Form
         st.markdown("#### 📝 Verify Details & Lock Ticket")
 
         with st.form("confirm_scanned_slip_form"):
@@ -165,7 +276,7 @@ def render_slip_scanner(curr_user, active_uname, get_current_et_time_fn):
             payout = c8.number_input("Payout ($)", min_value=1.0, value=float(data.get("payout") or 19.10), step=5.0)
 
             profit = payout - risk
-            status = "Won" if data.get("is_settled") else "Pending"
+            status = "Won" if data.get("is_settled") else ("Won" if (matched_game and matched_game.get("completed") and prob_val == 1.0) else "Pending")
 
             matchup_str = f"{away_team} @ {home_team}" if (away_team and home_team) else (picked_team or "Custom Wager")
             if line > 0:
@@ -191,7 +302,7 @@ def render_slip_scanner(curr_user, active_uname, get_current_et_time_fn):
                     "payout_dollars": float(payout),
                     "payout": float(payout),
                     "locked_profit": float(profit),
-                    "win_prob": "55.0%",
+                    "win_prob": f"{prob_val * 100:.1f}%",
                     "status": status,
                     "notes": f"Scanned ticket [{w_type}]"
                 }
