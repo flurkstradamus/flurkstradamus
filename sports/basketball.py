@@ -2,16 +2,17 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def fetch_nba_injury_set():
     """
-    Fetches the live NBA injury report from ESPN and returns a set of lowercase
-    player names confirmed OUT, on IR, or inactive for game day.
+    Fetches the live NBA injury report from ESPN.
+    Uses a strict 3-second timeout and fails silently to an empty set
+    so the app never hangs on startup.
     """
     out_players = set()
     try:
         url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=3)
         if resp.status_code == 200:
             data = resp.json()
             for team_data in data.get("injuries", []):
@@ -26,15 +27,15 @@ def fetch_nba_injury_set():
         pass
     return out_players
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_nba_scoreboard():
     """
-    Fetches live NBA scoreboard data from ESPN API.
+    Fetches live NBA scoreboard data from ESPN API with strict timeout protection.
     """
     url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
     games = []
     try:
-        resp = requests.get(url, timeout=6)
+        resp = requests.get(url, timeout=4)
         if resp.status_code == 200:
             events = resp.json().get("events", [])
             for ev in events:
@@ -67,7 +68,6 @@ def fetch_nba_scoreboard():
                 period = status_obj.get("period", 0)
                 clock = status_obj.get("displayClock", "")
 
-                # Market odds / totals
                 odds = comp.get("odds", [{}])[0] if comp.get("odds") else {}
                 market_spread = -3.5
                 market_ou = 224.5
@@ -86,7 +86,6 @@ def fetch_nba_scoreboard():
                     except Exception:
                         pass
 
-                # Kickoff / Scheduled time
                 raw_date = ev.get("date", "")
                 kickoff_str = "Scheduled"
                 if raw_date:
@@ -126,10 +125,12 @@ def fetch_nba_scoreboard():
 def get_live_nba_roster(team_id_or_abbr):
     """
     Returns active, healthy players from team roster.
-    Filters out any player marked as OUT or injured.
-    Format: list of tuples (player_name, position, baseline_pts)
     """
-    injured_out = fetch_nba_injury_set()
+    try:
+        injured_out = fetch_nba_injury_set()
+    except Exception:
+        injured_out = set()
+
     abbr = str(team_id_or_abbr).upper()
 
     team_rosters = {
@@ -180,7 +181,6 @@ def get_live_nba_roster(team_id_or_abbr):
 def get_live_nba_3pm_roster(team_id_or_abbr):
     """
     Returns only ACTIVE, HEALTHY perimeter players who take three-pointers.
-    Format: list of tuples: (player_name, position, baseline_3pm, baseline_pts)
     """
     shooters_data = {
         "Donovan Mitchell": ("SG", 3.6, 27.5),
@@ -278,7 +278,11 @@ def get_live_nba_3pm_roster(team_id_or_abbr):
         "Derrick Jones Jr.": ("SF", 1.4, 10.5)
     }
 
-    injured_out = fetch_nba_injury_set()
+    try:
+        injured_out = fetch_nba_injury_set()
+    except Exception:
+        injured_out = set()
+
     active_roster = get_live_nba_roster(team_id_or_abbr)
     active_names = [p[0] for p in active_roster]
 
