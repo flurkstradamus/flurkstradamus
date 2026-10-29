@@ -109,16 +109,74 @@ def get_live_nba_roster(team_id_or_abbr):
 
 def get_live_nba_3pm_roster(team_id_or_abbr):
     """
-    Returns player roster with estimated 3-pointers baseline (1+, 2+, 3+ targets).
+    Returns player roster filtered and prioritized for 3-Point Field Goals Made.
+    Uses real player names from the team roster if available, prioritizing guards & wings.
     Format: list of tuples: (player_name, position, baseline_3pm, baseline_pts)
     """
-    # Fallback default roster for NBA game simulation / live odds modeling
+    # 1. Check if standard live roster is available in session state or module
+    live_roster = []
+    if "get_live_nba_roster" in globals():
+        try:
+            live_roster = globals()["get_live_nba_roster"](team_id_or_abbr)
+        except Exception:
+            live_roster = []
+
+    # 2. Known team perimeter shooters lookup by abbreviation / ID
+    abbr = str(team_id_or_abbr).upper()
+    team_shooters = {
+        "CLE": [("Donovan Mitchell", "SG", 3.5, 26.5), ("Sam Merrill", "SG", 2.5, 12.0), ("Darius Garland", "PG", 2.5, 19.5), ("Max Strus", "SF", 2.5, 13.5)],
+        "ATL": [("Trae Young", "PG", 3.0, 24.0), ("Nickeil Alexander-Walker", "SG", 2.5, 15.5), ("CJ McCollum", "SG", 2.5, 17.5), ("Bogdan Bogdanovic", "SG", 2.5, 16.0)],
+        "BOS": [("Jayson Tatum", "SF", 3.0, 27.0), ("Jaylen Brown", "SG", 2.5, 24.0), ("Derrick White", "PG", 2.5, 16.5), ("Payton Pritchard", "PG", 2.0, 12.5)],
+        "GSW": [("Stephen Curry", "PG", 4.5, 27.5), ("Buddy Hield", "SG", 3.0, 15.5), ("Moses Moody", "SG", 1.5, 11.0)],
+        "LAL": [("Luka Doncic", "PG", 3.5, 32.0), ("Austin Reaves", "SG", 2.0, 16.0), ("D'Angelo Russell", "PG", 2.5, 15.0)],
+        "MIL": [("Damian Lillard", "PG", 3.5, 25.0), ("Malik Beasley", "SG", 2.5, 12.5), ("AJ Green", "SG", 2.0, 10.0)],
+        "NYK": [("Jalen Brunson", "PG", 2.5, 26.5), ("OG Anunoby", "SF", 2.0, 15.0), ("Mikal Bridges", "SG", 2.5, 18.0), ("Karl-Anthony Towns", "C", 2.0, 21.0)],
+        "DEN": [("Jamal Murray", "PG", 2.5, 21.0), ("Michael Porter Jr.", "SF", 2.5, 17.0), ("Christian Braun", "SG", 1.5, 13.5)],
+        "MIN": [("Anthony Edwards", "SG", 3.5, 27.0), ("Mike Conley", "PG", 2.0, 11.5), ("Naz Reid", "C", 2.0, 14.5)],
+        "DAL": [("Kyrie Irving", "PG", 3.0, 25.0), ("Klay Thompson", "SG", 3.0, 16.5), ("P.J. Washington", "PF", 1.5, 12.5)],
+        "PHX": [("Devin Booker", "SG", 2.5, 26.0), ("Kevin Durant", "PF", 2.0, 26.5), ("Grayson Allen", "SG", 2.5, 12.5), ("Bradley Beal", "SG", 2.0, 17.0)],
+        "OKC": [("Shai Gilgeous-Alexander", "PG", 2.0, 30.5), ("Jalen Williams", "SF", 1.5, 19.5), ("Luguentz Dort", "SG", 2.0, 11.5), ("Chet Holmgren", "C", 1.5, 17.0)],
+        "MIA": [("Tyler Herro", "SG", 3.0, 22.0), ("Duncan Robinson", "SG", 2.5, 12.0), ("Terry Rozier", "PG", 2.0, 16.5)],
+        "PHI": [("Tyrese Maxey", "PG", 3.0, 26.0), ("Paul George", "SF", 2.5, 21.0), ("Kelly Oubre Jr.", "SG", 1.5, 14.5)],
+        "IND": [("Tyrese Haliburton", "PG", 2.5, 20.0), ("Myles Turner", "C", 1.5, 16.0), ("Andrew Nembhard", "SG", 1.5, 12.5)],
+        "SAC": [("De'Aaron Fox", "PG", 2.0, 25.5), ("Keegan Murray", "SF", 2.5, 15.0), ("Kevin Huerter", "SG", 2.0, 11.5)],
+        "NOP": [("CJ McCollum", "SG", 3.0, 19.0), ("Trey Murphy III", "SF", 3.0, 16.5), ("Jordan Hawkins", "SG", 2.0, 12.0)],
+        "HOU": [("Jalen Green", "SG", 2.5, 20.5), ("Fred VanVleet", "PG", 2.5, 15.5), ("Jabari Smith Jr.", "PF", 1.5, 13.0)],
+        "MEM": [("Ja Morant", "PG", 1.5, 24.5), ("Desmond Bane", "SG", 3.0, 21.0), ("Marcus Smart", "PG", 1.5, 12.0)],
+        "ORL": [("Franz Wagner", "SF", 1.5, 21.0), ("Jalen Suggs", "PG", 2.0, 14.0), ("Kentavious Caldwell-Pope", "SG", 1.5, 10.0)],
+        "TOR": [("Immanuel Quickley", "PG", 2.5, 18.0), ("RJ Barrett", "SG", 1.5, 20.5), ("Gradey Dick", "SG", 2.0, 13.5)],
+        "CHI": [("Coby White", "PG", 2.5, 19.0), ("Zach LaVine", "SG", 2.5, 21.0), ("Nikola Vucevic", "C", 1.5, 18.0)],
+        "SAS": [("Victor Wembanyama", "C", 2.0, 23.5), ("Devin Vassell", "SG", 2.5, 18.5), ("Chris Paul", "PG", 1.5, 10.0)],
+        "CHA": [("LaMelo Ball", "PG", 3.5, 24.5), ("Brandon Miller", "SF", 2.5, 19.0), ("Tre Mann", "SG", 2.0, 14.0)],
+        "DET": [("Cade Cunningham", "PG", 2.0, 23.0), ("Jaden Ivey", "SG", 1.5, 17.5), ("Malik Beasley", "SG", 2.5, 13.0), ("Tobias Harris", "PF", 1.5, 14.0)],
+        "WAS": [("Jordan Poole", "SG", 2.5, 19.0), ("Kyle Kuzma", "PF", 2.0, 21.0), ("Corey Kispert", "SF", 2.0, 12.5)],
+        "UTA": [("Lauri Markkanen", "PF", 3.0, 23.0), ("Collin Sexton", "PG", 1.5, 18.5), ("Keyonte George", "PG", 2.0, 15.0)],
+        "BKN": [("Cam Thomas", "SG", 2.5, 24.0), ("Cameron Johnson", "SF", 2.5, 14.5), ("Dennis Schroder", "PG", 1.5, 14.0)],
+        "POR": [("Anfernee Simons", "SG", 3.0, 21.0), ("Shaedon Sharpe", "SG", 1.5, 16.0), ("Jerami Grant", "PF", 2.0, 19.0)],
+        "LAC": [("James Harden", "PG", 2.5, 20.0), ("Norman Powell", "SG", 2.0, 16.0), ("Terance Mann", "SG", 1.0, 9.5)]
+    }
+
+    # Match team abbreviation or home short
+    for k, v in team_shooters.items():
+        if k in abbr:
+            return v
+
+    # Fallback to names from live_roster if available
+    if live_roster:
+        results = []
+        for p in live_roster[:4]:
+            p_name = p[0]
+            p_pts = float(p[2]) if len(p) > 2 else 20.0
+            # Estimate 3PM from point total: ~2.5 for guards/wings, ~1.5 otherwise
+            est_3pm = 2.5 if p_pts >= 20.0 else 1.5
+            results.append((p_name, "G", est_3pm, p_pts))
+        return results
+
     return [
         ("Primary Guard", "PG", 2.5, 24.5),
         ("Sharpshooter Wing", "SG", 2.5, 20.5),
         ("Starting Forward", "SF", 1.5, 18.0),
-        ("Stretch Big", "PF", 1.5, 15.5),
-        ("Sixth Man Sniper", "SG", 1.5, 13.5),
+        ("Sixth Man Sniper", "SG", 1.5, 14.0)
     ]
 
 @st.cache_data(ttl=30, show_spinner=False)
