@@ -80,7 +80,30 @@ st.markdown("""
             margin-bottom: 0.3rem !important; 
         }
 
-        /* Force Streamlit metrics into a clean 2x2 grid on mobile */
+        /* Prevent Streamlit from stacking nested button columns vertically on mobile */
+        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stHorizontalBlock"]:has(button) {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+            gap: 8px !important;
+            width: 100% !important;
+        }
+
+        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stHorizontalBlock"]:has(button) > div[data-testid="column"] {
+            flex: 1 1 0px !important;
+            min-width: 0 !important;
+            width: auto !important;
+        }
+
+        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stHorizontalBlock"]:has(button) button {
+            width: 100% !important;
+            min-height: 2.4rem !important;
+            padding: 4px 8px !important;
+            font-size: 0.85rem !important;
+        }
+
+        /* 2x2 grid for metrics on mobile */
         div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
             display: grid !important;
             grid-template-columns: 1fr 1fr !important;
@@ -108,19 +131,6 @@ st.markdown("""
         }
         input, select, textarea {
             font-size: 16px !important;
-        }
-
-        /* Responsive ticket card grid: stacks info rows, puts action buttons 50/50 side by side */
-        div.ticket-row-container {
-            flex-direction: column !important;
-            gap: 10px !important;
-        }
-        div.ticket-actions-col {
-            display: grid !important;
-            grid-template-columns: 1fr 1fr !important;
-            gap: 8px !important;
-            width: 100% !important;
-            margin-top: 6px !important;
         }
     }
 
