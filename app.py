@@ -13,6 +13,7 @@ from sports import fetch_football_scoreboard, fetch_nba_scoreboard
 from views.dashboard import render_dashboard
 from views.single_game import render_single_game
 from views.combo_builder import render_combo_builder
+from views.slip_scanner import render_slip_scanner
 from views.history import render_history
 from views.leaderboard import render_leaderboard, render_squad_feed
 from views.settings import render_settings, render_support
@@ -527,6 +528,7 @@ nav_list = [
     "📊 My Dashboard", 
     "⚡ Single Game Engine", 
     "🔗 Multi-Leg Combo Builder", 
+    "📸 Scan Bet Slip",
     "📜 Locked Bets History", 
     "🔥 Live Squad Feed", 
     "🏆 Leaderboard", 
@@ -574,6 +576,8 @@ elif menu_choice == "⚡ Single Game Engine":
     render_single_game(curr_user, active_uname, games_data, get_current_et_time)
 elif menu_choice == "🔗 Multi-Leg Combo Builder":
     render_combo_builder(curr_user, active_uname, games_data, get_current_et_time)
+elif menu_choice == "📸 Scan Bet Slip":
+    render_slip_scanner(curr_user, active_uname, get_current_et_time)
 elif menu_choice == "📜 Locked Bets History":
     render_history(curr_user, active_uname, is_admin, games_data, render_ticket_card)
 elif menu_choice == "🔥 Live Squad Feed":
