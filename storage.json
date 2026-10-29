@@ -1,5 +1,109 @@
 {
-  "saved_bets": [],
+  "saved_bets": [
+    {
+      "id": "1730219134.0",
+      "user": "Flurk",
+      "date": "2026-10-28 17:08 ET",
+      "type": "Single",
+      "bet_category": "Game Total",
+      "home_team": "Indiana Pacers",
+      "away_team": "Philadelphia 76ers",
+      "picked_team": "Philadelphia 76ers",
+      "matchup": "PHI @ IND",
+      "bet": "Under 234.5",
+      "target_line": 234.5,
+      "bet_direction": "Under",
+      "risk_dollars": 5.0,
+      "payout_dollars": 9.0,
+      "payout": 9.0,
+      "locked_profit": 4.0,
+      "win_prob": "50.0%",
+      "status": "Pending",
+      "notes": "[NBA] Game Total"
+    },
+    {
+      "id": "1730219100.0",
+      "user": "Flurk",
+      "date": "2026-10-28 17:06 ET",
+      "type": "4-Leg Combo",
+      "bet_category": "Combo",
+      "matchup": "4-Leg Cross-Sport Combo",
+      "bet": "4 Legs (7.4% Win Prob)",
+      "risk_dollars": 5.0,
+      "payout_dollars": 48.0,
+      "payout": 48.0,
+      "locked_profit": 43.0,
+      "win_prob": "17.9%",
+      "status": "Pending",
+      "parsed_legs": [],
+      "notes": "4-Leg Cross-Sport Combo [Safe]"
+    },
+    {
+      "id": "1730219000.0",
+      "user": "Flurk",
+      "date": "2026-10-28 17:01 ET",
+      "type": "6-Leg Combo",
+      "bet_category": "Combo",
+      "matchup": "6-Leg Cross-Sport Combo",
+      "bet": "6 Legs (9.9% Win Prob)",
+      "risk_dollars": 3.0,
+      "payout_dollars": 18.0,
+      "payout": 18.0,
+      "locked_profit": 15.0,
+      "win_prob": "7.5%",
+      "status": "Pending",
+      "parsed_legs": [],
+      "notes": "6-Leg Cross-Sport Combo [Safe]"
+    },
+    {
+      "id": "1730216500.0",
+      "user": "Flurk",
+      "date": "2026-10-28 16:22 ET",
+      "type": "Single",
+      "bet_category": "Game Total",
+      "home_team": "Indiana Pacers",
+      "away_team": "Philadelphia 76ers",
+      "picked_team": "Philadelphia 76ers",
+      "matchup": "PHI @ IND",
+      "bet": "Under 63.5",
+      "target_line": 63.5,
+      "bet_direction": "Under",
+      "risk_dollars": 171.39,
+      "payout_dollars": 243.0,
+      "payout": 243.0,
+      "locked_profit": 71.61,
+      "win_prob": "100.0%",
+      "status": "Won",
+      "notes": "[NBA] Game Total"
+    },
+    {
+      "id": "1730221200.0",
+      "user": "Flurk",
+      "date": "2026-10-28 23:01 ET",
+      "type": "9-Leg Combo",
+      "bet_category": "Combo",
+      "matchup": "9-Leg: MTU, JMU, MIA, UCLA, SMU, WMU, LIB, UNLV, NDSU",
+      "bet": "9-Leg Combo: MTU, JMU, MIA",
+      "risk_dollars": 9.06,
+      "payout_dollars": 0.0,
+      "payout": 0.0,
+      "locked_profit": -9.06,
+      "win_prob": "0.0%",
+      "status": "Lost",
+      "parsed_legs": [
+        {"matchup": "MTU", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "MTU"},
+        {"matchup": "JMU", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "JMU"},
+        {"matchup": "MIA", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "MIA"},
+        {"matchup": "UCLA", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "UCLA"},
+        {"matchup": "SMU", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "SMU"},
+        {"matchup": "WMU", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "WMU"},
+        {"matchup": "LIB", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "LIB"},
+        {"matchup": "UNLV", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "UNLV"},
+        {"matchup": "NDSU", "type": "Robinhood Event Contract", "side": "Yes", "line": null, "picked_team": "NDSU"}
+      ],
+      "notes": "[NCAA] Scanned 9-Leg Ticket"
+    }
+  ],
   "chat_messages": [],
   "user_accounts": {
     "flurk": {
@@ -22,5 +126,6 @@
     }
   },
   "banned_emails": [],
-  "game_snapshots": {}
+  "game_snapshots": {},
+  "support_tickets": []
 }
