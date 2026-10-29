@@ -6,6 +6,12 @@ from sports.football import round_half_point, get_live_football_roster
 from sports.basketball import get_live_nba_roster
 from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
 
+try:
+    from sports.basketball import get_live_nba_3pm_roster
+except ImportError:
+    def get_live_nba_3pm_roster(t_id):
+        return [("Primary Guard", "PG", 2.5, 24.5), ("Sharpshooter Wing", "SG", 2.5, 20.5)]
+
 def build_single_game_tiers(target_game, chosen_market, strat_choice):
     is_nba = (target_game.get("league") == "NBA")
     ou_open = round_half_point(target_game.get("market_ou", 224.5 if is_nba else 47.5))
@@ -28,11 +34,15 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
     is_spreads_only = "Spreads" in chosen_market
     is_ml_only = "Straight Up" in chosen_market or "Moneyline" in chosen_market
     is_points_prop = "Player Points" in chosen_market and is_nba
+    is_3pm_prop = "Three-Pointers" in chosen_market and is_nba
     is_td_prop = "Touchdown" in chosen_market and not is_nba
 
     h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short")) if is_nba else []
+    h_3pm_roster = get_live_nba_3pm_roster(target_game.get("home_id") or target_game.get("home_short")) if is_nba else []
     f_roster = get_live_football_roster(target_game.get("home_id") or target_game.get("home_short"), target_game.get("league")) if not is_nba else []
+
     star_nba_player, _, base_pts = h_roster[0] if h_roster else ("Primary Scorer", "G", 22.5)
+    star_3pm_player = h_3pm_roster[0][0] if h_3pm_roster else star_nba_player
     star_fb_player = f_roster[0][0] if f_roster else "Primary RB"
 
     fav_team = target_game["home_team"] if spread_open < 0 else target_game["away_team"]
@@ -63,7 +73,36 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         }
 
     # =========================================================================
-    # 1. GAME TOTALS EXCLUSIVE (All 3 Tiers must be Over/Under Game Totals)
+    # 1. THREE-POINTERS EXCLUSIVE (1+, 2+, 3+)
+    # =========================================================================
+    if is_3pm_prop:
+        if is_safe_profile:
+            return {
+                "good": make_card("🥉 GOOD (Ultra-Safe 1+ 3PM)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.88, f"High-floor volume: {star_3pm_player} averages >5 attempts from deep; 1+ make holds elite reliability."),
+                "better": make_card("🥈 BETTER (Safe 2+ 3PM Anchor)", "#fbbf24", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.74, f"Consistent stroke: Matchup defense concedes high perimeter volume."),
+                "best": make_card("🥇 BEST (High Probability 2+ 3PM)", "#4ade80", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.72, f"Elite conversion expectancy on standard 2+ strike.")
+            }
+        elif is_high_profit:
+            return {
+                "good": make_card("🥉 GOOD (Solid 2+ 3PM)", "#38bdf8", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.65, "Standard plus-value baseline for primary backcourt shooter."),
+                "better": make_card("🥈 BETTER (Ceiling 3+ 3PM Strike)", "#fbbf24", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.49, "High multiplier return on hot-hand perimeter clearance."),
+                "best": make_card("🥇 BEST (Max Multiplier 4+ 3PM)", "#4ade80", f"{star_3pm_player} 4+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 3.5, star_3pm_player, 0.35, "Deep-ball explosion ceiling against porous 3-point defense.")
+            }
+        elif is_balanced:
+            return {
+                "good": make_card("🥉 GOOD (Solid 1+ 3PM Floor)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.85, "Anchor floor preserving positive bankroll variance."),
+                "better": make_card("🥈 BETTER (Balanced 2+ 3PM Edge)", "#fbbf24", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.68, "Calculated sweet spot for starter-minute shooter."),
+                "best": make_card("🥇 BEST (Value 3+ 3PM Alpha)", "#4ade80", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.52, "Strong EV edge on 3+ made three-pointers.")
+            }
+        else: # Mixed
+            return {
+                "good": make_card("🥉 GOOD (Floor Anchor: 1+ 3PM)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.86, "Safe floor leg: Only needs single conversion from deep."),
+                "better": make_card("🥈 BETTER (Balanced: 2+ 3PM)", "#fbbf24", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.68, "Balanced expected value strike on 2+ makes."),
+                "best": make_card("🥇 BEST (Optimal Alpha: 3+ 3PM)", "#4ade80", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.50, "Ceiling value target on heavy 3-point attempt volume.")
+            }
+
+    # =========================================================================
+    # 2. GAME TOTALS EXCLUSIVE
     # =========================================================================
     if is_totals_only:
         if is_safe_profile:
@@ -71,7 +110,7 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
             b_line = round_half_point(ou_open + (5.5 if is_nba else 4.0))
             bst_line = round_half_point(ou_open + (3.0 if is_nba else 2.5))
             return {
-                "good": make_card("🥉 GOOD (Ultra-Safe Alternate Under)", "#38bdf8", f"Under {g_line:.1f}", "Game Total", "Under", g_line, target_game["home_team"], 0.77, f"Maximum floor cushion (+{(g_line - ou_open):.1f} pts) gives elite clearance protection."),
+                "good": make_card("🥉 GOOD (Ultra-Safe Under)", "#38bdf8", f"Under {g_line:.1f}", "Game Total", "Under", g_line, target_game["home_team"], 0.77, f"Maximum floor cushion (+{(g_line - ou_open):.1f} pts) gives elite clearance protection."),
                 "better": make_card("🥈 BETTER (Conservative Under)", "#fbbf24", f"Under {b_line:.1f}", "Game Total", "Under", b_line, target_game["home_team"], 0.71, f"Moderate buffer (+{(b_line - ou_open):.1f} pts) absorbing high-pace scoring runs."),
                 "best": make_card("🥇 BEST (High Probability Under)", "#4ade80", f"Under {bst_line:.1f}", "Game Total", "Under", bst_line, target_game["home_team"], 0.66, f"Optimal +EV threshold settling {abs(bst_line - ou_open):.1f} pts above open consensus.")
             }
@@ -104,7 +143,7 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
             }
 
     # =========================================================================
-    # 2. POINT SPREADS EXCLUSIVE (All 3 Tiers must be ATS Spreads)
+    # 3. POINT SPREADS EXCLUSIVE
     # =========================================================================
     if is_spreads_only:
         if is_safe_profile:
@@ -133,19 +172,17 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
             }
 
     # =========================================================================
-    # 3. MONEYLINE EXCLUSIVE (All 3 Tiers must be Straight Up ML)
+    # 4. MONEYLINE EXCLUSIVE
     # =========================================================================
     if is_ml_only:
-        h_team = target_game["home_team"]
-        a_team = target_game["away_team"]
         return {
             "good": make_card("🥉 GOOD (Core Favorite Anchor)", "#38bdf8", f"{fav_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, fav_team, max(0.68, max(h_win_prob, 1.0 - h_win_prob)), f"Predictive win probabilities establish {fav_team} as the safest straight-up play."),
             "better": make_card("🥈 BETTER (Balanced Win Probability)", "#fbbf24", f"{fav_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, fav_team, 0.62, "Optimum risk-adjusted outright winner backed by home/away splits."),
-            "best": make_card("🥇 BEST (Live Underdog Value)", "#4ade80", f"{dog_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, dog_team, min(0.48, min(h_win_prob, 1.0 - h_win_prob)), f"High-yield dog alpha: Tempo and efficiency ratings indicate viable upset potential.")
+            "best": make_card("🥇 BEST (Live Underdog Value)", "#4ade80", f"{dog_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, dog_team, min(0.48, min(h_win_prob, 1.0 - h_win_prob)), "High-yield dog alpha: Tempo and efficiency ratings indicate viable upset potential.")
         }
 
     # =========================================================================
-    # 4. PLAYER PROPS EXCLUSIVE (Points or TDs)
+    # 5. PLAYER POINTS PROPS EXCLUSIVE
     # =========================================================================
     if is_points_prop:
         base_num = float(base_pts)
@@ -163,35 +200,24 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         }
 
     # =========================================================================
-    # 5. SYSTEM PICK / MIXED DEFAULT (Picks best across different markets)
+    # 6. SYSTEM PICK / MIXED DEFAULT
     # =========================================================================
     if is_safe_profile:
         g_line = round_half_point(ou_open + (8.5 if is_nba else 6.5))
         good_card = make_card("🥉 GOOD (Ultra-Safe Cushion)", "#38bdf8", f"Under {g_line:.1f}", "Game Total", "Under", g_line, target_game["home_team"], 0.76, "Max safety floor cushion against market volatility.")
         better_card = make_card("🥈 BETTER (Conservative Floor)", "#fbbf24", f"{fav_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, fav_team, 0.71, "High-percentage anchor with reliable baseline expectancy.")
-        if is_nba:
-            best_card = make_card("🥇 BEST (Elite Floor Clearance)", "#4ade80", f"{star_nba_player} Over {max(10.5, round_half_point(float(base_pts) - 5.5)):.1f} Pts", "Player Points Prop", "Over", max(10.5, round_half_point(float(base_pts) - 5.5)), star_nba_player, 0.74, f"Heavy usage baseline for {star_nba_player} bought down 5+ pts.")
-        else:
-            best_card = make_card("🥇 BEST (High Probability Under)", "#4ade80", f"Under {round_half_point(ou_open + 5.5):.1f}", "Game Total", "Under", round_half_point(ou_open + 5.5), target_game["home_team"], 0.72, "Defensive tempo margin creates exceptional clearance probability.")
+        best_card = make_card("🥇 BEST (Elite 1+ 3PM Floor)", "#4ade80", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.86, f"{star_3pm_player} 1+ three-pointers carries an 86% baseline probability.") if is_nba else make_card("🥇 BEST (High Probability Under)", "#4ade80", f"Under {round_half_point(ou_open + 5.5):.1f}", "Game Total", "Under", round_half_point(ou_open + 5.5), target_game["home_team"], 0.72, "Defensive tempo margin creates exceptional clearance probability.")
         return {"good": good_card, "better": better_card, "best": best_card}
-
     elif is_high_profit:
         good_card = make_card("🥉 GOOD (Aggressive Spread Lay)", "#38bdf8", f"{fav_team} {round_half_point(fav_spread - 2.5):+.1f}", "Point Spread (ATS)", "Spread", round_half_point(fav_spread - 2.5), fav_team, 0.49, f"Alternate chalk lay on {fav_team} for amplified multiplier yield.")
         better_card = make_card("🥈 BETTER (Outright Dog Alpha)", "#fbbf24", f"{dog_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, dog_team, 0.44, "Outright dog play capitalizing on matchup tempo variance.")
-        if is_nba:
-            best_card = make_card("🥇 BEST (Ceiling Multiplier)", "#4ade80", f"{star_nba_player} Over {round_half_point(float(base_pts) + 3.5):.1f} Pts", "Player Points Prop", "Over", round_half_point(float(base_pts) + 3.5), star_nba_player, 0.42, "Ladder ceiling: Scoring projection supports longshot clearance.")
-        else:
-            best_card = make_card("🥇 BEST (High Value TD Alpha)", "#4ade80", f"{star_fb_player} Any Time TD", "Player Anytime Touchdown Scorer", "TD", 1.0, star_fb_player, 0.48, "Red-zone share offers premium plus-money value.")
+        best_card = make_card("🥇 BEST (Ceiling 3+ 3PM Strike)", "#4ade80", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.48, "Deep-ball explosion ceiling for magnified odds.") if is_nba else make_card("🥇 BEST (High Value TD Alpha)", "#4ade80", f"{star_fb_player} Any Time TD", "Player Anytime Touchdown Scorer", "TD", 1.0, star_fb_player, 0.48, "Red-zone share offers premium plus-money value.")
         return {"good": good_card, "better": better_card, "best": best_card}
-
     else:
         good_line = round_half_point(ou_open + (7.5 if is_nba else 4.5))
         good_card = make_card("🥉 GOOD (Safe Floor Anchor)", "#38bdf8", f"Under {good_line:.1f}", "Game Total", "Under", good_line, target_game["home_team"], 0.72, f"Floor cushion (+{(good_line - ou_open):.1f} pts) offers ideal protection.")
         better_card = make_card("🥈 BETTER (Balanced +EV)", "#fbbf24", f"{fav_team} {fav_spread:+.1f}", "Point Spread (ATS)", "Spread", fav_spread, fav_team, 0.55, f"Efficiency edge backing {fav_team} on market spread.")
-        if is_nba:
-            best_card = make_card("🥇 BEST (Optimal Value Alpha)", "#4ade80", f"{star_nba_player} Over {round_half_point(float(base_pts) - 1.5):.1f} Pts", "Player Points Prop", "Over", round_half_point(float(base_pts) - 1.5), star_nba_player, 0.64, f"{star_nba_player} usage supports premium conversion edge.")
-        else:
-            best_card = make_card("🥇 BEST (Optimal Value Alpha)", "#4ade80", f"Under {round_half_point(ou_open + 1.5):.1f}", "Game Total", "Under", round_half_point(ou_open + 1.5), target_game["home_team"], 0.62, "Pace model projects terminal tempo settling below open.")
+        best_card = make_card("🥇 BEST (Balanced 2+ 3PM Alpha)", "#4ade80", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.68, f"{star_3pm_player} 2+ made threes is a prime model expected value play.") if is_nba else make_card("🥇 BEST (Optimal Value Alpha)", "#4ade80", f"Under {round_half_point(ou_open + 1.5):.1f}", "Game Total", "Under", round_half_point(ou_open + 1.5), target_game["home_team"], 0.62, "Pace model projects terminal tempo settling below open.")
         return {"good": good_card, "better": better_card, "best": best_card}
 
 def trigger_tier_auto_refresh():
@@ -235,7 +261,8 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                 "📊 Game Totals (Over / Under)",
                 "🛡️ Point Spreads (ATS Cover)",
                 "🏆 Straight Up Winners (Moneyline)",
-                "🏀 NBA Player Points Prop"
+                "🏀 NBA Player Points Prop",
+                "🎯 NBA Player Three-Pointers Made (1+, 2+, 3+)"
             ]
         elif league_choice in ["NFL", "NCAA Football"]:
             market_options = [
@@ -252,6 +279,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                 "🛡️ Point Spreads (ATS Cover)",
                 "🏆 Straight Up Winners (Moneyline)",
                 "🏀 NBA Player Points Prop",
+                "🎯 NBA Player Three-Pointers Made (1+, 2+, 3+)",
                 "🏈 Football Anytime Touchdown Scorer"
             ]
 
@@ -297,7 +325,6 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             q = q_filter.strip().lower()
             pool = [g for g in pool if q in g["home_team"].lower() or q in g["away_team"].lower() or q in g.get("home_short", "").lower() or q in g.get("away_short", "").lower()]
 
-        # Auto-recalculate if an input changed and tiers were already generated
         if st.session_state.sg_needs_tier_calc and st.session_state.single_tier_picks is not None:
             if pool:
                 st.session_state.single_tier_picks = build_single_game_tiers(pool[0], chosen_market, strat_choice)
@@ -395,7 +422,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
         m_types = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)"]
         if is_nba:
-            m_types.append("Player Points Prop")
+            m_types.extend(["Player Points Prop", "NBA Player 3-Pointers Made"])
         else:
             m_types.append("Player Anytime Touchdown Scorer")
 
@@ -454,6 +481,30 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             c_line = st.number_input("Points Line", value=default_pts, step=0.5, key=f"sg_pts_l_{f_nonce}")
             bet_title = f"{picked_t} {c_side} {c_line:.1f} Pts"
             prob_est = 0.58
+
+        elif chosen_wtype == "NBA Player 3-Pointers Made":
+            c1, c2 = st.columns(2)
+            h_roster = get_live_nba_3pm_roster(selected_gm.get("home_id") or selected_gm.get("home_short"))
+            a_roster = get_live_nba_3pm_roster(selected_gm.get("away_id") or selected_gm.get("away_short"))
+            all_p = [p[0] for p in (h_roster + a_roster)]
+            cur_p = cur_bet.get("picked_team")
+            p_idx_sel = all_p.index(cur_p) if cur_p in all_p else 0
+            picked_t = c1.selectbox("Player", all_p, index=p_idx_sel, key=f"sg_3pm_p_{f_nonce}")
+            
+            # 1+, 2+, 3+, 4+ targets
+            three_opts = ["1+ Three-Pointers", "2+ Three-Pointers", "3+ Three-Pointers", "4+ Three-Pointers"]
+            cur_label = cur_bet.get("pick_label", "2+ Three-Pointers")
+            t_idx = 1
+            for i, opt in enumerate(three_opts):
+                if opt.split()[0] in cur_label:
+                    t_idx = i
+                    break
+            chosen_tier = c2.selectbox("Target Milestone", three_opts, index=t_idx, key=f"sg_3pm_tier_{f_nonce}")
+            
+            c_side = "Over"
+            c_line = float(t_idx) + 0.5
+            bet_title = f"{picked_t} {chosen_tier}"
+            prob_est = 0.86 if t_idx == 0 else (0.68 if t_idx == 1 else (0.50 if t_idx == 2 else 0.35))
 
         else:
             h_roster = get_live_football_roster(selected_gm.get("home_id") or selected_gm.get("home_short"), selected_gm.get("league"))
