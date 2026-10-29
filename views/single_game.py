@@ -3,18 +3,8 @@ from datetime import datetime
 from config import DEFAULT_LOGO
 from database import save_all_storage
 from sports.football import round_half_point, get_live_football_roster
-from sports.basketball import get_live_nba_roster
+from sports.basketball import get_live_nba_roster, get_live_nba_3pm_roster
 from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
-
-try:
-    from sports.basketball import get_live_nba_3pm_roster
-except ImportError:
-    def get_live_nba_3pm_roster(t_id):
-        return [
-            ("Donovan Mitchell", "SG", 3.5, 26.5),
-            ("Darius Garland", "PG", 2.5, 19.5),
-            ("Sam Merrill", "SG", 2.5, 12.0)
-        ]
 
 def build_single_game_tiers(target_game, chosen_market, strat_choice):
     is_nba = (target_game.get("league") == "NBA")
@@ -41,7 +31,8 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
     is_3pm_prop = ("Three-Pointers" in chosen_market or "3-Pointers" in chosen_market) and is_nba
     is_td_prop = "Touchdown" in chosen_market and not is_nba
 
-    h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short")) if is_nba else []
+    # Retrieve live/active rosters (injuries excluded)
+    h_roster = get_live_nba_roster(target_game.get("home_short") or target_game.get("home_id")) if is_nba else []
     h_3pm_roster = get_live_nba_3pm_roster(target_game.get("home_short") or target_game.get("home_id")) if is_nba else []
     f_roster = get_live_football_roster(target_game.get("home_id") or target_game.get("home_short"), target_game.get("league")) if not is_nba else []
 
@@ -80,15 +71,15 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
     if is_3pm_prop:
         if is_safe_profile:
             return {
-                "good": make_card("🥉 GOOD (Ultra-Safe 1+ 3PM)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.88, f"High-floor volume: {star_3pm_player} averages >5 attempts from deep; 1+ make holds elite reliability."),
-                "better": make_card("🥈 BETTER (Safe 2+ 3PM Anchor)", "#fbbf24", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.74, f"Consistent stroke: Matchup defense concedes high perimeter volume."),
-                "best": make_card("🥇 BEST (High Probability 2+ 3PM)", "#4ade80", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.72, f"Elite conversion expectancy on standard 2+ strike.")
+                "good": make_card("🥉 GOOD (Ultra-Safe 1+ 3PM)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.88, f"High-floor volume: {star_3pm_player} is confirmed active with heavy perimeter usage; 1+ make provides supreme safety."),
+                "better": make_card("🥈 BETTER (Safe 2+ 3PM Anchor)", "#fbbf24", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.74, f"Consistent stroke: Defensive matchup concedes generous perimeter attempts to starting guards."),
+                "best": make_card("🥇 BEST (High Probability 2+ 3PM)", "#4ade80", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.72, f"Optimal +EV line: Model calculates 72% clearance probability on 2+ makes.")
             }
         elif is_high_profit:
             return {
                 "good": make_card("🥉 GOOD (Solid 2+ 3PM)", "#38bdf8", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.65, "Standard plus-value baseline for primary backcourt shooter."),
-                "better": make_card("🥈 BETTER (Ceiling 3+ 3PM Strike)", "#fbbf24", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.49, "High multiplier return on hot-hand perimeter clearance."),
-                "best": make_card("🥇 BEST (Max Multiplier 4+ 3PM)", "#4ade80", f"{star_3pm_player} 4+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 3.5, star_3pm_player, 0.35, "Deep-ball explosion ceiling against porous 3-point defense.")
+                "better": make_card("🥈 BETTER (Ceiling 3+ 3PM Strike)", "#fbbf24", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.49, "Ladder ceiling: Scoring projection supports longshot clearance."),
+                "best": make_card("🥇 BEST (Max Multiplier 4+ 3PM)", "#4ade80", f"{star_3pm_player} 4+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 3.5, star_3pm_player, 0.35, "Deep-ball explosion target for maximized return yield.")
             }
         elif is_balanced:
             return {
@@ -98,7 +89,7 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
             }
         else: # Mixed
             return {
-                "good": make_card("🥉 GOOD (Floor Anchor: 1+ 3PM)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.86, "Safe floor leg: Only needs single conversion from deep."),
+                "good": make_card("🥉 GOOD (Floor Anchor: 1+ 3PM)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.86, "Safe floor leg: Only needs a single conversion from beyond the arc."),
                 "better": make_card("🥈 BETTER (Balanced: 2+ 3PM)", "#fbbf24", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.68, "Balanced expected value strike on 2+ makes."),
                 "best": make_card("🥇 BEST (Optimal Alpha: 3+ 3PM)", "#4ade80", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.50, "Ceiling value target on heavy 3-point attempt volume.")
             }
@@ -465,8 +456,8 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
         elif chosen_wtype == "Player Points Prop":
             c1, c2 = st.columns(2)
-            h_roster = get_live_nba_roster(selected_gm.get("home_id") or selected_gm.get("home_short"))
-            a_roster = get_live_nba_roster(selected_gm.get("away_id") or selected_gm.get("away_short"))
+            h_roster = get_live_nba_roster(selected_gm.get("home_short") or selected_gm.get("home_id"))
+            a_roster = get_live_nba_roster(selected_gm.get("away_short") or selected_gm.get("away_id"))
             all_p = [p[0] for p in (h_roster + a_roster)]
             cur_p = cur_bet.get("picked_team")
             p_idx_sel = all_p.index(cur_p) if cur_p in all_p else 0
