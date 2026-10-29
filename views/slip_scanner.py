@@ -64,26 +64,48 @@ def parse_bet_slip_image(image_bytes):
         "generationConfig": {"response_mime_type": "application/json"}
     }
 
-    active_models = [
-        "models/gemini-2.0-flash",
-        "models/gemini-2.5-flash",
-        "models/gemini-1.5-flash"
-    ]
+    # Dynamically discover active models supported by the provided API key
+    active_models = []
+    try:
+        models_list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
+        list_resp = requests.get(models_list_url, timeout=5.0)
+        if list_resp.status_code == 200:
+            for m in list_resp.json().get("models", []):
+                m_name = m.get("name", "")
+                methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" in methods and "flash" in m_name.lower():
+                    clean_name = m_name.replace("models/", "")
+                    active_models.append(clean_name)
+    except Exception:
+        pass
+
+    # Reliable fallback priority list using active endpoints
+    if not active_models:
+        active_models = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-exp"
+        ]
 
     last_err = ""
-    for full_model_path in active_models:
-        url = f"https://generativelanguage.googleapis.com/v1beta/{full_model_path}:generateContent?key={gemini_key}"
+    for model_name in active_models:
+        clean_model = model_name.replace("models/", "")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={gemini_key}"
         try:
             r = requests.post(url, json=payload, timeout=25.0)
             if r.status_code == 200:
-                txt = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                cleaned = re.sub(r"^```json\s*", "", txt.strip())
+                candidates = r.json().get("candidates", [])
+                if not candidates:
+                    continue
+                txt = candidates[0]["content"]["parts"][0]["text"]
+                cleaned = re.sub(r"^```json\s*", "", txt.strip(), flags=re.IGNORECASE)
+                cleaned = re.sub(r"^```\s*", "", cleaned.strip())
                 cleaned = re.sub(r"```$", "", cleaned.strip())
                 return json.loads(cleaned), None
             else:
-                last_err = f"{full_model_path} (HTTP {r.status_code}): {r.text[:120]}"
+                last_err = f"{clean_model} (HTTP {r.status_code}): {r.text[:120]}"
         except Exception as e:
-            last_err = str(e)
+            last_err = f"{clean_model}: {str(e)}"
             continue
 
     return None, f"Parsing failed: {last_err}"
@@ -120,11 +142,22 @@ def render_slip_scanner(curr_user, active_uname, get_current_et_time_fn):
             home_team = c2.text_input("Home Team", value=data.get("home_team") or "")
 
             c3, c4 = st.columns(2)
-            w_type = c3.selectbox("Wager Type", ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Points Prop", "Anytime TD", "Multi-Leg Parlay"], index=0)
+            w_types = ["Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Points Prop", "Anytime TD", "Multi-Leg Parlay"]
+            raw_wtype = data.get("wager_type") or "Game Total"
+            w_idx = 0
+            for idx, wt in enumerate(w_types):
+                if wt.lower() in raw_wtype.lower():
+                    w_idx = idx
+                    break
+
+            w_type = c3.selectbox("Wager Type", w_types, index=w_idx)
             picked_team = c4.text_input("Picked Selection / Player", value=data.get("picked_team") or "")
 
             c5, c6 = st.columns(2)
-            side = c5.selectbox("Side / Direction", ["Under", "Over", "Spread", "Moneyline", "TD"], index=0 if data.get("side") == "Under" else 1)
+            side_opts = ["Under", "Over", "Spread", "Moneyline", "TD"]
+            raw_side = data.get("side") or "Under"
+            s_idx = side_opts.index(raw_side) if raw_side in side_opts else (0 if raw_side == "Under" else 1)
+            side = c5.selectbox("Side / Direction", side_opts, index=s_idx)
             line = c6.number_input("Line (pts / strike)", value=float(data.get("line") or 0.0), step=0.5)
 
             c7, c8 = st.columns(2)
