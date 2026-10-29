@@ -19,13 +19,109 @@ def fetch_nba_injury_set():
                     ath = item.get("athlete", {})
                     p_name = ath.get("displayName", "").strip().lower()
                     status = item.get("status", {}).get("type", "").lower()
-                    # Rule out players who are officially Out, IR, or Suspended
                     if any(s in status for s in ["out", "ir", "injured reserve", "suspended", "doubtful"]):
                         if p_name:
                             out_players.add(p_name)
     except Exception:
         pass
     return out_players
+
+@st.cache_data(ttl=60)
+def fetch_nba_scoreboard():
+    """
+    Fetches live NBA scoreboard data from ESPN API.
+    """
+    url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+    games = []
+    try:
+        resp = requests.get(url, timeout=6)
+        if resp.status_code == 200:
+            events = resp.json().get("events", [])
+            for ev in events:
+                comp = ev.get("competitions", [{}])[0]
+                status_obj = ev.get("status", {})
+                competitors = comp.get("competitors", [])
+
+                home_team, away_team = {}, {}
+                for c in competitors:
+                    if c.get("homeAway") == "home":
+                        home_team = c
+                    else:
+                        away_team = c
+
+                h_name = home_team.get("team", {}).get("displayName", "Home Team")
+                a_name = away_team.get("team", {}).get("displayName", "Away Team")
+                h_short = home_team.get("team", {}).get("abbreviation", "HOME")
+                a_short = away_team.get("team", {}).get("abbreviation", "AWAY")
+                h_logo = home_team.get("team", {}).get("logo", "")
+                a_logo = away_team.get("team", {}).get("logo", "")
+
+                try:
+                    h_score = int(home_team.get("score", 0))
+                    a_score = int(away_team.get("score", 0))
+                except (ValueError, TypeError):
+                    h_score, a_score = 0, 0
+
+                state_text = status_obj.get("type", {}).get("state", "pre")
+                completed = status_obj.get("type", {}).get("completed", False)
+                period = status_obj.get("period", 0)
+                clock = status_obj.get("displayClock", "")
+
+                # Market odds / totals
+                odds = comp.get("odds", [{}])[0] if comp.get("odds") else {}
+                market_spread = -3.5
+                market_ou = 224.5
+
+                if "overUnder" in odds:
+                    try:
+                        market_ou = float(odds["overUnder"])
+                    except (ValueError, TypeError):
+                        pass
+
+                details_spd = odds.get("details", "")
+                if details_spd and ("-" in details_spd or "+" in details_spd):
+                    try:
+                        parts = details_spd.split()
+                        market_spread = float(parts[-1])
+                    except Exception:
+                        pass
+
+                # Kickoff / Scheduled time
+                raw_date = ev.get("date", "")
+                kickoff_str = "Scheduled"
+                if raw_date:
+                    try:
+                        dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                        kickoff_str = dt.strftime("%a %m/%d - %I:%M %p ET")
+                    except Exception:
+                        kickoff_str = "Upcoming"
+
+                games.append({
+                    "id": str(ev.get("id")),
+                    "league": "NBA",
+                    "home_id": home_team.get("id", h_short),
+                    "away_id": away_team.get("id", a_short),
+                    "home_team": h_name,
+                    "away_team": a_name,
+                    "home_short": h_short,
+                    "away_short": a_short,
+                    "home_logo": h_logo,
+                    "away_logo": a_logo,
+                    "home_score": h_score,
+                    "away_score": a_score,
+                    "home_record": home_team.get("records", [{}])[0].get("summary", "0-0") if home_team.get("records") else "0-0",
+                    "away_record": away_team.get("records", [{}])[0].get("summary", "0-0") if away_team.get("records") else "0-0",
+                    "market_ou": market_ou,
+                    "market_spread": market_spread,
+                    "state_text": state_text,
+                    "completed": completed,
+                    "period": period,
+                    "clock": clock,
+                    "kickoff": kickoff_str
+                })
+    except Exception:
+        pass
+    return games
 
 def get_live_nba_roster(team_id_or_abbr):
     """
@@ -36,7 +132,6 @@ def get_live_nba_roster(team_id_or_abbr):
     injured_out = fetch_nba_injury_set()
     abbr = str(team_id_or_abbr).upper()
 
-    # Pre-verified primary rotation rosters
     team_rosters = {
         "CLE": [("Donovan Mitchell", "SG", 27.5), ("Darius Garland", "PG", 20.5), ("Evan Mobley", "PF", 18.0), ("Jarrett Allen", "C", 14.5), ("Caris LeVert", "SG", 13.0), ("Sam Merrill", "SG", 11.5)],
         "ATL": [("Trae Young", "PG", 25.5), ("Jalen Johnson", "PF", 19.0), ("Dyson Daniels", "SG", 14.5), ("Nickeil Alexander-Walker", "SG", 14.0), ("Onyeka Okongwu", "C", 12.5), ("Zaccharie Risacher", "SF", 12.0)],
@@ -70,7 +165,6 @@ def get_live_nba_roster(team_id_or_abbr):
         "LAC": [("James Harden", "PG", 21.0), ("Norman Powell", "SG", 23.5), ("Ivica Zubac", "C", 16.5), ("Derrick Jones Jr.", "SF", 10.5), ("Terance Mann", "SG", 9.0)]
     }
 
-    # Match team
     candidates = []
     for k, v in team_rosters.items():
         if k in abbr:
@@ -80,148 +174,114 @@ def get_live_nba_roster(team_id_or_abbr):
     if not candidates:
         candidates = [("Starting Point Guard", "PG", 21.5), ("Starting Shooting Guard", "SG", 19.0), ("Starting Small Forward", "SF", 16.5)]
 
-    # Filter out injured players
     active_pool = [c for c in candidates if c[0].strip().lower() not in injured_out]
     return active_pool if active_pool else candidates
 
 def get_live_nba_3pm_roster(team_id_or_abbr):
     """
     Returns only ACTIVE, HEALTHY perimeter players who take three-pointers.
-    Excludes non-shooters, rim-protecting bigs, and anyone officially listed as OUT.
     Format: list of tuples: (player_name, position, baseline_3pm, baseline_pts)
     """
-    # 3-Point specialists database: player -> (position, baseline_3pm, typical_pts)
     shooters_data = {
-        # Cavaliers
         "Donovan Mitchell": ("SG", 3.6, 27.5),
         "Darius Garland": ("PG", 2.6, 20.5),
         "Sam Merrill": ("SG", 2.7, 11.5),
         "Caris LeVert": ("SG", 1.8, 13.0),
-        # Hawks
         "Trae Young": ("PG", 3.2, 25.5),
         "Nickeil Alexander-Walker": ("SG", 2.2, 14.0),
         "Zaccharie Risacher": ("SF", 2.0, 12.0),
         "Dyson Daniels": ("SG", 1.5, 14.5),
-        # Celtics
         "Jayson Tatum": ("SF", 3.8, 28.0),
         "Jaylen Brown": ("SG", 2.4, 24.5),
         "Derrick White": ("PG", 3.2, 16.5),
         "Payton Pritchard": ("PG", 3.4, 13.0),
         "Jrue Holiday": ("PG", 1.8, 13.5),
-        # Warriors
         "Stephen Curry": ("PG", 4.5, 27.5),
         "Buddy Hield": ("SG", 3.6, 15.0),
         "Moses Moody": ("SG", 1.8, 10.5),
         "Andrew Wiggins": ("SF", 1.9, 14.5),
-        # Lakers
         "Austin Reaves": ("SG", 2.4, 16.5),
         "LeBron James": ("SF", 2.2, 23.5),
         "D'Angelo Russell": ("PG", 2.4, 13.0),
         "Dalton Knecht": ("SG", 2.2, 10.5),
         "Rui Hachimura": ("PF", 1.5, 13.5),
-        # Knicks
         "Jalen Brunson": ("PG", 2.6, 27.0),
         "Karl-Anthony Towns": ("C", 2.4, 22.5),
         "Mikal Bridges": ("SG", 2.5, 17.5),
         "OG Anunoby": ("SF", 2.2, 15.5),
-        # Timberwolves
         "Anthony Edwards": ("SG", 4.3, 28.0),
         "Donte DiVincenzo": ("SG", 2.8, 11.0),
         "Naz Reid": ("C", 2.2, 14.5),
         "Julius Randle": ("PF", 1.8, 21.0),
-        # Mavericks
         "Luka Doncic": ("PG", 3.6, 31.5),
         "Kyrie Irving": ("PG", 3.0, 24.5),
         "Klay Thompson": ("SG", 3.2, 15.5),
         "P.J. Washington": ("PF", 1.6, 12.0),
-        # Thunder
         "Shai Gilgeous-Alexander": ("PG", 1.9, 30.5),
         "Isaiah Joe": ("SG", 2.4, 10.5),
         "Luguentz Dort": ("SG", 2.3, 11.0),
         "Jalen Williams": ("SF", 1.8, 19.5),
-        # Nuggets
         "Michael Porter Jr.": ("SF", 2.9, 18.0),
         "Jamal Murray": ("PG", 2.2, 20.5),
         "Christian Braun": ("SG", 1.4, 14.5),
-        # Suns
         "Devin Booker": ("SG", 2.6, 25.5),
         "Kevin Durant": ("PF", 2.4, 27.0),
         "Grayson Allen": ("SG", 2.8, 11.5),
         "Bradley Beal": ("SG", 2.1, 17.0),
-        # Bucks
         "Damian Lillard": ("PG", 3.8, 25.5),
         "Brook Lopez": ("C", 1.9, 12.0),
         "Gary Trent Jr.": ("SG", 2.0, 10.5),
-        # 76ers
         "Tyrese Maxey": ("PG", 3.3, 27.5),
         "Paul George": ("SF", 2.8, 20.0),
         "Kelly Oubre Jr.": ("SG", 1.6, 14.0),
-        # Heat
         "Tyler Herro": ("SG", 3.8, 23.5),
         "Duncan Robinson": ("SG", 2.6, 10.0),
         "Terry Rozier": ("PG", 2.2, 14.5),
-        # Kings
         "De'Aaron Fox": ("PG", 2.3, 26.5),
         "Keegan Murray": ("SF", 2.4, 14.0),
         "Malik Monk": ("SG", 2.2, 13.5),
-        # Rockets
         "Jalen Green": ("SG", 3.0, 21.0),
         "Fred VanVleet": ("PG", 2.7, 15.0),
         "Jabari Smith Jr.": ("PF", 1.7, 12.5),
-        # Pacers
         "Tyrese Haliburton": ("PG", 2.8, 18.5),
         "Myles Turner": ("C", 2.0, 15.5),
         "Bennedict Mathurin": ("SG", 1.7, 19.0),
-        # Magic
         "Jalen Suggs": ("PG", 2.2, 15.0),
         "Franz Wagner": ("SF", 1.9, 23.0),
         "Kentavious Caldwell-Pope": ("SG", 1.5, 10.0),
-        # Bulls
         "Coby White": ("PG", 3.1, 19.0),
         "Zach LaVine": ("SG", 2.8, 22.0),
         "Nikola Vucevic": ("C", 1.9, 20.5),
-        # Pistons
         "Malik Beasley": ("SG", 3.2, 13.5),
         "Cade Cunningham": ("PG", 2.0, 23.5),
         "Jaden Ivey": ("SG", 1.8, 18.0),
-        # Raptors
         "Gradey Dick": ("SG", 2.7, 18.0),
         "Immanuel Quickley": ("PG", 2.5, 16.5),
         "RJ Barrett": ("SG", 1.8, 21.5),
-        # Hornets
         "LaMelo Ball": ("PG", 4.4, 29.5),
         "Brandon Miller": ("SF", 3.2, 18.5),
         "Tre Mann": ("SG", 2.4, 15.0),
-        # Nets
         "Cameron Johnson": ("SF", 2.8, 17.0),
         "Cam Thomas": ("SG", 2.6, 24.5),
         "Dennis Schroder": ("PG", 2.1, 18.0),
-        # Trail Blazers
         "Anfernee Simons": ("SG", 2.8, 18.5),
         "Shaedon Sharpe": ("SG", 2.0, 16.0),
         "Jerami Grant": ("PF", 2.1, 18.0),
-        # Jazz
         "Lauri Markkanen": ("PF", 2.8, 20.5),
         "Keyonte George": ("PG", 2.4, 15.0),
         "Collin Sexton": ("PG", 1.8, 16.0),
-        # Wizards
         "Jordan Poole": ("SG", 3.3, 21.0),
         "Kyle Kuzma": ("PF", 1.8, 17.5),
         "Bilal Coulibaly": ("SF", 1.6, 15.0),
-        # Clippers
         "Norman Powell": ("SG", 3.6, 23.5),
         "James Harden": ("PG", 2.6, 21.0),
         "Derrick Jones Jr.": ("SF", 1.4, 10.5)
     }
 
-    # 1. Fetch live injury scratch list
     injured_out = fetch_nba_injury_set()
-
-    # 2. Get active team rotation players
     active_roster = get_live_nba_roster(team_id_or_abbr)
     active_names = [p[0] for p in active_roster]
 
-    # 3. Match rotation players against confirmed 3-point shooters
     results = []
     for p_name in active_names:
         if p_name.strip().lower() in injured_out:
@@ -230,12 +290,10 @@ def get_live_nba_3pm_roster(team_id_or_abbr):
             pos, base_3, base_p = shooters_data[p_name]
             results.append((p_name, pos, base_3, base_p))
 
-    # If roster matched shooter data, sort by 3-point volume
     if results:
         results.sort(key=lambda x: x[2], reverse=True)
         return results
 
-    # Fallback to active guards & wings from active roster
     fallback = []
     for p in active_roster:
         name, pos, pts = p[0], p[1], float(p[2])
