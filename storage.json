@@ -1,6 +1,45 @@
 {
   "saved_bets": [
     {
+      "id": "1793311693.951818",
+      "user": "Flurk",
+      "date": "2026-10-29 18:08 ET",
+      "type": "3-Leg SGP",
+      "bet_category": "Combo",
+      "matchup": "CLE @ ATL",
+      "bet": "3-Leg SGP: Nickeil Alexander-Walker Over 9.0 Pts, Jarrett Allen Over 9.0 Pts, Dyson Daniels Over 9.0 Pts",
+      "risk_dollars": 5.0,
+      "payout_dollars": 12.35,
+      "payout": 12.35,
+      "locked_profit": 7.35,
+      "win_prob": "40.5%",
+      "status": "Pending",
+      "parsed_legs": [
+        {
+          "matchup": "CLE @ ATL",
+          "type": "Player Points Prop",
+          "side": "Over",
+          "line": 9.0,
+          "picked_team": "Nickeil Alexander-Walker"
+        },
+        {
+          "matchup": "CLE @ ATL",
+          "type": "Player Points Prop",
+          "side": "Over",
+          "line": 9.0,
+          "picked_team": "Jarrett Allen"
+        },
+        {
+          "matchup": "CLE @ ATL",
+          "type": "Player Points Prop",
+          "side": "Over",
+          "line": 9.0,
+          "picked_team": "Dyson Daniels"
+        }
+      ],
+      "notes": "[NBA] Same-Game Parlay (SGP) [Safe]"
+    },
+    {
       "id": "1793293916.427736",
       "user": "Flurk",
       "date": "2026-10-29 13:11 ET",
