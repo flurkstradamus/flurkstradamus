@@ -117,7 +117,6 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
         h_roster = get_live_nba_roster(target_gm.get("home_id") or target_gm.get("home_short")) or [("Primary Scorer", "G", 22.5)]
         a_roster = get_live_nba_roster(target_gm.get("away_id") or target_gm.get("away_short")) or [("Away Scorer", "G", 20.5)]
 
-        # Home team primary scorer prop
         p1_name, _, p1_pts = h_roster[0]
         p1_line = max(9.5, round_half_point(float(p1_pts) - (5.5 if is_safe else 1.5)))
         candidates.append({
@@ -131,7 +130,6 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
             "matchup": m_str
         })
 
-        # Away team scorer prop
         p2_name, _, p2_pts = a_roster[0]
         p2_line = max(8.5, round_half_point(float(p2_pts) - (4.5 if is_safe else 2.0)))
         candidates.append({
@@ -145,7 +143,6 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
             "matchup": m_str
         })
 
-        # Home secondary player prop (if needed for 5+ legs)
         if len(h_roster) > 1:
             p3_name, _, p3_pts = h_roster[1]
             p3_line = max(7.5, round_half_point(float(p3_pts) - 3.5))
@@ -189,7 +186,7 @@ def generate_same_game_combo(target_gm, num_legs, chosen_market, strat_choice):
 
     return candidates[:effective_legs]
 
-def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice):
+def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice, lead_game=None):
     if not pool:
         return []
 
@@ -205,9 +202,15 @@ def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice):
     is_points_prop = "Player Points" in chosen_market
     is_td_prop = "Touchdown" in chosen_market
 
+    # Put lead game at the top of the pool if specified
+    eval_pool = list(pool)
+    if lead_game and lead_game in eval_pool:
+        eval_pool.remove(lead_game)
+        eval_pool.insert(0, lead_game)
+
     candidates = []
 
-    for gm in pool:
+    for gm in eval_pool:
         is_nba = (gm.get("league") == "NBA")
         ou_open = round_half_point(gm.get("market_ou", 224.5 if is_nba else 47.5))
         spread_open = round_half_point(gm.get("market_spread", -3.5))
@@ -364,6 +367,16 @@ def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice):
 
     selected = []
     used_matchups = set()
+
+    # If a lead game is designated, ensure its top pick is selected first
+    if lead_game:
+        lead_m = f"{lead_game.get('away_short')} @ {lead_game.get('home_short')}"
+        lead_candidates = [c for c in filtered if c["matchup"] == lead_m]
+        if lead_candidates:
+            best_lead = sorted(lead_candidates, key=lambda x: x["prob"], reverse=not is_high_profit)[0]
+            selected.append(best_lead)
+            used_matchups.add(lead_m)
+
     sorted_candidates = sorted(filtered, key=lambda x: x["prob"], reverse=not is_high_profit)
 
     for item in sorted_candidates:
@@ -459,7 +472,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 "🏈 Football Anytime Touchdown Scorer"
             ]
 
-        # ROW 2: Target Bet / Market Type, Model Strategy Profile
+        # ROW 2 (2 Columns): Target Bet / Market Type, Model Strategy Profile
         r2_c1, r2_c2 = st.columns(2)
 
         chosen_market = r2_c1.selectbox(
@@ -499,42 +512,55 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         else:
             pool = [g for g in pool if not g.get("completed", False)]
 
-        # SGP Target Game Dropdown (Visible only in Same-Game Parlay mode)
-        target_sgp_game = None
-        if is_sgp and pool:
-            sgp_game_choices = [f"{gm.get('away_short')} @ {gm.get('home_short')} [{gm.get('league')}] • {gm.get('kickoff', 'Upcoming')}" for gm in pool]
-            sel_sgp_idx = st.selectbox(
-                "Target Game for Same-Game Parlay (SGP)",
-                options=range(len(sgp_game_choices)),
-                format_func=lambda x: sgp_game_choices[x],
-                key="cb_sgp_game_selector",
+        # Specific Game Selection Row (Matchup Search + Dropdown)
+        c_search, c_game = st.columns([1.5, 2.5])
+        q_game = c_search.text_input("🔍 Search Matchup", placeholder="e.g. Celtics, Lakers, Chiefs...", key="cb_q_game_filter", on_change=trigger_combo_auto_refresh)
+
+        filtered_pool = pool
+        if q_game.strip():
+            q_clean = q_game.strip().lower()
+            filtered_pool = [g for g in pool if q_clean in g["home_team"].lower() or q_clean in g["away_team"].lower() or q_clean in g.get("home_short", "").lower() or q_clean in g.get("away_short", "").lower()]
+
+        target_selected_game = None
+        if filtered_pool:
+            game_labels = [f"[{gm.get('kickoff', 'Scheduled')}] [{gm.get('league')}] {gm.get('away_short')} @ {gm.get('home_short')}" for gm in filtered_pool]
+            label_prefix = "Target Matchup (All Legs from This Game)" if is_sgp else "Lead Anchor Matchup (Optional)"
+            sel_g_idx = c_game.selectbox(
+                label_prefix,
+                options=range(len(game_labels)),
+                format_func=lambda x: game_labels[x],
+                key="cb_game_specific_selector",
                 on_change=trigger_combo_auto_refresh
             )
-            target_sgp_game = pool[sel_sgp_idx]
+            target_selected_game = filtered_pool[sel_g_idx]
+        else:
+            c_game.selectbox("Target Matchup", options=["No matching matchups found"], disabled=True)
 
         # Auto-recalculate if user modified dropdowns and a combo is already loaded
         if st.session_state.cb_needs_refresh and len(st.session_state.combo_active_legs) > 0:
-            if is_sgp and target_sgp_game:
-                st.session_state.combo_active_legs = generate_same_game_combo(target_sgp_game, num_legs, chosen_market, strat_choice)
+            if is_sgp and target_selected_game:
+                st.session_state.combo_active_legs = generate_same_game_combo(target_selected_game, num_legs, chosen_market, strat_choice)
                 st.session_state.cb_form_nonce += 1
             elif pool:
-                st.session_state.combo_active_legs = generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice)
+                st.session_state.combo_active_legs = generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice, lead_game=target_selected_game)
                 st.session_state.cb_form_nonce += 1
             st.session_state.cb_needs_refresh = False
 
         c_act1, c_act2 = st.columns([3.5, 1.5], vertical_alignment="bottom")
         with c_act1:
-            if is_sgp and target_sgp_game:
-                st.caption(f"🏟️ SGP Focus: {target_sgp_game.get('away_short')} @ {target_sgp_game.get('home_short')} ({num_legs} single-game correlated legs)")
+            if is_sgp and target_selected_game:
+                st.caption(f"🏟️ SGP Focus: {target_selected_game.get('away_short')} @ {target_selected_game.get('home_short')} ({num_legs} single-game correlated legs)")
+            elif target_selected_game:
+                st.caption(f"Lead Game: {target_selected_game.get('away_short')} @ {target_selected_game.get('home_short')} + {len(pool)-1} slate games ({int(num_legs)} legs total)")
             else:
                 st.caption(f"Active Pool: {len(pool)} available matchups across {league_choice} (Compiling {int(num_legs)} cross-game legs)")
         with c_act2:
-            can_gen = bool(target_sgp_game) if is_sgp else (len(pool) >= 2)
+            can_gen = bool(target_selected_game) if is_sgp else (len(pool) >= 2)
             if st.button("⚡ Generate Combo", type="primary", use_container_width=True, disabled=not can_gen):
-                if is_sgp and target_sgp_game:
-                    st.session_state.combo_active_legs = generate_same_game_combo(target_sgp_game, num_legs, chosen_market, strat_choice)
+                if is_sgp and target_selected_game:
+                    st.session_state.combo_active_legs = generate_same_game_combo(target_selected_game, num_legs, chosen_market, strat_choice)
                 else:
-                    st.session_state.combo_active_legs = generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice)
+                    st.session_state.combo_active_legs = generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice, lead_game=target_selected_game)
                 st.session_state.cb_needs_refresh = False
                 st.session_state.cb_form_nonce += 1
                 st.rerun()
@@ -620,7 +646,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
         parlay_type_badge = "Same-Game Parlay (SGP)" if len({l.get('matchup') for l in legs}) == 1 else "Cross-Game Parlay"
 
-        # Header Telemetry Row with Popover Edit Trigger
+        # Header Telemetry Row with Clean Popover Edit Trigger
         with st.container(border=True):
             hdr_left, hdr_right = st.columns([3.5, 2.5], vertical_alignment="center")
             with hdr_left:
