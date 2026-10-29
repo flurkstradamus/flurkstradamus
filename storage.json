@@ -1,6 +1,45 @@
 {
   "saved_bets": [
     {
+      "id": "1793317028.63924",
+      "user": "Flurk",
+      "date": "2026-10-29 19:37 ET",
+      "type": "3-Leg SGP",
+      "bet_category": "Combo",
+      "matchup": "CLE @ ATL",
+      "bet": "3-Leg SGP: Donovan Mitchell 2+ Three-Pointers, Nickeil Alexander-Walker 2+ Three-Pointers, Sam Merrill 2+ Three-Pointers",
+      "risk_dollars": 5.0,
+      "payout_dollars": 15.9,
+      "payout": 15.9,
+      "locked_profit": 10.9,
+      "win_prob": "31.4%",
+      "status": "Pending",
+      "parsed_legs": [
+        {
+          "matchup": "CLE @ ATL",
+          "type": "NBA Player 3-Pointers Made",
+          "side": "Over",
+          "line": 1.5,
+          "picked_team": "Donovan Mitchell"
+        },
+        {
+          "matchup": "CLE @ ATL",
+          "type": "NBA Player 3-Pointers Made",
+          "side": "Over",
+          "line": 1.5,
+          "picked_team": "Nickeil Alexander-Walker"
+        },
+        {
+          "matchup": "CLE @ ATL",
+          "type": "NBA Player 3-Pointers Made",
+          "side": "Over",
+          "line": 1.5,
+          "picked_team": "Sam Merrill"
+        }
+      ],
+      "notes": "[NBA] Same-Game Parlay (SGP) [Balanced]"
+    },
+    {
       "id": "1793312776.798818",
       "user": "Flurk",
       "date": "2026-10-29 18:26 ET",
