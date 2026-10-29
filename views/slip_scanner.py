@@ -161,7 +161,6 @@ def match_game_robustly(data, games_data):
 def determine_scanned_bet_outcome(data, matched_game):
     is_combo = data.get("is_combo", False) or len(data.get("legs", [])) > 1
     
-    # Direct settlement indicators from contract
     if data.get("is_settled"):
         if data.get("is_won") is True:
             return "Won", 1.0, "Settled"
@@ -170,7 +169,6 @@ def determine_scanned_bet_outcome(data, matched_game):
 
     if is_combo:
         legs_c = len(data.get("legs", [])) or int(data.get("legs_count") or 2)
-        # Approximate combo win probability
         approx_p = max(0.01, min(0.40, round(0.55 ** legs_c, 3)))
         return ("Lost" if data.get("is_won") is False else "Pending"), approx_p, "Multi-Leg"
 
@@ -233,276 +231,149 @@ def determine_scanned_bet_outcome(data, matched_game):
             prob = 0.54
         return "Pending", max(0.05, min(0.95, prob)), matched_game.get("kickoff") or "Scheduled"
 
+def build_ticket_record(data, matched_game, status_result, prob_calc, curr_user, active_uname, get_current_et_time_fn):
+    is_combo = data.get("is_combo", False) or len(data.get("legs", [])) > 1
+    legs_list = data.get("legs", [])
+    legs_count = len(legs_list) if legs_list else int(data.get("legs_count") or 1)
+    
+    r_val = float(data.get("risk") or 10.0)
+    p_val = float(data.get("payout") or 0.0) if status_result == "Lost" else float(data.get("payout") or 19.10)
+    profit_val = p_val - r_val
+    conf_league = matched_game.get("league") if matched_game else (data.get("league") or "SPORTS")
+
+    if is_combo:
+        parsed_legs = [
+            {
+                "matchup": lg.get("selection", "Event Contract"),
+                "type": "Robinhood Event Contract",
+                "side": lg.get("side", "Yes"),
+                "line": None,
+                "picked_team": lg.get("selection", "")
+            } for lg in legs_list
+        ]
+        return {
+            "id": str(datetime.now().timestamp()) + str(hash(data.get("risk", 0)))[:4],
+            "user": curr_user.get("display_name", active_uname),
+            "date": get_current_et_time_fn().strftime("%Y-%m-%d %H:%M ET"),
+            "type": f"{legs_count}-Leg Combo",
+            "bet_category": "Combo",
+            "matchup": f"{legs_count}-Leg: " + ", ".join([l.get("selection", "") for l in legs_list[:4]]) if legs_list else f"{legs_count}-Leg Combo",
+            "bet": f"{legs_count} Legs ({prob_calc * 100:.1f}% Win Prob)" if not legs_list else f"{legs_count}-Leg Combo: " + ", ".join([l.get("selection","") for l in legs_list[:3]]),
+            "risk_dollars": r_val,
+            "payout_dollars": p_val,
+            "payout": p_val,
+            "locked_profit": profit_val,
+            "win_prob": f"{prob_calc * 100:.1f}%",
+            "status": status_result,
+            "parsed_legs": parsed_legs,
+            "notes": f"[{conf_league}] Scanned {legs_count}-Leg Ticket"
+        }
+    else:
+        w_type = data.get("wager_type", "Game Total")
+        side = data.get("side", "Under")
+        line = float(data.get("line") or 0.0)
+        away_t = matched_game.get("away_team") if matched_game else (data.get("away_team") or "")
+        home_t = matched_game.get("home_team") if matched_game else (data.get("home_team") or "")
+        picked_t = data.get("picked_team") or (home_t if "Moneyline" in w_type else "")
+
+        matchup_str = f"{away_t} @ {home_t}" if (away_t and home_t) else (picked_t or "Custom Wager")
+        if line > 0:
+            pick_label = f"{side} {line}" if w_type == "Game Total" else f"{picked_t} {side} {line}"
+        else:
+            pick_label = f"{picked_t} {side}"
+
+        return {
+            "id": str(datetime.now().timestamp()) + str(hash(r_val))[:4],
+            "user": curr_user.get("display_name", active_uname),
+            "date": get_current_et_time_fn().strftime("%Y-%m-%d %H:%M ET"),
+            "type": "Single",
+            "bet_category": w_type,
+            "home_team": home_t,
+            "away_team": away_t,
+            "picked_team": picked_t,
+            "matchup": matchup_str,
+            "bet": pick_label,
+            "target_line": line if line > 0 else None,
+            "bet_direction": side,
+            "risk_dollars": r_val,
+            "payout_dollars": p_val,
+            "payout": p_val,
+            "locked_profit": profit_val,
+            "win_prob": f"{prob_calc * 100:.1f}%",
+            "status": status_result,
+            "notes": f"[{conf_league}] {w_type}"
+        }
+
 def render_slip_scanner(curr_user, active_uname, games_data, get_current_et_time_fn):
-    st.subheader("📸 Scan & Log Bet Slip")
-    st.caption("Upload screenshots of single slips or multi-leg combos (Robinhood, DraftKings, FanDuel, etc.) to automatically extract legs and lock in your record.")
+    st.subheader("📸 Batch Bet Slip Scanner")
+    st.caption("Upload multiple ticket screenshots at once (Robinhood, DraftKings, FanDuel, Caesars, BetMGM) to automatically parse all slips and lock them in batch.")
 
-    if "scanner_data" not in st.session_state:
-        st.session_state.scanner_data = None
+    if "batch_scanned_items" not in st.session_state:
+        st.session_state.batch_scanned_items = []
 
+    # MULTI-FILE UPLOADER CONTAINER
     with st.container(border=True):
-        uploaded_file = st.file_uploader("Upload Bet Slip Image (PNG, JPG, WEBP)", type=["png", "jpg", "jpeg", "webp"], key="scanner_upload")
+        uploaded_files = st.file_uploader(
+            "Upload 1 or More Bet Slip Screenshots (PNG, JPG, WEBP)",
+            type=["png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=True,
+            key="batch_slip_uploader"
+        )
 
-        if uploaded_file is not None:
-            c_btn1, _ = st.columns([2, 3])
-            if c_btn1.button("⚡ Scan Screenshot", type="primary", use_container_width=True):
-                with st.spinner("Analyzing slip, recognizing legs & settlement..."):
-                    parsed, err = parse_bet_slip_image(uploaded_file.read())
-                    if parsed:
-                        st.session_state.scanner_data = parsed
-                        st.toast("✅ Extracted ticket data successfully!", icon="📸")
-                    else:
-                        st.error(f"❌ Could not scan slip: {err}")
+        if uploaded_files:
+            c1, c2 = st.columns([2.5, 3.5], vertical_alignment="center")
+            with c1:
+                btn_label = f"⚡ Scan All {len(uploaded_files)} Slips" if len(uploaded_files) > 1 else "⚡ Scan Slip"
+                if st.button(btn_label, type="primary", use_container_width=True):
+                    scanned_results = []
+                    prog_bar = st.progress(0, text="Starting batch vision scan...")
+                    
+                    for i, file_obj in enumerate(uploaded_files):
+                        prog_pct = (i + 1) / len(uploaded_files)
+                        prog_bar.progress(prog_pct, text=f"Analyzing slip {i+1} of {len(uploaded_files)}: {file_obj.name}...")
+                        parsed_json, err = parse_bet_slip_image(file_obj.read())
+                        if parsed_json:
+                            scanned_results.append({
+                                "file_name": file_obj.name,
+                                "data": parsed_json
+                            })
+                        else:
+                            st.error(f"❌ Failed to parse {file_obj.name}: {err}")
 
-    # SCANNED TICKET SECTION
-    if st.session_state.scanner_data:
-        data = st.session_state.scanner_data
-        is_combo = data.get("is_combo", False) or len(data.get("legs", [])) > 1
-        legs_list = data.get("legs", [])
-        legs_count = len(legs_list) if legs_list else int(data.get("legs_count") or 1)
+                    prog_bar.empty()
+                    if scanned_results:
+                        st.session_state.batch_scanned_items = scanned_results
+                        st.toast(f"✅ Successfully scanned {len(scanned_results)} ticket(s)!", icon="📸")
+                        st.rerun()
 
-        matched_game = None if is_combo else match_game_robustly(data, games_data)
-        status_result, prob_calc, timing_desc = determine_scanned_bet_outcome(data, matched_game)
+            with c2:
+                if st.session_state.batch_scanned_items:
+                    if st.button("🗑️ Clear Scanned Queue", use_container_width=True):
+                        st.session_state.batch_scanned_items = []
+                        st.rerun()
 
-        active_league = matched_game.get("league") if matched_game else (data.get("league") or "NCAA")
-        league_icon = "🏈" if ("NCAA" in active_league or "NFL" in active_league) else ("🏀" if "NBA" in active_league else "⚡")
+    # BATCH QUEUE INSPECTION & LOCK-IN ACTIONS
+    if st.session_state.batch_scanned_items:
+        items = st.session_state.batch_scanned_items
+        st.markdown("---")
 
-        # Badges
-        if status_result == "Won":
-            status_badge_html = "<span style='background-color:#22c55e;color:#000;font-weight:800;padding:3px 10px;border-radius:12px;font-size:0.80rem;'>🏆 WON</span>"
-        elif status_result == "Lost":
-            status_badge_html = "<span style='background-color:#ef4444;color:#fff;font-weight:800;padding:3px 10px;border-radius:12px;font-size:0.80rem;'>❌ LOST</span>"
-        elif status_result == "In-Play":
-            status_badge_html = "<span style='background-color:#eab308;color:#000;font-weight:800;padding:3px 10px;border-radius:12px;font-size:0.80rem;'>⚡ IN PLAY</span>"
-        else:
-            status_badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;font-weight:700;padding:3px 10px;border-radius:12px;font-size:0.80rem;'>⏳ PENDING</span>"
+        top_act1, top_act2 = st.columns([3, 2], vertical_alignment="center")
+        with top_act1:
+            st.markdown(f"### 📋 Scanned Tickets Queue ({len(items)})")
+        with top_act2:
+            if st.button(f"🔒 Lock All {len(items)} Tickets into History", type="primary", use_container_width=True):
+                new_tickets = []
+                for item_obj in items:
+                    d = item_obj["data"]
+                    is_combo = d.get("is_combo", False) or len(d.get("legs", [])) > 1
+                    mg = None if is_combo else match_game_robustly(d, games_data)
+                    stat, p_calc, _ = determine_scanned_bet_outcome(d, mg)
+                    tkt_dict = build_ticket_record(d, mg, stat, p_calc, curr_user, active_uname, get_current_et_time_fn)
+                    new_tickets.append(tkt_dict)
 
-        prob_str = f"{prob_calc * 100:.1f}%"
-        prob_badge_html = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:3px 10px;border-radius:6px;font-size:0.80rem;'>🎲 Win: {prob_str}</span>"
-        league_badge_html = f"<span style='background-color:rgba(255,255,255,0.08);color:#f1f5f9;font-weight:700;padding:3px 10px;border-radius:6px;font-size:0.80rem;'>{league_icon} {active_league}</span>"
+                for t in reversed(new_tickets):
+                    st.session_state.saved_bets.insert(0, t)
 
-        # Determine Pick Label
-        if is_combo:
-            leg_names = [lg.get("selection", "Leg") for lg in legs_list]
-            pick_desc = f"{legs_count}-Leg Combo: " + ", ".join(leg_names[:4]) + ("..." if len(leg_names) > 4 else "")
-        else:
-            w_type_raw = data.get("wager_type", "Game Total")
-            side_raw = data.get("side", "Under")
-            line_raw = float(data.get("line") or 0.0)
-            p_team_raw = data.get("picked_team", "")
-            if line_raw > 0:
-                pick_desc = f"{side_raw} {line_raw:.1f} pts" if w_type_raw == "Game Total" else f"{p_team_raw} {side_raw} {line_raw}"
-            else:
-                pick_desc = f"{p_team_raw} ML" if "Moneyline" in w_type_raw else f"{p_team_raw} {side_raw}"
-
-        st.markdown("#### 🎟️ Scanned Ticket")
-        with st.container(border=True):
-            if is_combo:
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span style="font-size:1.1rem; font-weight:800;">🔗 {legs_count}-Leg Combo Ticket</span>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        {league_badge_html}
-                        {prob_badge_html}
-                        {status_badge_html}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Render Legs Chips
-                if legs_list:
-                    st.markdown("**Detected Legs:**")
-                    cols = st.columns(min(len(legs_list), 4))
-                    for idx, leg_item in enumerate(legs_list):
-                        col_idx = idx % min(len(legs_list), 4)
-                        leg_sel = leg_item.get("selection", f"Leg #{idx+1}")
-                        leg_side = leg_item.get("side", "Yes")
-                        cols[col_idx].markdown(f"""
-                        <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:6px 10px; margin-bottom:6px;">
-                            <span style="opacity:0.5; font-size:0.75rem;">#{idx+1}</span>
-                            <strong style="color:#4ade80;">{leg_side}</strong> <span>{leg_sel}</span>
-                        </div>
-                        """, unsafe_allow_html=True)
-            elif matched_game:
-                a_sh = matched_game.get("away_short", data.get("away_team", "AWAY"))
-                h_sh = matched_game.get("home_short", data.get("home_team", "HOME"))
-                a_sc = matched_game.get("away_score", 0)
-                h_sc = matched_game.get("home_score", 0)
-                a_logo = matched_game.get("away_logo") or DEFAULT_LOGO
-                h_logo = matched_game.get("home_logo") or DEFAULT_LOGO
-                is_fin = (status_result in ["Won", "Lost"])
-
-                score_info = f"<span style='background:rgba(255,255,255,0.08);padding:3px 8px;border-radius:6px;font-weight:800;font-size:0.95rem;color:#f8fafc;'>{a_sc} - {h_sc} (Final)</span>" if is_fin else f"<span style='opacity:0.65;font-size:0.80rem;'>🗓️ {matched_game.get('kickoff', 'Scheduled')}</span>"
-
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <img src="{a_logo}" width="28" height="28" style="border-radius:50%; object-fit:contain; background:#1e293b;">
-                        <strong>{a_sh}</strong>
-                        <span style="opacity:0.4;">@</span>
-                        <img src="{h_logo}" width="28" height="28" style="border-radius:50%; object-fit:contain; background:#1e293b;">
-                        <strong>{h_sh}</strong>
-                        {score_info}
-                    </div>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        {league_badge_html}
-                        {prob_badge_html}
-                        {status_badge_html}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                away_lbl = data.get("away_team") or "Away"
-                home_lbl = data.get("home_team") or "Home"
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                    <div><strong>{away_lbl}</strong> <span style='opacity:0.4;'>@</span> <strong>{home_lbl}</strong></div>
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        {league_badge_html}
-                        {prob_badge_html}
-                        {status_badge_html}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            # Details Row: Scanned Pick, Risk/Payout, Market
-            r_scanned = float(data.get("risk") or 9.06)
-            p_scanned = float(data.get("payout") or (0.0 if status_result == "Lost" else 19.10))
-            profit_scanned = p_scanned - r_scanned
-
-            c_p1, c_p2, c_p3 = st.columns([4.0, 3.0, 3.0])
-            with c_p1:
-                st.markdown(f"""
-                <div style="line-height:1.35;">
-                    <span style="font-size:0.75rem; opacity:0.65; text-transform:uppercase;">Scanned Pick</span>
-                    <div style="font-weight:700; color:#4ade80; font-size:0.95rem; margin-top:2px;">{pick_desc}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_p2:
-                profit_color = "#ef4444" if profit_scanned < 0 else "#4ade80"
-                st.markdown(f"""
-                <div style="line-height:1.35;">
-                    <span style="font-size:0.75rem; opacity:0.65; text-transform:uppercase;">Risk ➔ Payout</span>
-                    <div style="font-size:0.90rem; font-weight:600; margin-top:2px;">${r_scanned:.2f} ➔ <strong>${p_scanned:.2f}</strong></div>
-                    <div style="color:{profit_color}; font-weight:700; font-size:0.80rem;">{'+' if profit_scanned>=0 else ''}${profit_scanned:.2f}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_p3:
-                st.markdown(f"""
-                <div style="line-height:1.35;">
-                    <span style="font-size:0.75rem; opacity:0.65; text-transform:uppercase;">Market & Sport</span>
-                    <div style="font-size:0.88rem; font-weight:600; margin-top:2px;">{"Multi-Leg Combo" if is_combo else data.get("wager_type", "Single")}</div>
-                    <div style="font-size:0.78rem; opacity:0.65;">{active_league} • {status_result}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-            st.progress(prob_calc, text=f"Win Expectancy: {prob_calc * 100:.1f}%")
-
-        st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
-
-        # EDITABLE VERIFICATION & LOCK-IN FORM
-        st.markdown("#### 📝 Verify Details & Lock Ticket")
-
-        with st.form("confirm_scanned_slip_form"):
-            c_lg, c_wt = st.columns(2)
-            league_options = ["NCAA", "NFL", "NBA", "Other"]
-            def_lg_idx = 0
-            if "NFL" in active_league: def_lg_idx = 1
-            elif "NBA" in active_league: def_lg_idx = 2
-            confirmed_league = c_lg.selectbox("League / Sport", league_options, index=def_lg_idx)
-
-            w_types = ["Multi-Leg Parlay", "Game Total", "Point Spread (ATS)", "Straight Up Winner (Moneyline)", "Player Points Prop", "Anytime TD"]
-            def_wt_idx = 0 if is_combo else 1
-            w_type = c_wt.selectbox("Wager Type", w_types, index=def_wt_idx)
-
-            if is_combo:
-                combo_title = st.text_input("Combo Description / Matchup", value=f"{legs_count}-Leg Cross-Sport Combo" if not legs_list else f"{legs_count}-Leg: " + ", ".join([l.get("selection", "") for l in legs_list]))
-                c1, c2 = st.columns(2)
-                risk = c1.number_input("Risk / Cost ($)", min_value=0.5, value=r_scanned, step=1.0)
-                payout = c2.number_input("Payout ($)", min_value=0.0, value=p_scanned, step=1.0)
-            else:
-                c1, c2 = st.columns(2)
-                away_team = c1.text_input("Away Team", value=matched_game.get("away_team") if matched_game else (data.get("away_team") or ""))
-                home_team = c2.text_input("Home Team", value=matched_game.get("home_team") if matched_game else (data.get("home_team") or ""))
-
-                c3, c4 = st.columns(2)
-                picked_team = c3.text_input("Picked Selection / Team", value=data.get("picked_team") or (home_team if "Moneyline" in w_type else ""))
-                side_opts = ["Under", "Over", "Spread", "Moneyline", "Yes", "No", "TD"]
-                raw_side = data.get("side") or "Under"
-                s_idx = side_opts.index(raw_side) if raw_side in side_opts else 0
-                side = c4.selectbox("Side / Direction", side_opts, index=s_idx)
-
-                c5, c6 = st.columns(2)
-                line = c5.number_input("Line (pts / strike)", value=float(data.get("line") or 0.0), step=0.5)
-                risk = c6.number_input("Risk ($)", min_value=0.5, value=r_scanned, step=1.0)
-
-                payout = st.number_input("Payout ($)", min_value=0.0, value=p_scanned, step=1.0)
-
-            status_opts = ["Won", "Lost", "Pending"]
-            def_stat_idx = 0 if status_result == "Won" else (1 if status_result == "Lost" else 2)
-            final_status = st.selectbox("Ticket Settlement Status", status_opts, index=def_stat_idx)
-
-            if st.form_submit_button("🔒 Lock In Bet Slip", type="primary", use_container_width=True):
-                actual_risk = float(risk)
-                actual_payout = float(payout)
-                actual_profit = actual_payout - actual_risk
-
-                if is_combo:
-                    parsed_legs = [
-                        {
-                            "matchup": lg.get("selection", "Event Contract"),
-                            "type": "Robinhood Event Contract",
-                            "side": lg.get("side", "Yes"),
-                            "line": None,
-                            "picked_team": lg.get("selection", "")
-                        } for lg in legs_list
-                    ]
-                    tkt = {
-                        "id": str(datetime.now().timestamp()),
-                        "user": curr_user.get("display_name", active_uname),
-                        "date": get_current_et_time_fn().strftime("%Y-%m-%d %H:%M ET"),
-                        "type": f"{legs_count}-Leg Combo",
-                        "bet_category": "Combo",
-                        "matchup": combo_title,
-                        "bet": f"{legs_count} Legs ({prob_calc * 100:.1f}% Win Prob)" if not legs_list else f"{legs_count}-Leg Combo: " + ", ".join([l.get("selection","") for l in legs_list[:3]]),
-                        "risk_dollars": actual_risk,
-                        "payout_dollars": actual_payout,
-                        "payout": actual_payout,
-                        "locked_profit": actual_profit,
-                        "win_prob": f"{prob_calc * 100:.1f}%",
-                        "status": final_status,
-                        "parsed_legs": parsed_legs,
-                        "notes": f"[{confirmed_league}] Scanned {legs_count}-Leg Ticket"
-                    }
-                else:
-                    matchup_str = f"{away_team} @ {home_team}" if (away_team and home_team) else (picked_team or "Custom Wager")
-                    pick_label = f"{side} {line}" if (line > 0 and w_type == "Game Total") else (f"{picked_team} {side} {line}" if line > 0 else f"{picked_team} {side}")
-                    tkt = {
-                        "id": str(datetime.now().timestamp()),
-                        "user": curr_user.get("display_name", active_uname),
-                        "date": get_current_et_time_fn().strftime("%Y-%m-%d %H:%M ET"),
-                        "type": "Single",
-                        "bet_category": w_type,
-                        "home_team": home_team,
-                        "away_team": away_team,
-                        "picked_team": picked_team,
-                        "matchup": matchup_str,
-                        "bet": pick_label,
-                        "target_line": line if line > 0 else None,
-                        "bet_direction": side,
-                        "risk_dollars": actual_risk,
-                        "payout_dollars": actual_payout,
-                        "payout": actual_payout,
-                        "locked_profit": actual_profit,
-                        "win_prob": f"{prob_calc * 100:.1f}%",
-                        "status": final_status,
-                        "notes": f"[{confirmed_league}] {w_type}"
-                    }
-
-                st.session_state.saved_bets.insert(0, tkt)
                 save_all_storage(
                     st.session_state.saved_bets,
                     st.session_state.chat_messages,
@@ -511,7 +382,117 @@ def render_slip_scanner(curr_user, active_uname, games_data, get_current_et_time
                     st.session_state.game_snapshots,
                     st.session_state.support_tickets
                 )
-                st.session_state.scanner_data = None
-                st.toast("🎉 Ticket locked in!", icon="✅")
+                st.session_state.batch_scanned_items = []
+                st.toast(f"🎉 Successfully locked in {len(new_tickets)} tickets!", icon="✅")
                 st.session_state.active_nav_page = "📜 Locked Bets History"
                 st.rerun()
+
+        # Display Each Scanned Ticket in the Queue
+        for q_idx, item_obj in enumerate(items):
+            data = item_obj["data"]
+            f_name = item_obj.get("file_name", f"Ticket #{q_idx+1}")
+            is_combo = data.get("is_combo", False) or len(data.get("legs", [])) > 1
+            legs_list = data.get("legs", [])
+            legs_count = len(legs_list) if legs_list else int(data.get("legs_count") or 1)
+
+            matched_game = None if is_combo else match_game_robustly(data, games_data)
+            status_result, prob_calc, timing_desc = determine_scanned_bet_outcome(data, matched_game)
+
+            active_league = matched_game.get("league") if matched_game else (data.get("league") or "NCAA")
+            league_icon = "🏈" if ("NCAA" in active_league or "NFL" in active_league) else ("🏀" if "NBA" in active_league else "⚡")
+
+            if status_result == "Won":
+                badge_html = "<span style='background-color:#22c55e;color:#000;font-weight:800;padding:2px 8px;border-radius:12px;font-size:0.75rem;'>🏆 WON</span>"
+            elif status_result == "Lost":
+                badge_html = "<span style='background-color:#ef4444;color:#fff;font-weight:800;padding:2px 8px;border-radius:12px;font-size:0.75rem;'>❌ LOST</span>"
+            elif status_result == "In-Play":
+                badge_html = "<span style='background-color:#eab308;color:#000;font-weight:800;padding:2px 8px;border-radius:12px;font-size:0.75rem;'>⚡ IN PLAY</span>"
+            else:
+                badge_html = "<span style='background-color:rgba(255,255,255,0.12);color:#94a3b8;font-weight:700;padding:2px 8px;border-radius:12px;font-size:0.75rem;'>⏳ PENDING</span>"
+
+            prob_badge = f"<span style='background-color:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.75rem;'>🎲 {prob_calc * 100:.1f}%</span>"
+            lg_badge = f"<span style='background-color:rgba(255,255,255,0.08);color:#f1f5f9;font-weight:700;padding:2px 8px;border-radius:6px;font-size:0.75rem;'>{league_icon} {active_league}</span>"
+
+            r_val = float(data.get("risk") or 10.0)
+            p_val = float(data.get("payout") or (0.0 if status_result == "Lost" else 19.10))
+            profit_val = p_val - r_val
+            profit_color = "#ef4444" if profit_val < 0 else "#4ade80"
+
+            if is_combo:
+                card_title = f"#{q_idx+1}: 🔗 {legs_count}-Leg Combo Ticket ({f_name})"
+            elif matched_game:
+                card_title = f"#{q_idx+1}: {matched_game.get('away_short')} @ {matched_game.get('home_short')} ({f_name})"
+            else:
+                card_title = f"#{q_idx+1}: {data.get('away_team') or 'Away'} @ {data.get('home_team') or 'Home'} ({f_name})"
+
+            with st.expander(card_title, expanded=True):
+                # Header row with status badges
+                st.markdown(f"""
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px; margin-bottom:10px; flex-wrap:wrap; gap:6px;">
+                    <span style="font-weight:700; font-size:0.95rem;">{card_title}</span>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        {lg_badge}
+                        {prob_badge}
+                        {badge_html}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if is_combo and legs_list:
+                    st.markdown("**Legs Breakdown:**")
+                    chip_cols = st.columns(min(len(legs_list), 4))
+                    for l_idx, leg in enumerate(legs_list):
+                        c_idx = l_idx % min(len(legs_list), 4)
+                        chip_cols[c_idx].markdown(f"""
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:6px; padding:4px 8px; margin-bottom:4px; font-size:0.80rem;">
+                            <span style="opacity:0.5;">#{l_idx+1}</span> <strong style="color:#4ade80;">{leg.get('side', 'Yes')}</strong> {leg.get('selection', '')}
+                        </div>
+                        """, unsafe_allow_html=True)
+                elif matched_game:
+                    a_logo = matched_game.get("away_logo") or DEFAULT_LOGO
+                    h_logo = matched_game.get("home_logo") or DEFAULT_LOGO
+                    a_sc = matched_game.get("away_score", 0)
+                    h_sc = matched_game.get("home_score", 0)
+                    is_fin = (status_result in ["Won", "Lost"])
+                    sc_lbl = f"{a_sc} - {h_sc} (Final)" if is_fin else f"🗓️ {matched_game.get('kickoff', 'Scheduled')}"
+
+                    st.markdown(f"""
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                        <img src="{a_logo}" width="22" height="22" style="border-radius:50%; object-fit:contain; background:#1e293b;">
+                        <strong>{matched_game.get('away_short')}</strong>
+                        <span style="opacity:0.4;">@</span>
+                        <img src="{h_logo}" width="22" height="22" style="border-radius:50%; object-fit:contain; background:#1e293b;">
+                        <strong>{matched_game.get('home_short')}</strong>
+                        <span style="background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:4px; font-size:0.78rem; font-weight:700;">{sc_lbl}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Form for editing and locking individual item
+                with st.form(f"batch_item_form_{q_idx}"):
+                    f1, f2, f3, f4 = st.columns(4)
+                    risk_inp = f1.number_input("Risk ($)", value=r_val, step=1.0, key=f"risk_q_{q_idx}")
+                    payout_inp = f2.number_input("Payout ($)", value=p_val, step=1.0, key=f"payout_q_{q_idx}")
+                    status_opts = ["Won", "Lost", "Pending"]
+                    def_s_idx = 0 if status_result == "Won" else (1 if status_result == "Lost" else 2)
+                    status_inp = f3.selectbox("Status", status_opts, index=def_s_idx, key=f"status_q_{q_idx}")
+                    
+                    with f4:
+                        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                        submit_single = st.form_submit_button("🔒 Lock This Ticket", type="primary", use_container_width=True)
+
+                    if submit_single:
+                        data["risk"] = risk_inp
+                        data["payout"] = payout_inp
+                        tkt_record = build_ticket_record(data, matched_game, status_inp, prob_calc, curr_user, active_uname, get_current_et_time_fn)
+                        st.session_state.saved_bets.insert(0, tkt_record)
+                        st.session_state.batch_scanned_items.pop(q_idx)
+                        save_all_storage(
+                            st.session_state.saved_bets,
+                            st.session_state.chat_messages,
+                            st.session_state.user_accounts,
+                            st.session_state.banned_emails,
+                            st.session_state.game_snapshots,
+                            st.session_state.support_tickets
+                        )
+                        st.toast(f"🎉 Locked ticket #{q_idx+1}!", icon="✅")
+                        st.rerun()
