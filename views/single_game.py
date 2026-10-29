@@ -19,8 +19,59 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         target_game.get("away_record", "0-0")
     )
 
+    # Resolve Specific Market Modes
+    is_totals_only = "Totals" in chosen_market
+    is_spreads_only = "Spreads" in chosen_market
+    is_ml_only = "Straight Up" in chosen_market
+    is_points_prop = "Player Points" in chosen_market and is_nba
+    is_td_prop = "Touchdown" in chosen_market and not is_nba
+
     # 1. 🥉 GOOD (Safe Floor Anchor)
-    if "Totals" in chosen_market or "System Pick" in chosen_market:
+    if is_totals_only:
+        good_side = "Under"
+        good_line = round_half_point(ou_open + (7.5 if is_nba else 4.5))
+        good_type = "Game Total"
+        good_pick_text = f"Under {good_line:.1f}"
+        good_prob = calculate_win_prob(good_line, ou_open - 3.0, (12.0 if is_nba else 7.0), is_under=True)
+        good_rat = f"Safe Floor alternate total (+{(good_line - ou_open):.1f} pts cushion above consensus) provides maximum drawdown defense."
+        good_target = target_game["home_team"]
+    elif is_spreads_only:
+        good_team = target_game["home_team"] if spread_open < 0 else target_game["away_team"]
+        good_type = "Point Spread (ATS)"
+        good_side = "Spread"
+        good_line = round_half_point((spread_open if good_team == target_game["home_team"] else -spread_open) + (4.5 if is_nba else 3.5))
+        good_pick_text = f"{good_team} {good_line:+.1f}"
+        good_prob = 0.65
+        good_rat = f"Bought {good_team} points down to {good_line:+.1f} for high-probability cover protection."
+        good_target = good_team
+    elif is_ml_only:
+        good_side = "Moneyline"
+        good_line = 0.0
+        good_type = "Straight Up Winner (Moneyline)"
+        good_target = target_game["home_team"] if h_win_prob >= 0.50 else target_game["away_team"]
+        good_pick_text = f"{good_target} ML"
+        good_prob = max(h_win_prob, 1.0 - h_win_prob)
+        good_rat = f"Strong straight-up anchor with a {good_prob * 100:.1f}% model win likelihood."
+    elif is_points_prop:
+        h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short")) or [("Primary Scorer", "G", 22.5)]
+        good_target = h_roster[0][0]
+        good_type = "Player Points Prop"
+        good_side = "Over"
+        good_line = max(9.5, round_half_point(float(h_roster[0][2]) - 4.5))
+        good_pick_text = f"{good_target} Over {good_line:.1f} Pts"
+        good_prob = 0.72
+        good_rat = f"🛡️ Alternate floor strike on {good_target} at {good_line:.1f} pts creates elite clearance expectancy."
+    elif is_td_prop:
+        f_roster = get_live_football_roster(target_game.get("home_id") or target_game.get("home_short"), target_game.get("league")) or [("Primary RB", "RB")]
+        good_target = f_roster[0][0]
+        good_type = "Player Anytime Touchdown Scorer"
+        good_side = "TD"
+        good_line = 1.0
+        good_pick_text = f"{good_target} Any Time TD"
+        good_prob = 0.52
+        good_rat = f"{good_target} holds goal-line rush volume priority."
+    else:
+        # System Pick (Auto-Selects Safe Floor)
         good_side = "Under"
         good_line = round_half_point(ou_open + (7.5 if is_nba else 4.5))
         good_type = "Game Total"
@@ -28,52 +79,125 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
         good_prob = calculate_win_prob(good_line, ou_open - 3.0, (12.0 if is_nba else 7.0), is_under=True)
         good_rat = f"Defensive floor cushion (+{(good_line - ou_open):.1f} pts above open) creates optimal drawdown safety."
         good_target = target_game["home_team"]
-    else:
-        good_side = "Moneyline"
-        good_line = 0.0
-        good_type = "Straight Up Winner (Moneyline)"
-        good_target = target_game["home_team"] if h_win_prob >= 0.50 else target_game["away_team"]
-        good_pick_text = f"{good_target} ML"
-        good_prob = max(h_win_prob, 1.0 - h_win_prob)
-        good_rat = f"Strong straight-up anchor with a {good_prob * 100:.1f}% model win probability."
 
     # 2. 🥈 BETTER (Balanced +EV Sweet Spot)
     better_team = target_game["home_team"] if spread_open < 0 else target_game["away_team"]
-    better_type = "Point Spread (ATS)"
-    better_side = "Spread"
-    better_line = spread_open if better_team == target_game["home_team"] else -spread_open
-    better_pick_text = f"{better_team} {better_line:+.1f}"
-    better_prob = 0.58 if "Safe Floor" in strat_choice else 0.54
-    better_rat = f"Power ratings indicate {better_team} has a positive margin against the market spread ({better_line:+.1f})."
+    if is_totals_only:
+        better_type = "Game Total"
+        better_side = "Under"
+        better_line = ou_open
+        better_target = target_game["home_team"]
+        better_pick_text = f"Under {better_line:.1f}"
+        better_prob = 0.56
+        better_rat = f"Pace model projects terminal tempo settling {abs(ou_open - 2.5):.1f} pts below open."
+    elif is_ml_only:
+        better_type = "Straight Up Winner (Moneyline)"
+        better_side = "Moneyline"
+        better_line = 0.0
+        better_target = target_game["away_team"] if h_win_prob >= 0.50 else target_game["home_team"]
+        better_pick_text = f"{better_target} ML"
+        better_prob = 0.51
+        better_rat = f"High-yield dog moneyline with actionable model variance."
+    elif is_points_prop:
+        h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short")) or [("Primary Scorer", "G", 22.5)]
+        better_target = h_roster[0][0]
+        better_type = "Player Points Prop"
+        better_side = "Over"
+        better_line = float(h_roster[0][2])
+        better_pick_text = f"{better_target} Over {better_line:.1f} Pts"
+        better_prob = 0.58
+        better_rat = f"⚖️ Balanced EV strike on consensus line ({better_line:.1f} pts) based on matchup usage."
+    elif is_td_prop:
+        f_roster = get_live_football_roster(target_game.get("home_id") or target_game.get("home_short"), target_game.get("league")) or [("Primary RB", "RB")]
+        better_target = f_roster[0][0]
+        better_type = "Player Anytime Touchdown Scorer"
+        better_side = "TD"
+        better_line = 1.0
+        better_pick_text = f"{better_target} Any Time TD"
+        better_prob = 0.49
+        better_rat = f"Consistent touch rate inside opponent 20-yard line."
+    else:
+        better_type = "Point Spread (ATS)"
+        better_side = "Spread"
+        better_line = spread_open if better_team == target_game["home_team"] else -spread_open
+        better_target = better_team
+        better_pick_text = f"{better_team} {better_line:+.1f}"
+        better_prob = 0.58 if "Safe Floor" in strat_choice else 0.54
+        better_rat = f"Power ratings give {better_team} an efficiency margin against the market spread ({better_line:+.1f})."
 
     # 3. 🥇 BEST (Optimal Value Alpha)
-    if is_nba:
-        h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short"))
-        if h_roster:
-            p_name, p_pos, base_pts = h_roster[0]
-            best_type = "Player Points Prop"
-            best_side = "Over"
-            best_line = round_half_point(base_pts - 1.5) if "Safe Floor" in strat_choice else base_pts
-            best_target = p_name
-            best_pick_text = f"{p_name} Over {best_line:.1f} Pts"
-            best_prob = 0.64
-            best_rat = f"{p_name} projects for >28% usage. Matchup defense allows top-10 scoring efficiency."
+    if is_totals_only:
+        best_type = "Game Total"
+        best_side = "Under"
+        best_line = round_half_point(ou_open - 2.5)
+        best_target = target_game["home_team"]
+        best_pick_text = f"Under {best_line:.1f}"
+        best_prob = 0.61
+        best_rat = f"Model detects heavy scoring suppression; laddering under consensus for peak alpha."
+    elif is_spreads_only:
+        best_team = target_game["home_team"] if spread_open < 0 else target_game["away_team"]
+        best_type = "Point Spread (ATS)"
+        best_side = "Spread"
+        best_line = round_half_point((spread_open if best_team == target_game["home_team"] else -spread_open) - 1.5)
+        best_target = best_team
+        best_pick_text = f"{best_team} {best_line:+.1f}"
+        best_prob = 0.59
+        best_rat = f"Efficiency projections support laying additional chalk on {best_team} for edge capture."
+    elif is_ml_only:
+        best_side = "Moneyline"
+        best_line = 0.0
+        best_type = "Straight Up Winner (Moneyline)"
+        best_target = target_game["home_team"] if h_win_prob >= 0.50 else target_game["away_team"]
+        best_pick_text = f"{best_target} ML"
+        best_prob = max(h_win_prob, 1.0 - h_win_prob)
+        best_rat = f"Situational metrics and home/away splits confirm {best_target} holds top win expectancy."
+    elif is_points_prop:
+        h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short")) or [("Primary Scorer", "G", 22.5)]
+        best_target = h_roster[0][0]
+        best_type = "Player Points Prop"
+        best_side = "Over"
+        best_line = round_half_point(float(h_roster[0][2]) - 1.5)
+        best_pick_text = f"{best_target} Over {best_line:.1f} Pts"
+        best_prob = 0.65
+        best_rat = f"Top alpha discrepancy: {best_target} projects for >29% touch share against weak defense."
+    elif is_td_prop:
+        f_roster = get_live_football_roster(target_game.get("home_id") or target_game.get("home_short"), target_game.get("league")) or [("Primary RB", "RB")]
+        best_target = f_roster[0][0]
+        best_type = "Player Anytime Touchdown Scorer"
+        best_side = "TD"
+        best_line = 1.0
+        best_pick_text = f"{best_target} Any Time TD"
+        best_prob = 0.54
+        best_rat = f"Red-zone touch concentration makes {best_target} the optimal positive expected value wager."
+    else:
+        # System Pick (Auto-Selects Top Discrepancy)
+        if is_nba:
+            h_roster = get_live_nba_roster(target_game.get("home_id") or target_game.get("home_short"))
+            if h_roster:
+                p_name, p_pos, base_pts = h_roster[0]
+                best_type = "Player Points Prop"
+                best_side = "Over"
+                best_line = round_half_point(base_pts - 1.5) if "Safe Floor" in strat_choice else base_pts
+                best_target = p_name
+                best_pick_text = f"{p_name} Over {best_line:.1f} Pts"
+                best_prob = 0.64
+                best_rat = f"{p_name} projects for >28% usage. Matchup defense allows top-10 scoring efficiency."
+            else:
+                best_type = "Game Total"
+                best_side = "Under"
+                best_line = round_half_point(ou_open - 1.5)
+                best_target = target_game["home_team"]
+                best_pick_text = f"Under {best_line:.1f}"
+                best_prob = 0.61
+                best_rat = "In-game pace model projects notable scoring suppression below market consensus."
         else:
             best_type = "Game Total"
             best_side = "Under"
-            best_line = round_half_point(ou_open - 1.5)
+            best_line = round_half_point(ou_open + 1.5)
             best_target = target_game["home_team"]
             best_pick_text = f"Under {best_line:.1f}"
-            best_prob = 0.61
-            best_rat = "In-game pace model projects notable scoring suppression below market consensus."
-    else:
-        best_type = "Game Total"
-        best_side = "Under"
-        best_line = round_half_point(ou_open + 1.5)
-        best_target = target_game["home_team"]
-        best_pick_text = f"Under {best_line:.1f}"
-        best_prob = 0.62
-        best_rat = "Model tempo metrics anticipate pace suppression relative to market open."
+            best_prob = 0.62
+            best_rat = "Model tempo metrics anticipate pace suppression relative to market open."
 
     def make_card(tier_title, tier_badge, pick_str, w_type, side, line, target_name, prob, rat):
         fair_mult = 1.0 / max(0.01, prob)
@@ -100,8 +224,8 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
 
     return {
         "good": make_card("🥉 GOOD (Safe Floor)", "#38bdf8", good_pick_text, good_type, good_side, good_line, good_target, good_prob, good_rat),
-        "better": make_card("🥈 BETTER (Balanced +EV)", "#fbbf24", better_pick_text, better_type, better_side, better_line, better_team, better_prob, better_rat),
-        "best": make_card("🥇 BEST (Optimal Value)", "#4ade80", best_pick_text, best_type, best_side, best_line, best_target if 'best_target' in locals() else target_game["home_team"], best_prob, best_rat)
+        "better": make_card("🥈 BETTER (Balanced +EV)", "#fbbf24", better_pick_text, better_type, better_side, better_line, better_target, better_prob, better_rat),
+        "best": make_card("🥇 BEST (Optimal Value)", "#4ade80", best_pick_text, best_type, best_side, best_line, best_target, best_prob, best_rat)
     }
 
 def render_single_game(curr_user, active_uname, games_data, get_current_et_time_fn):
@@ -129,6 +253,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             key=f"sg_league_{eng_ver}"
         )
 
+        # Dynamic Market Selection depending on League
         if league_choice == "NBA":
             market_options = [
                 "⚡ Let the System Pick (Best NBA Discrepancy)",
@@ -155,7 +280,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                 "🏈 Football Anytime Touchdown Scorer"
             ]
 
-        chosen_market = c_top2.selectbox("Target Market Focus", market_options, index=0, key=f"sg_market_{eng_ver}")
+        chosen_market = c_top2.selectbox("Target Bet / Market Type", market_options, index=0, key=f"sg_market_{eng_ver}")
 
         strat_options = [
             "🛡️ Safe Floor (High Win %, Low Drawdown)",
@@ -207,7 +332,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                         🗓️ {ref.get('kickoff', 'Upcoming')}
                     </span>
                 </div>
-                <div style="font-size:0.80rem; opacity:0.75;">Profile: <strong>{strat_choice.split()[1]}</strong></div>
+                <div style="font-size:0.80rem; opacity:0.75;">Focus: <strong>{chosen_market.split()[1] if len(chosen_market.split()) > 1 else 'Custom'}</strong> | Profile: <strong>{strat_choice.split()[1]}</strong></div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -247,7 +372,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
     if not st.session_state.single_active_bet:
         st.info("No active bet loaded. Use **⚡ Auto-Generate Tiers** above and click **📥 Load Pick**, or set up a custom ticket manually below.")
         if st.button("➕ Set Up Bet Manually", use_container_width=True):
-            def_tiers = build_single_game_tiers(pool[0], "Game Total", "Balanced")
+            def_tiers = build_single_game_tiers(pool[0], chosen_market, strat_choice)
             st.session_state.single_active_bet = dict(def_tiers["better"])
             st.session_state.single_engine_version += 1
             st.rerun()
@@ -255,7 +380,6 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
     cur_bet = st.session_state.single_active_bet
 
-    # Match target matchup selector with currently active loaded bet
     default_matchup_idx = 0
     cur_matchup_str = cur_bet.get("matchup_str", "")
     for idx, gm in enumerate(pool):
