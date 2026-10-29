@@ -9,7 +9,7 @@ def generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice):
     if not pool:
         return []
 
-    effective_legs = max(2, int(round(num_legs)))
+    effective_legs = max(2, int(num_legs))
 
     is_safe = "Safe Floor" in strat_choice
     is_high_profit = "High Profit" in strat_choice
@@ -182,13 +182,13 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             on_change=trigger_combo_auto_refresh
         )
 
+        # Whole integer stepper (moves by 1 at a time)
         num_legs = r1_c3.number_input(
             "Target # of Legs",
-            min_value=2.0,
-            max_value=15.0,
-            value=4.0,
-            step=0.5,
-            format="%.1f",
+            min_value=2,
+            max_value=15,
+            value=4,
+            step=1,
             key="cb_static_legs",
             on_change=trigger_combo_auto_refresh
         )
@@ -265,7 +265,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
         c_act1, c_act2 = st.columns([3.5, 1.5], vertical_alignment="bottom")
         with c_act1:
-            st.caption(f"Active Pool: {len(pool)} available matchups across {league_choice} (Compiling {int(round(num_legs))} legs)")
+            st.caption(f"Active Pool: {len(pool)} available matchups across {league_choice} (Compiling {int(num_legs)} legs)")
         with c_act2:
             if st.button("⚡ Generate Combo", type="primary", use_container_width=True, disabled=len(pool) < 2):
                 st.session_state.combo_active_legs = generate_algorithmic_combo(pool, num_legs, chosen_market, strat_choice)
