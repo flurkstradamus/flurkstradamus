@@ -162,29 +162,27 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         st.session_state.cb_needs_refresh = False
 
     # AI Combo Optimizer Controls
-    # Sequence: 1. League, 2. Filter Status, 3. Target # of Legs, 4. Target Market Focus, 5. Combo Strategy Profile
     with st.container(border=True):
         st.markdown("#### 🤖 AI Multi-Leg Optimizer")
 
-        c1, c2 = st.columns(2)
-        league_choice = c1.selectbox(
+        # ROW 1 (3 Columns): League, Game Filter, Target # of Legs
+        r1_c1, r1_c2, r1_c3 = st.columns(3)
+
+        league_choice = r1_c1.selectbox(
             "Primary League / Slate Scope",
             options=["All Games (Cross-Sport)", "NBA", "NFL", "NCAA Football"],
             key="cb_static_league",
             on_change=trigger_combo_auto_refresh
         )
 
-        t_filter = c2.selectbox(
+        t_filter = r1_c2.selectbox(
             "Game Filter Status",
             options=["⏳ Upcoming Games", "⚡ Live Games", "🌐 All Matchups"],
             key="cb_static_filter",
             on_change=trigger_combo_auto_refresh
         )
 
-        c3, c4 = st.columns(2)
-        
-        # Text/Number field with +/- that increments by 0.5
-        num_legs = c3.number_input(
+        num_legs = r1_c3.number_input(
             "Target # of Legs",
             min_value=2.0,
             max_value=15.0,
@@ -195,6 +193,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             on_change=trigger_combo_auto_refresh
         )
 
+        # Dynamic Market Focus List Based on League
         if league_choice == "NBA":
             market_options = [
                 "⚡ Let the System Pick (Best NBA Multi-Market Mix)",
@@ -217,7 +216,10 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 "🏆 Straight Up Winners Only (Moneyline)"
             ]
 
-        chosen_market = c4.selectbox(
+        # ROW 2 (2 Columns): Target Market Focus, Combo Strategy Profile
+        r2_c1, r2_c2 = st.columns(2)
+
+        chosen_market = r2_c1.selectbox(
             "Target Market Focus",
             options=market_options,
             key="cb_static_market",
@@ -230,7 +232,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             "⚖️ Balanced Edge (+EV Sweet Spot)",
             "🚀 High Profit (Max Multiplier & Longshots)"
         ]
-        strat_choice = st.selectbox(
+        strat_choice = r2_c2.selectbox(
             "Combo Strategy Profile",
             options=strat_options,
             index=0,
