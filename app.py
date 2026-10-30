@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 # Import modules
 from config import DEFAULT_LOGO
 from database import (
-    load_storage, save_all_storage, find_game_for_bet, auto_resolve_bets,
+    load_storage, save_all_storage, find_game_for_bet, auto_resolve_bet,
     hash_password, get_admin_credentials, send_verification_email
 )
 from sports import fetch_football_scoreboard, fetch_nba_scoreboard
