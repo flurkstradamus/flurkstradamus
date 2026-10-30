@@ -1,24 +1,25 @@
 import streamlit as st
 from datetime import datetime
 from config import DEFAULT_LOGO
-from database import save_all_storage, record_quarterly_snapshot, calculate_pace_drift_factor
+from database import (
+    save_all_storage,
+    record_quarterly_snapshot,
+    record_full_game_progression,
+    calculate_pace_drift_factor,
+)
 from sports.football import round_half_point, get_live_football_roster
 from sports.basketball import get_live_nba_roster, get_live_nba_3pm_roster
 from models import calculate_win_prob, calculate_spread_prob, calculate_moneyline_prob
 
 def build_single_game_tiers(target_game, chosen_market, strat_choice):
-    """
-    Builds tier cards strictly isolated to the sport and teams of target_game.
-    Never falls back to cross-sport placeholders.
-    """
     league = str(target_game.get("league", "NFL")).upper()
     is_nba = (league == "NBA")
-    
+
     h_team = target_game.get("home_team", "Home Team")
     a_team = target_game.get("away_team", "Away Team")
     h_short = target_game.get("home_short", "HOME")
     a_short = target_game.get("away_short", "AWAY")
-    
+
     ou_open = round_half_point(target_game.get("market_ou", 224.5 if is_nba else 46.5))
     spread_open = round_half_point(target_game.get("market_spread", -3.5))
 
@@ -82,7 +83,6 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
                 "best": make_card("🥇 BEST (Ceiling Alpha)", "#4ade80", f"{star_scorer} Over 24.5 Pts", "Player Points Prop", "Over", 24.5, star_scorer, 0.46, "Plus-money upside on volume scoring ceiling.")
             }
         else:
-            # NBA Standard Discrepancy Mix
             cush = 7.5 if is_safe else 3.5
             tot_line = round_half_point(ou_open + cush)
             return {
@@ -98,7 +98,6 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
     star_fb = f_roster[0][0] if f_roster else "Starting RB"
     star_fb_pos = f_roster[0][1] if f_roster else "RB"
 
-    # Specific Football Markets
     if "Touchdown" in chosen_market:
         return {
             "good": make_card("🥉 GOOD (Red-Zone Threat)", "#38bdf8", f"{star_fb} Any Time TD", "Player Anytime Touchdown Scorer", "TD", 1.0, star_fb, 0.54, f"Primary goal-line carry share for {h_team}."),
@@ -128,7 +127,6 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
             "best": make_card("🥇 BEST (Live Underdog Value)", "#4ade80", f"{dog_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, dog_team, min(0.48, min(h_win_prob, 1.0 - h_win_prob)), "High payout dog value based on live matchup variance.")
         }
     else:
-        # STRICT NFL DEFAULT SYSTEM MIX (100% Football Matchup Isolated)
         cush = 4.5 if is_safe else 2.5
         tot_line = round_half_point(ou_open + cush)
         return {
@@ -136,7 +134,6 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
             "better": make_card("🥈 BETTER (Consensus ATS Cover)", "#fbbf24", f"{fav_team} {fav_spread:+.1f}", "Point Spread (ATS)", "Spread", fav_spread, fav_team, 0.56, f"Power ratings model projects {fav_team} covers the spread against {dog_team}."),
             "best": make_card("🥇 BEST (Anytime Touchdown)", "#4ade80", f"{star_fb} Any Time TD", "Player Anytime Touchdown Scorer", "TD", 1.0, star_fb, 0.51, f"{star_fb} ({star_fb_pos}) commands red-zone carry share for {h_team}.")
         }
-
 
 def render_single_game(curr_user, active_uname, games_data, get_current_et_time_fn):
     st.subheader("⚡ Single Game Analytics Engine")
@@ -168,9 +165,12 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         )
 
         pool = games_data
-        if league_choice == "NBA": pool = [g for g in pool if g.get("league") == "NBA"]
-        elif league_choice == "NFL": pool = [g for g in pool if g.get("league") == "NFL"]
-        elif league_choice == "NCAA Football": pool = [g for g in pool if g.get("league") == "NCAA"]
+        if league_choice == "NBA":
+            pool = [g for g in pool if g.get("league") == "NBA"]
+        elif league_choice == "NFL":
+            pool = [g for g in pool if g.get("league") == "NFL"]
+        elif league_choice == "NCAA Football":
+            pool = [g for g in pool if g.get("league") == "NCAA"]
 
         if t_filter == "⏳ Upcoming Games":
             pool = [g for g in pool if not g.get("completed", False) and (g.get("state_text") == "pre" or g.get("period", 0) == 0)]
@@ -246,7 +246,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             st.rerun()
 
     # =========================================================================
-    # MATCHUP TELEMETRY (Explicitly Bound to Selected Game)
+    # MATCHUP TELEMETRY & PERSISTENT GAME PROGRESSION LEARNING
     # =========================================================================
     gm = selected_game
     p_num = gm.get("period", 0)
@@ -256,7 +256,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
 
     live_proj_tot = calculate_pace_drift_factor(p_num, cur_tot, pre_tot)
     fav_team = gm["home_team"] if pre_spd < 0 else gm["away_team"]
-    
+
     a_logo = gm.get("away_logo") or DEFAULT_LOGO
     h_logo = gm.get("home_logo") or DEFAULT_LOGO
     a_name = gm.get("away_team", "Away Team")
@@ -266,7 +266,17 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
     kickoff_time = gm.get("kickoff", "Upcoming")
     gm_league = gm.get("league", "SPORTS").upper()
 
+    # Fetch active verified lineups to feed the multi-checkpoint database
+    if is_nba_game:
+        h_ros = get_live_nba_roster(gm.get("home_id"), game_id=gm.get("id"))
+        a_ros = get_live_nba_roster(gm.get("away_id"), game_id=gm.get("id"))
+    else:
+        h_ros = get_live_football_roster(gm.get("home_id") or gm.get("home_short"), gm_league)
+        a_ros = get_live_football_roster(gm.get("away_id") or gm.get("away_short"), gm_league)
+
+    # Persist quarterly progression snapshots to system learning repository
     record_quarterly_snapshot(gm.get("id"), gm.get("league"), gm.get("state_text"), h_name, a_name, gm.get("home_score", 0), gm.get("away_score", 0), p_num, pre_tot, pre_spd)
+    record_full_game_progression(selected_game, active_roster_away=a_ros, active_roster_home=h_ros)
 
     st.markdown("#### 📊 Matchup Projection Telemetry")
     with st.container(border=True):
@@ -313,7 +323,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
                 p_cols[idx].info(f"🏈 **{ply[0]}** ({ply[1]}): 52% Projected Anytime TD")
 
     # =========================================================================
-    # 3-TIER RECOMMENDATIONS (Render Only If Matched To Current Game)
+    # 3-TIER RECOMMENDATIONS
     # =========================================================================
     if st.session_state.single_tier_picks:
         tiers = st.session_state.single_tier_picks
