@@ -14,45 +14,131 @@ def prob_to_american_odds(prob):
         odds = int(round(100.0 * ((1.0 - p) / p)))
         return f"+{odds}"
 
-def get_verified_active_player(game_obj, is_nba, is_3pm_target=False):
-    """
-    Pulls a verified active starter who is not on the injury report or benched.
-    """
+def get_verified_active_players_list(game_obj, is_nba):
+    """Returns a list of healthy, active starters for SGP prop legs."""
     g_id = game_obj.get("id")
     home_id = game_obj.get("home_id") or game_obj.get("home_short")
+    away_id = game_obj.get("away_id") or game_obj.get("away_short")
+
+    healthy_players = []
 
     if is_nba:
         injury_set = fetch_nba_injury_set()
-        if is_3pm_target:
-            shooters = get_live_nba_3pm_roster(home_id, game_id=g_id)
-            for p_tuple in shooters:
-                p_name = p_tuple[0]
-                if p_name.strip().lower() not in injury_set:
-                    return p_name, "3PM", p_tuple[2]  # name, stat, line
-            if shooters:
-                return shooters[0][0], "3PM", 1.5
-        else:
-            roster = get_live_nba_roster(home_id, game_id=g_id)
-            for p_tuple in roster:
-                p_name = p_tuple[0]
-                if p_name.strip().lower() not in injury_set:
-                    return p_name, "Points", p_tuple[2]
-            if roster:
-                return roster[0][0], "Points", 18.5
-        return "Starting Guard", "3PM", 1.5
+        h_shooters = get_live_nba_3pm_roster(home_id, game_id=g_id)
+        a_shooters = get_live_nba_3pm_roster(away_id, game_id=g_id)
+
+        for p in h_shooters + a_shooters:
+            if p[0].strip().lower() not in injury_set:
+                healthy_players.append((p[0], "3PM", p[2]))
+
+        if not healthy_players:
+            healthy_players = [("Starting Guard", "3PM", 1.5), ("Primary Scorer", "Points", 18.5)]
     else:
         league = game_obj.get("league", "NFL")
-        fb_roster = get_live_football_roster(home_id, league)
-        if fb_roster:
-            # First starter in rotation who is active
-            return fb_roster[0][0], "Touchdown", 1.0
-        return "Starting RB", "Touchdown", 1.0
+        h_fb = get_live_football_roster(home_id, league)
+        a_fb = get_live_football_roster(away_id, league)
 
-def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
-    """
-    Selects top EV discrepancy legs up to 15 legs across available games,
-    embedding verified active players, official logos, and kickoff dates.
-    """
+        for p in h_fb + a_fb:
+            healthy_players.append((p[0], "Touchdown", 1.0))
+
+        if not healthy_players:
+            healthy_players = [("Starting RB", "Touchdown", 1.0)]
+
+    return healthy_players
+
+def build_same_game_parlay_legs(target_game, strat_choice, leg_count):
+    """Constructs up to 15 correlated legs all strictly from the same matchup."""
+    legs = []
+    league = str(target_game.get("league", "NFL")).upper()
+    is_nba = (league == "NBA")
+
+    ou_open = round_half_point(target_game.get("market_ou", 224.5 if is_nba else 46.5))
+    spread_open = round_half_point(target_game.get("market_spread", -3.5))
+    fav_team = target_game["home_team"] if spread_open < 0 else target_game["away_team"]
+    dog_team = target_game["away_team"] if spread_open < 0 else target_game["home_team"]
+    fav_spread = spread_open if fav_team == target_game["home_team"] else -spread_open
+
+    healthy_athletes = get_verified_active_players_list(target_game, is_nba)
+
+    base_metadata = {
+        "matchup": f"{target_game.get('away_short')} @ {target_game.get('home_short')}",
+        "home_team": target_game.get("home_team"),
+        "away_team": target_game.get("away_team"),
+        "away_short": target_game.get("away_short", "AWAY"),
+        "home_short": target_game.get("home_short", "HOME"),
+        "league": league,
+        "away_logo": target_game.get("away_logo", DEFAULT_LOGO),
+        "home_logo": target_game.get("home_logo", DEFAULT_LOGO),
+        "kickoff": target_game.get("kickoff", "Scheduled"),
+    }
+
+    # Leg 1: Game Total
+    cush = 4.5 if is_nba else 3.5
+    t_line = round_half_point(ou_open + cush)
+    legs.append({
+        **base_metadata,
+        "picked_team": target_game.get("home_team"),
+        "player_name": "",
+        "type": "Game Total",
+        "side": "Under",
+        "line": str(t_line),
+        "pick_text": f"Under {t_line:.1f} Pts",
+        "prob": 0.72
+    })
+
+    # Leg 2: Spread or Winner
+    if len(legs) < leg_count:
+        legs.append({
+            **base_metadata,
+            "picked_team": fav_team,
+            "player_name": "",
+            "type": "Point Spread (ATS)",
+            "side": "Spread",
+            "line": str(fav_spread),
+            "pick_text": f"{fav_team} {fav_spread:+.1f}",
+            "prob": 0.58
+        })
+
+    # Leg 3: Straight Up ML
+    if len(legs) < leg_count:
+        legs.append({
+            **base_metadata,
+            "picked_team": fav_team,
+            "player_name": "",
+            "type": "Moneyline",
+            "side": "Moneyline",
+            "line": "0.0",
+            "pick_text": f"{fav_team} ML",
+            "prob": 0.65
+        })
+
+    # Subsequent Legs: Correlated Player Props from both teams in this same game
+    ath_idx = 0
+    while len(legs) < leg_count and ath_idx < len(healthy_athletes):
+        ath_name, prop_type, p_line = healthy_athletes[ath_idx]
+        if is_nba:
+            label = f"{ath_name} 2+ 3PM" if prop_type == "3PM" else f"{ath_name} Over {p_line} Pts"
+            p_cat = "NBA 3-Pointers Made" if prop_type == "3PM" else "Player Points"
+        else:
+            label = f"{ath_name} Anytime TD"
+            p_cat = "Player Anytime TD"
+
+        legs.append({
+            **base_metadata,
+            "picked_team": ath_name,
+            "player_name": ath_name,
+            "type": p_cat,
+            "side": "Over" if is_nba else "TD",
+            "line": str(p_line),
+            "pick_text": label,
+            "prob": 0.55
+        })
+        ath_idx += 1
+
+    return legs[:leg_count]
+
+def build_system_cross_game_legs(pool_games, target_market, strat_choice, leg_count):
+    """Constructs legs across different games on the slate."""
     selected_legs = []
     is_safe = "Safe Floor" in strat_choice
     is_high_profit = "High Profit" in strat_choice
@@ -72,22 +158,18 @@ def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
         dog_team = gm["away_team"] if spread_open < 0 else gm["home_team"]
         fav_spread = spread_open if fav_team == gm["home_team"] else -spread_open
 
-        # Retrieve a verified healthy starter
-        active_player, prop_cat, baseline_line = get_verified_active_player(
-            gm, 
-            is_nba=is_nba, 
-            is_3pm_target=("Three-Pointers" in target_market or "3-Pointers" in target_market)
-        )
+        healthy_players = get_verified_active_players_list(gm, is_nba)
+        active_player = healthy_players[0][0] if healthy_players else "Star Athlete"
 
         leg_data = {
             "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}",
-            "home_team": gm.get("home_team", "Home Team"),
-            "away_team": gm.get("away_team", "Away Team"),
+            "home_team": gm.get("home_team"),
+            "away_team": gm.get("away_team"),
             "away_short": gm.get("away_short", "AWAY"),
             "home_short": gm.get("home_short", "HOME"),
             "league": league,
-            "away_logo": gm.get("away_logo") or DEFAULT_LOGO,
-            "home_logo": gm.get("home_logo") or DEFAULT_LOGO,
+            "away_logo": gm.get("away_logo", DEFAULT_LOGO),
+            "home_logo": gm.get("home_logo", DEFAULT_LOGO),
             "kickoff": gm.get("kickoff", "Scheduled"),
             "player_name": active_player
         }
@@ -104,48 +186,23 @@ def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
                 "prob": 0.74 if is_safe else 0.64
             })
         elif "Point Spread" in target_market:
-            if is_safe:
-                teased = round_half_point(abs(fav_spread) + (5.5 if is_nba else 3.5))
-                leg_data.update({
-                    "picked_team": dog_team,
-                    "type": "Point Spread (ATS)",
-                    "side": "Spread",
-                    "line": str(teased),
-                    "pick_text": f"{dog_team} {teased:+.1f}",
-                    "prob": 0.73
-                })
-            else:
-                leg_data.update({
-                    "picked_team": fav_team,
-                    "type": "Point Spread (ATS)",
-                    "side": "Spread",
-                    "line": str(fav_spread),
-                    "pick_text": f"{fav_team} {fav_spread:+.1f}",
-                    "prob": 0.58
-                })
-        elif "Moneyline" in target_market or "Straight Up" in target_market:
-            target_t = fav_team if not is_high_profit else dog_team
-            p_val = 0.68 if target_t == fav_team else 0.44
             leg_data.update({
-                "picked_team": target_t,
-                "type": "Moneyline",
-                "side": "Moneyline",
-                "line": "0.0",
-                "pick_text": f"{target_t} ML",
-                "prob": p_val
+                "picked_team": fav_team,
+                "type": "Point Spread (ATS)",
+                "side": "Spread",
+                "line": str(fav_spread),
+                "pick_text": f"{fav_team} {fav_spread:+.1f}",
+                "prob": 0.58
             })
         elif "Player Prop" in target_market or "Three-Pointers" in target_market or "Touchdown" in target_market:
             if is_nba:
-                threshold = "1+" if is_safe else ("3+" if is_high_profit else "2+")
-                p_val = 0.86 if is_safe else (0.49 if is_high_profit else 0.68)
-                line_val = "0.5" if is_safe else ("2.5" if is_high_profit else "1.5")
                 leg_data.update({
                     "picked_team": active_player,
                     "type": "NBA 3-Pointers Made",
                     "side": "Over",
-                    "line": line_val,
-                    "pick_text": f"{active_player} {threshold} 3-Pointers Made",
-                    "prob": p_val
+                    "line": "1.5",
+                    "pick_text": f"{active_player} 2+ 3PM",
+                    "prob": 0.68
                 })
             else:
                 leg_data.update({
@@ -153,38 +210,28 @@ def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
                     "type": "Player Anytime TD",
                     "side": "TD",
                     "line": "1.0",
-                    "pick_text": f"{active_player} Anytime Touchdown",
+                    "pick_text": f"{active_player} Anytime TD",
                     "prob": 0.52
                 })
         else:
-            # Default Model Edge: Blend of active player props and spreads
             if len(selected_legs) % 2 == 0:
-                if is_nba:
-                    leg_data.update({
-                        "picked_team": active_player,
-                        "type": "NBA 3-Pointers Made",
-                        "side": "Over",
-                        "line": "1.5",
-                        "pick_text": f"{active_player} 2+ 3-Pointers Made",
-                        "prob": 0.68
-                    })
-                else:
-                    leg_data.update({
-                        "picked_team": active_player,
-                        "type": "Player Anytime TD",
-                        "side": "TD",
-                        "line": "1.0",
-                        "pick_text": f"{active_player} Anytime Touchdown",
-                        "prob": 0.51
-                    })
+                tot_line = round_half_point(ou_open + 4.0)
+                leg_data.update({
+                    "picked_team": gm.get("home_team"),
+                    "type": "Game Total",
+                    "side": "Under",
+                    "line": str(tot_line),
+                    "pick_text": f"Under {tot_line:.1f} Pts",
+                    "prob": 0.72
+                })
             else:
                 leg_data.update({
-                    "picked_team": fav_team,
-                    "type": "Point Spread (ATS)",
-                    "side": "Spread",
-                    "line": str(fav_spread),
-                    "pick_text": f"{fav_team} {fav_spread:+.1f}",
-                    "prob": 0.58
+                    "picked_team": active_player,
+                    "type": "NBA 3-Pointers Made" if is_nba else "Player Anytime TD",
+                    "side": "Over" if is_nba else "TD",
+                    "line": "1.5" if is_nba else "1.0",
+                    "pick_text": f"{active_player} 2+ 3PM" if is_nba else f"{active_player} Anytime TD",
+                    "prob": 0.55
                 })
 
         selected_legs.append(leg_data)
@@ -193,7 +240,7 @@ def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
 
 def render_combo_builder(curr_user, active_uname, games_data, get_current_et_time_fn):
     st.subheader("🔗 Multi-Leg Combo & Parlay Builder")
-    st.caption("Construct multi-game tickets, select leg volume, edit lines and probabilities, audit correlated edges, and lock in tickets.")
+    st.caption("Construct Same-Game Parlays (SGP) or Cross-Game tickets, select leg volume, edit lines and probabilities, and lock in tickets.")
 
     if "combo_active_legs" not in st.session_state:
         st.session_state.combo_active_legs = []
@@ -206,19 +253,30 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     with st.container(border=True):
         st.markdown("#### 🤖 Select & Configure Multi-Leg Matchups")
 
-        r1_c1, r1_c2, r1_c3 = st.columns([2.5, 2.5, 2.2], vertical_alignment="bottom")
-        league_choice = r1_c1.selectbox(
+        # Row 1: Parlay Scope (SGP vs Cross-Game)
+        scope_col1, scope_col2 = st.columns([3.5, 3.5])
+        parlay_type = scope_col1.radio(
+            "Parlay Structure Mode",
+            ["🎯 Same-Game Parlay (All Legs from 1 Game)", "🌐 Cross-Game Parlay (Multi-Matchup Ticket)"],
+            horizontal=True,
+            key="cb_parlay_structure_mode"
+        )
+        is_sgp = "Same-Game" in parlay_type
+
+        # Row 2: League Scope, Slate Filter, Leg Count Stepper (+ / - up to 15)
+        r2_c1, r2_c2, r2_c3 = st.columns([2.5, 2.5, 2.2], vertical_alignment="bottom")
+        league_choice = r2_c1.selectbox(
             "Primary League / Slate Scope",
             options=["All Games (Cross-Sport)", "NFL", "NBA", "NCAA Football"],
             key="cb_cfg_league"
         )
-        t_filter = r1_c2.selectbox(
+        t_filter = r2_c2.selectbox(
             "Game Filter Status",
             options=["🌐 All Matchups", "⏳ Upcoming Games", "⚡ Live Games"],
             key="cb_cfg_filter"
         )
 
-        with r1_c3:
+        with r2_c3:
             st.markdown("<label style='font-size:0.875rem;font-weight:400;'>Target # of Legs (Up to 15)</label>", unsafe_allow_html=True)
             cnt_cols = st.columns([1, 1.8, 1])
             if cnt_cols[0].button("➖", key="cb_step_minus", use_container_width=True):
@@ -257,6 +315,17 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         elif t_filter == "⚡ Live Games":
             pool = [g for g in pool if not g.get("completed", False) and g.get("state_text") != "pre" and g.get("period", 0) > 0]
 
+        # SGP Game Selector if in SGP Mode
+        target_sgp_game = None
+        if is_sgp:
+            if pool:
+                sgp_labels = [f"[{gm.get('league')}] {gm.get('away_short')} @ {gm.get('home_short')} ({gm.get('kickoff', 'Upcoming')})" for gm in pool]
+                sgp_idx = st.selectbox("🎯 Target Game for Same-Game Parlay", range(len(sgp_labels)), format_func=lambda i: sgp_labels[i], key="cb_sgp_game_pick")
+                target_sgp_game = pool[sgp_idx]
+            else:
+                st.warning("No games found on the slate matching your league and status filter.")
+
+        # Row 3: Selection Mode (System Pick vs Manual Entry)
         selection_mode = st.radio(
             "Matchup Selection Method",
             ["🤖 Let the System Pick (Highest Model Discrepancies)", "✍️ Enter Legs Manually / Hand-Pick"],
@@ -264,37 +333,8 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             key="cb_cfg_selection_mode"
         )
 
-        r3_c1, r3_c2 = st.columns(2)
-        is_nba_scope = (league_choice == "NBA")
-        is_nfl_scope = (league_choice == "NFL" or league_choice == "NCAA Football")
-
-        if is_nba_scope:
-            market_options = [
-                "⚡ Let the System Pick (Best NBA Discrepancies)",
-                "📊 Game Totals (Over / Under)",
-                "🛡️ Point Spreads (ATS Cover)",
-                "🏆 Straight Up Winners (Moneyline)",
-                "🎯 NBA Player Three-Pointers Made (1+, 2+, 3+)"
-            ]
-        elif is_nfl_scope:
-            market_options = [
-                "⚡ Let the System Pick (Best Football Discrepancies)",
-                "📊 Game Totals (Over / Under)",
-                "🛡️ Point Spreads (ATS Cover)",
-                "🏆 Straight Up Winners (Moneyline)",
-                "🏈 Football Anytime Touchdown Scorer"
-            ]
-        else:
-            market_options = [
-                "⚡ Let the System Pick (Cross-Sport Edge)",
-                "📊 Game Totals (Over / Under)",
-                "🛡️ Point Spreads (ATS Cover)",
-                "🏆 Straight Up Winners (Moneyline)",
-                "🎯 High EV Player Props (3PM / Touchdown)"
-            ]
-
-        target_market = r3_c1.selectbox("Target Bet / Market Type", market_options, key="cb_cfg_target_market")
-        strat_choice = r3_c2.selectbox(
+        r4_c1, r4_c2 = st.columns(2)
+        strat_choice = r4_c2.selectbox(
             "Model Strategy Profile",
             [
                 "⚖️ Balanced Edge (+EV Sweet Spot)",
@@ -305,14 +345,35 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             key="cb_cfg_strat_choice"
         )
 
+        if not is_sgp:
+            is_nba_scope = (league_choice == "NBA")
+            market_options = [
+                "⚡ Let the System Pick (Best Discrepancies)",
+                "📊 Game Totals (Over / Under)",
+                "🛡️ Point Spreads (ATS Cover)",
+                "🏆 Straight Up Winners (Moneyline)",
+                "🎯 High EV Player Props (3PM / Touchdown)"
+            ]
+            target_market = r4_c1.selectbox("Target Bet / Market Type", market_options, key="cb_cfg_target_market")
+        else:
+            target_market = "SGP Multi-Market Blend"
+            r4_c1.info("💡 Same-Game Parlay combines totals, spread/winner, and active player props from your selected matchup.")
+
         if "Let the System Pick" in selection_mode:
-            if st.button(f"⚡ Generate {leg_count}-Leg Combo Analysis & Slip", type="primary", use_container_width=True):
-                if not pool:
-                    st.warning("No matchups match your selected league or game filter.")
+            btn_label = f"⚡ Generate {leg_count}-Leg Same-Game Parlay" if is_sgp else f"⚡ Generate {leg_count}-Leg Combo Slip"
+            if st.button(btn_label, type="primary", use_container_width=True):
+                if is_sgp:
+                    if target_sgp_game:
+                        st.session_state.combo_active_legs = build_same_game_parlay_legs(target_sgp_game, strat_choice, leg_count)
+                        st.toast(f"✅ Generated {len(st.session_state.combo_active_legs)}-leg SGP for {target_sgp_game.get('away_short')}@{target_sgp_game.get('home_short')}!", icon="🎯")
+                        st.rerun()
                 else:
-                    st.session_state.combo_active_legs = build_system_combo_legs(pool, target_market, strat_choice, leg_count)
-                    st.toast(f"✅ Generated {len(st.session_state.combo_active_legs)}-leg combo!", icon="🤖")
-                    st.rerun()
+                    if not pool:
+                        st.warning("No matchups match your selected league or game filter.")
+                    else:
+                        st.session_state.combo_active_legs = build_system_cross_game_legs(pool, target_market, strat_choice, leg_count)
+                        st.toast(f"✅ Generated {len(st.session_state.combo_active_legs)}-leg combo!", icon="🤖")
+                        st.rerun()
         else:
             st.markdown("---")
             st.markdown("##### ✍️ Manual Matchup & Leg Ingestion")
@@ -332,7 +393,8 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     fav_t = target_gm.get("home_team") if spd_val < 0 else target_gm.get("away_team")
 
                     is_gm_nba = (target_gm.get("league") == "NBA")
-                    star_name, _, _ = get_verified_active_player(target_gm, is_nba=is_gm_nba)
+                    healthy_ath = get_verified_active_players_list(target_gm, is_gm_nba)
+                    star_name = healthy_ath[0][0] if healthy_ath else "Active Player"
 
                     preset_list = [
                         f"Under {ou_val}",
@@ -518,7 +580,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     m4.metric("Active Legs", len(legs))
 
     # =========================================================================
-    # 5. TICKET LOCK-IN & FINANCIAL PERSISTENCE
+    # 5. TICKET LOCK-IN & FINANCIAL RECORDING
     # =========================================================================
     with st.container(border=True):
         st.markdown("#### 🔒 Lock In Combo Ticket Slip")
@@ -530,7 +592,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             risk_input = r_col.number_input("Risk Amount ($)", min_value=0.5, value=float(default_risk), step=1.0)
             payout_input = p_col.number_input("Total Payout ($)", min_value=0.5, value=float(default_payout), step=1.0)
 
-            # Strict Net Profit Calculation: Payout - Risk
             net_profit = float(payout_input) - float(risk_input)
             roi_pct = (net_profit / max(0.01, float(risk_input))) * 100.0
             ev_val = (compound_prob * float(payout_input)) - float(risk_input)
@@ -556,8 +617,8 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     "date": get_current_et_time_fn().strftime("%Y-%m-%d %H:%M ET"),
                     "type": "Combo",
                     "bet_category": "Combo",
-                    "matchup": f"{len(legs)}-Leg Parlay",
-                    "bet": f"{len(legs)}-Leg Combo: {summary_picks}",
+                    "matchup": f"{len(legs)}-Leg {'SGP' if is_sgp else 'Parlay'}",
+                    "bet": f"{len(legs)}-Leg {'SGP' if is_sgp else 'Combo'}: {summary_picks}",
                     "risk_dollars": float(risk_input),
                     "payout_dollars": float(payout_input),
                     "payout": float(payout_input),
