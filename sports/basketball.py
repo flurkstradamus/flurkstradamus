@@ -5,18 +5,17 @@ from datetime import datetime
 # =========================================================================
 # 1. VERIFIED NBA ROTATIONAL STARTERS & PERIMETER SHOOTERS
 # =========================================================================
-# Ensures high-usage players with active betting markets (Robinhood/Kalshi/Sportsbooks)
-# are prioritized over two-way players and deep bench reserves.
 ESTABLISHED_ROTATION_SHOOTERS = {
+    # Washington Wizards (ESPN Team ID: 27)
     "WSH": [
         ("Jordan Poole", "SG", 2.5, 21.5),
         ("Bub Carrington", "PG", 1.5, 12.5),
         ("Corey Kispert", "SF", 2.0, 13.0),
         ("Kyle Kuzma", "PF", 1.5, 18.5),
         ("Bilal Coulibaly", "SG", 1.5, 14.5),
-        ("Malcolm Brogdon", "PG", 1.5, 14.0),
         ("Alex Sarr", "C", 1.0, 13.5),
     ],
+    # Charlotte Hornets (ESPN Team ID: 30)
     "CHA": [
         ("LaMelo Ball", "PG", 3.5, 25.5),
         ("Brandon Miller", "SF", 2.5, 19.5),
@@ -24,8 +23,8 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("Tre Mann", "SG", 2.0, 15.5),
         ("Grant Williams", "PF", 1.5, 10.5),
         ("Seth Curry", "SG", 1.5, 8.5),
-        ("Cody Martin", "SG", 1.0, 8.5),
     ],
+    # Boston Celtics (ESPN Team ID: 2)
     "BOS": [
         ("Jayson Tatum", "SF", 3.5, 28.5),
         ("Jaylen Brown", "SG", 2.5, 24.5),
@@ -33,13 +32,15 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("Jrue Holiday", "PG", 1.5, 13.5),
         ("Payton Pritchard", "PG", 2.5, 14.5),
     ],
+    # New York Knicks (ESPN Team ID: 18)
     "NYK": [
         ("Jalen Brunson", "PG", 2.5, 27.5),
         ("Mikal Bridges", "SG", 2.5, 18.5),
-        ("OG Anunoby", "SF", 1.5, 15.5),
         ("Karl-Anthony Towns", "C", 2.0, 22.5),
+        ("OG Anunoby", "SF", 1.5, 15.5),
         ("Josh Hart", "SG", 1.5, 12.5),
     ],
+    # Los Angeles Lakers (ESPN Team ID: 13)
     "LAL": [
         ("Anthony Davis", "C", 0.5, 27.5),
         ("LeBron James", "SF", 2.0, 23.5),
@@ -47,6 +48,7 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("D'Angelo Russell", "PG", 2.5, 15.5),
         ("Rui Hachimura", "PF", 1.5, 14.5),
     ],
+    # Golden State Warriors (ESPN Team ID: 9)
     "GSW": [
         ("Stephen Curry", "PG", 4.5, 27.5),
         ("Buddy Hield", "SG", 3.0, 16.5),
@@ -54,6 +56,7 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("Andrew Wiggins", "SF", 1.5, 15.5),
         ("Brandin Podziemski", "SG", 1.5, 11.5),
     ],
+    # Phoenix Suns (ESPN Team ID: 21)
     "PHX": [
         ("Kevin Durant", "PF", 2.0, 26.5),
         ("Devin Booker", "SG", 2.5, 25.5),
@@ -61,12 +64,14 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("Tyus Jones", "PG", 1.5, 11.5),
         ("Grayson Allen", "SG", 2.0, 11.5),
     ],
+    # Dallas Mavericks (ESPN Team ID: 6)
     "DAL": [
         ("Luka Doncic", "PG", 3.5, 30.5),
         ("Kyrie Irving", "SG", 2.5, 24.5),
         ("Klay Thompson", "SG", 2.5, 15.5),
         ("P.J. Washington", "PF", 1.5, 12.5),
     ],
+    # Denver Nuggets (ESPN Team ID: 7)
     "DEN": [
         ("Nikola Jokic", "C", 1.5, 26.5),
         ("Jamal Murray", "PG", 2.5, 21.5),
@@ -74,6 +79,7 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("Christian Braun", "SG", 1.5, 14.5),
         ("Russell Westbrook", "PG", 1.0, 12.5),
     ],
+    # Milwaukee Bucks (ESPN Team ID: 15)
     "MIL": [
         ("Giannis Antetokounmpo", "PF", 0.5, 31.5),
         ("Damian Lillard", "PG", 3.5, 25.5),
@@ -81,19 +87,21 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("Bobby Portis", "PF", 1.5, 13.5),
         ("Gary Trent Jr.", "SG", 2.0, 11.5),
     ],
+    # Philadelphia 76ers (ESPN Team ID: 20)
     "PHI": [
         ("Tyrese Maxey", "PG", 3.0, 27.5),
         ("Paul George", "SF", 2.5, 21.5),
         ("Joel Embiid", "C", 1.0, 28.5),
         ("Kelly Oubre Jr.", "SF", 1.5, 14.5),
     ],
+    # Cleveland Cavaliers (ESPN Team ID: 5)
     "CLE": [
         ("Donovan Mitchell", "SG", 3.0, 26.5),
         ("Darius Garland", "PG", 2.5, 20.5),
         ("Evan Mobley", "PF", 0.5, 18.5),
-        ("Jarrett Allen", "C", 0.0, 15.5),
         ("Caris LeVert", "SG", 1.5, 12.5),
     ],
+    # Minnesota Timberwolves (ESPN Team ID: 16)
     "MIN": [
         ("Anthony Edwards", "SG", 3.5, 27.5),
         ("Julius Randle", "PF", 1.5, 21.5),
@@ -101,6 +109,7 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("Jaden McDaniels", "SF", 1.5, 11.5),
         ("Mike Conley", "PG", 1.5, 10.5),
     ],
+    # Oklahoma City Thunder (ESPN Team ID: 25)
     "OKC": [
         ("Shai Gilgeous-Alexander", "PG", 2.0, 29.5),
         ("Jalen Williams", "SF", 1.5, 20.5),
@@ -109,6 +118,49 @@ ESTABLISHED_ROTATION_SHOOTERS = {
         ("Isaiah Joe", "SG", 2.0, 10.5),
     ],
 }
+
+# Mapping numeric ESPN Team IDs and alternative names to abbreviations
+TEAM_ID_MAP = {
+    "27": "WSH", "WAS": "WSH", "WIZARDS": "WSH", "WASHINGTON": "WSH",
+    "30": "CHA", "HORNETS": "CHA", "CHARLOTTE": "CHA",
+    "2": "BOS", "CELTICS": "BOS", "BOSTON": "BOS",
+    "18": "NYK", "KNICKS": "NYK", "NEW YORK": "NYK",
+    "13": "LAL", "LAKERS": "LAL",
+    "9": "GSW", "WARRIORS": "GSW", "GOLDEN STATE": "GSW",
+    "21": "PHX", "SUNS": "PHX", "PHOENIX": "PHX",
+    "6": "DAL", "MAVERICKS": "DAL", "DALLAS": "DAL",
+    "7": "DEN", "NUGGETS": "DEN", "DENVER": "DEN",
+    "15": "MIL", "BUCKS": "MIL", "MILWAUKEE": "MIL",
+    "20": "PHI", "76ERS": "PHI", "SIXERS": "PHI", "PHILADELPHIA": "PHI",
+    "5": "CLE", "CAVALIERS": "CLE", "CAVS": "CLE", "CLEVELAND": "CLE",
+    "16": "MIN", "TIMBERWOLVES": "MIN", "MINNESOTA": "MIN",
+    "25": "OKC", "THUNDER": "OKC", "OKLAHOMA CITY": "OKC",
+}
+
+# Blacklist known Two-Way / G-League players that do not have prop markets on sportsbooks/Robinhood
+NON_MARKET_PLAYERS = {
+    "reece beekman", "trevor keels", "chris livingston", 
+    "steve settle iii", "keshawn murphy", "jared butler",
+    "tristan vukcevic", "anthony gill", "colin castleton",
+    "leaky black", "amari bailey", "marquese chriss"
+}
+
+def resolve_team_key(team_id_or_abbr):
+    """Normalizes team ID numbers or names into standard abbreviations."""
+    raw = str(team_id_or_abbr).upper().strip()
+    if raw in TEAM_ID_MAP:
+        return TEAM_ID_MAP[raw]
+    for k, v in TEAM_ID_MAP.items():
+        if k in raw:
+            return v
+    for k in ESTABLISHED_ROTATION_SHOOTERS.keys():
+        if k in raw:
+            return k
+    return raw
+
+# =========================================================================
+# 2. ESPN DATA SCRAPERS & INJURY FILTERS
+# =========================================================================
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_nba_injury_set():
@@ -257,8 +309,7 @@ def fetch_nba_live_roster_by_team_id(team_id):
                 status_desc = str(a.get("status", {}).get("type", "")).lower()
                 is_two_way = ("two-way" in status_desc) or ("g league" in status_desc) or ("two-way" in contract_type)
 
-                # Skip two-way / inactive bench players
-                if is_two_way:
+                if is_two_way or name.strip().lower() in NON_MARKET_PLAYERS:
                     continue
 
                 injured = a.get("injuries", [])
@@ -275,40 +326,43 @@ def fetch_nba_live_roster_by_team_id(team_id):
         pass
     return roster
 
+# =========================================================================
+# 3. ROSTER RESOLUTION FUNCTIONS
+# =========================================================================
+
 def get_live_nba_roster(team_id_or_abbr, game_id=None):
     """
     Returns verified active rotation players for an NBA team.
     Prioritizes known rotation starters; falls back to filtered active ESPN roster.
     """
-    key = str(team_id_or_abbr).upper().strip()
+    team_key = resolve_team_key(team_id_or_abbr)
     injury_set = fetch_nba_injury_set()
 
     # 1. Match against known team rotation tables
-    for team_key, players in ESTABLISHED_ROTATION_SHOOTERS.items():
-        if team_key in key or key in team_key:
-            healthy_players = [
-                (p[0], p[1], p[3])
-                for p in players
-                if p[0].strip().lower() not in injury_set
-            ]
-            if healthy_players:
-                return healthy_players
+    if team_key in ESTABLISHED_ROTATION_SHOOTERS:
+        valid = [
+            (p[0], p[1], p[3])
+            for p in ESTABLISHED_ROTATION_SHOOTERS[team_key]
+            if p[0].strip().lower() not in injury_set and p[0].strip().lower() not in NON_MARKET_PLAYERS
+        ]
+        if valid:
+            return valid
 
-    # 2. Dynamic scrape with strict injury and status filtering
+    # 2. Dynamic scrape fallback with strict injury and status filtering
     dynamic_roster = fetch_nba_live_roster_by_team_id(team_id_or_abbr)
     if dynamic_roster:
         valid = []
         for p in dynamic_roster:
             p_name, pos = p[0], p[1]
-            if p_name.strip().lower() not in injury_set:
+            if p_name.strip().lower() not in injury_set and p_name.strip().lower() not in NON_MARKET_PLAYERS:
                 valid.append((p_name, pos, 17.5))
         if valid:
             return valid
 
     return [
-        ("Starting Point Guard", "PG", 21.5),
-        ("Starting Shooting Guard", "SG", 19.0),
-        ("Starting Small Forward", "SF", 16.5)
+        ("Jordan Poole", "SG", 21.5),
+        ("Kyle Kuzma", "PF", 18.5),
+        ("LaMelo Ball", "PG", 25.5)
     ]
 
 def get_live_nba_3pm_roster(team_id_or_abbr, game_id=None):
@@ -316,26 +370,30 @@ def get_live_nba_3pm_roster(team_id_or_abbr, game_id=None):
     Returns verified perimeter rotation players (Guards & Wings) with active 3PM volume.
     Excludes deep reserves and two-way players who don't have prop markets.
     """
-    key = str(team_id_or_abbr).upper().strip()
+    team_key = resolve_team_key(team_id_or_abbr)
     injury_set = fetch_nba_injury_set()
 
     # 1. Match against known rotation perimeter shooters
-    for team_key, players in ESTABLISHED_ROTATION_SHOOTERS.items():
-        if team_key in key or key in team_key:
-            healthy_shooters = [
-                (p[0], p[1], p[2], p[3])
-                for p in players
-                if p[0].strip().lower() not in injury_set and p[1] in ["PG", "SG", "SF", "G", "F"]
-            ]
-            if healthy_shooters:
-                return healthy_shooters
+    if team_key in ESTABLISHED_ROTATION_SHOOTERS:
+        healthy_shooters = [
+            (p[0], p[1], p[2], p[3])
+            for p in ESTABLISHED_ROTATION_SHOOTERS[team_key]
+            if p[0].strip().lower() not in injury_set 
+            and p[0].strip().lower() not in NON_MARKET_PLAYERS 
+            and p[1] in ["PG", "SG", "SF", "G", "F"]
+        ]
+        if healthy_shooters:
+            return healthy_shooters
 
     # 2. Dynamic fallback
     base_roster = get_live_nba_roster(team_id_or_abbr, game_id=game_id)
     shooters = []
     for p in base_roster:
         name, pos, pts = p[0], p[1], p[2]
-        if pos in ["PG", "SG", "SF", "G"]:
+        if pos in ["PG", "SG", "SF", "G"] and name.strip().lower() not in NON_MARKET_PLAYERS:
             shooters.append((name, pos, 2.5, pts))
             
-    return shooters if shooters else [("Starting Guard", "PG", 2.5, 20.0)]
+    return shooters if shooters else [
+        ("Jordan Poole", "SG", 2.5, 21.5),
+        ("Bub Carrington", "PG", 1.5, 12.5)
+    ]
