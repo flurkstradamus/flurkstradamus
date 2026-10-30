@@ -1,6 +1,27 @@
 {
   "saved_bets": [
     {
+      "id": "1793321092.68092140",
+      "user": "Flurk",
+      "date": "2026-10-29 20:44 ET",
+      "type": "Single",
+      "bet_category": "Game Total",
+      "home_team": "North Texas Mean Green",
+      "away_team": "Florida Atlantic Owls",
+      "picked_team": "",
+      "matchup": "Florida Atlantic Owls @ North Texas Mean Green",
+      "bet": "Over 72.5",
+      "target_line": 72.5,
+      "bet_direction": "Over",
+      "risk_dollars": 40.0,
+      "payout_dollars": 19.1,
+      "payout": 19.1,
+      "locked_profit": -20.9,
+      "win_prob": "1.0%",
+      "status": "Pending",
+      "notes": "[NCAA] Game Total"
+    },
+    {
       "id": "1793317028.63924",
       "user": "Flurk",
       "date": "2026-10-29 19:37 ET",
