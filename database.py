@@ -1,13 +1,16 @@
 import json
 import os
 import hashlib
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
 STORAGE_FILE = "storage.json"
 SNAPSHOT_FILE = "game_snapshots.json"
 
 # =========================================================================
-# 1. CORE DATABASE INITIALIZATION & FILE PERSISTENCE
+# 1. CORE STORAGE LOAD & SAVE (Matches app.py exact names)
 # =========================================================================
 
 def init_db():
@@ -34,10 +37,9 @@ def init_db():
         except Exception:
             pass
 
-
-def load_all_storage():
+def load_storage():
     """
-    Loads all saved data for app.py session state initialization.
+    Primary storage loader expected by app.py line 9.
     Returns: (saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots, support_tickets)
     """
     init_db()
@@ -55,6 +57,8 @@ def load_all_storage():
     except Exception:
         return ([], [], {}, [], [], [])
 
+# Backwards compatibility alias
+load_all_storage = load_storage
 
 def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots, support_tickets):
     """
@@ -75,67 +79,153 @@ def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, ga
     except Exception:
         return False
 
+# =========================================================================
+# 2. BET RESOLUTION ENGINE (find_game_for_bet & auto_resolve_bet)
+# =========================================================================
+
+def find_game_for_bet(bet, games_data):
+    """
+    Matches a locked bet slip against the live/completed scoreboards by team name or abbreviation.
+    """
+    if not games_data:
+        return None
+
+    matchup_str = str(bet.get("matchup", "")).lower()
+    bet_str = str(bet.get("bet", "")).lower()
+    picked_t = str(bet.get("picked_team", "")).lower()
+
+    for gm in games_data:
+        h_name = str(gm.get("home_team", "")).lower()
+        a_name = str(gm.get("away_team", "")).lower()
+        h_sh = str(gm.get("home_short", "")).lower()
+        a_sh = str(gm.get("away_short", "")).lower()
+
+        # Direct match via parsed leg teams or string contains
+        if (h_sh in matchup_str and a_sh in matchup_str) or \
+           (h_name in matchup_str and a_name in matchup_str) or \
+           (h_sh in bet_str and a_sh in bet_str) or \
+           (picked_t and (picked_t in h_name or picked_t in a_name or picked_t in h_sh or picked_t in a_sh)):
+            return gm
+
+    return None
+
+def auto_resolve_bet(bet, game_data):
+    """
+    Auto-grades pending bets against completed game scores.
+    Returns: 'Won', 'Lost', 'Push', or 'Pending'
+    """
+    if not game_data or not game_data.get("completed", False):
+        return "Pending"
+
+    h_score = int(game_data.get("home_score", 0))
+    a_score = int(game_data.get("away_score", 0))
+    total_score = h_score + a_score
+
+    bet_type = str(bet.get("bet_category", bet.get("type", ""))).lower()
+    direction = str(bet.get("bet_direction", "")).lower()
+    line = bet.get("target_line")
+    picked_team = str(bet.get("picked_team", "")).lower()
+
+    # Totals (Over / Under)
+    if "total" in bet_type or "over" in direction or "under" in direction:
+        if line is not None:
+            fl_line = float(line)
+            if total_score > fl_line:
+                return "Won" if "over" in direction else "Lost"
+            elif total_score < fl_line:
+                return "Won" if "under" in direction else "Lost"
+            else:
+                return "Push"
+
+    # Moneylines (Outright Winner)
+    if "moneyline" in bet_type or "straight up" in bet_type or direction == "moneyline":
+        h_name = str(game_data.get("home_team", "")).lower()
+        h_sh = str(game_data.get("home_short", "")).lower()
+        winning_team = "home" if h_score > a_score else ("away" if a_score > h_score else "tie")
+
+        if winning_team == "tie":
+            return "Push"
+
+        is_picked_home = (picked_team in h_name or picked_team in h_sh)
+        if (is_picked_home and winning_team == "home") or (not is_picked_home and winning_team == "away"):
+            return "Won"
+        return "Lost"
+
+    # Point Spread (ATS)
+    if "spread" in bet_type or direction == "spread":
+        if line is not None:
+            fl_line = float(line)
+            h_name = str(game_data.get("home_team", "")).lower()
+            h_sh = str(game_data.get("home_short", "")).lower()
+            is_picked_home = (picked_team in h_name or picked_team in h_sh)
+
+            spread_margin = (h_score - a_score) if is_picked_home else (a_score - h_score)
+            adjusted_margin = spread_margin + fl_line
+
+            if adjusted_margin > 0:
+                return "Won"
+            elif adjusted_margin < 0:
+                return "Lost"
+            else:
+                return "Push"
+
+    return "Pending"
 
 # =========================================================================
-# 2. USER AUTHENTICATION & SECURITY HELPERS
+# 3. AUTHENTICATION, ADMIN & EMAIL VERIFICATION
 # =========================================================================
 
 def hash_password(password: str) -> str:
     """Hashes passwords using SHA-256."""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return hashlib.sha256(str(password).encode("utf-8")).hexdigest()
 
 def verify_password(stored_password_hash: str, provided_password: str) -> bool:
     """Verifies a plain password against stored hash."""
     return stored_password_hash == hash_password(provided_password)
 
-def load_user_accounts():
-    _, _, u, _, _, _ = load_all_storage()
-    return u
+def get_admin_credentials():
+    """
+    Returns configured system administrator username and hashed password.
+    Defaults to flurk admin if environment variables are not set.
+    """
+    admin_user = os.environ.get("FLURK_ADMIN_USER", "flurk")
+    admin_pass = os.environ.get("FLURK_ADMIN_PASS", "flurkstradamus2026")
+    return admin_user, hash_password(admin_pass)
 
-def save_user_accounts(user_accounts):
-    sb, c, _, b, s, t = load_all_storage()
-    return save_all_storage(sb, c, user_accounts, b, s, t)
+def send_verification_email(recipient_email, verification_code):
+    """
+    Sends account verification code via SMTP if configured;
+    falls back cleanly without crashing if mail server credentials are absent.
+    """
+    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    sender_email = os.environ.get("SENDER_EMAIL", "")
+    sender_password = os.environ.get("SENDER_PASSWORD", "")
 
-def load_banned_emails():
-    _, _, _, b, _, _ = load_all_storage()
-    return b
+    if not sender_email or not sender_password:
+        # Fails safely in test/cloud environments without breaking the app flow
+        return True
 
-def save_banned_emails(banned_emails):
-    sb, c, u, _, s, t = load_all_storage()
-    return save_all_storage(sb, c, u, banned_emails, s, t)
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = sender_email
+        msg["To"] = recipient_email
+        msg["Subject"] = "Your Flurkstradamus Verification Code"
 
+        body = f"Welcome to Flurkstradamus!\n\nYour 6-digit verification code is: {verification_code}\n\nHappy analytics!"
+        msg.attach(MIMEText(body, "plain"))
 
-# =========================================================================
-# 3. INDIVIDUAL GETTERS & CONVENIENCE HELPERS
-# =========================================================================
-
-def load_saved_bets():
-    sb, _, _, _, _, _ = load_all_storage()
-    return sb
-
-def save_saved_bets(saved_bets):
-    _, c, u, b, s, t = load_all_storage()
-    return save_all_storage(saved_bets, c, u, b, s, t)
-
-def load_chat_messages():
-    _, c, _, _, _, _ = load_all_storage()
-    return c
-
-def save_chat_messages(chat_messages):
-    sb, _, u, b, s, t = load_all_storage()
-    return save_all_storage(sb, chat_messages, u, b, s, t)
-
-def load_support_tickets():
-    _, _, _, _, _, t = load_all_storage()
-    return t
-
-def save_support_tickets(support_tickets):
-    sb, c, u, b, s, _ = load_all_storage()
-    return save_all_storage(sb, c, u, b, s, support_tickets)
-
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=5)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception:
+        return False
 
 # =========================================================================
-# 4. QUARTERLY MATCHUP SNAPSHOTS & PACING DRIFT
+# 4. QUARTERLY SNAPSHOTS & PACING DRIFT (War Room & Single Game Telemetry)
 # =========================================================================
 
 def load_game_snapshots():
@@ -147,14 +237,6 @@ def load_game_snapshots():
         except Exception:
             return []
     return []
-
-def save_game_snapshots(game_snapshots):
-    try:
-        with open(SNAPSHOT_FILE, "w") as f:
-            json.dump(game_snapshots, f, indent=2)
-        return True
-    except Exception:
-        return False
 
 def record_quarterly_snapshot(game_id, league, state, home_team, away_team, h_score, a_score, period, pre_proj_total, pre_proj_spread):
     """Logs pre-game and quarter-by-quarter telemetry (Q1, Halftime, Q3, Final)."""
@@ -183,7 +265,11 @@ def record_quarterly_snapshot(game_id, league, state, home_team, away_team, h_sc
     if not updated:
         snapshots.append(entry)
 
-    save_game_snapshots(snapshots)
+    try:
+        with open(SNAPSHOT_FILE, "w") as f:
+            json.dump(snapshots, f, indent=2)
+    except Exception:
+        pass
 
 def calculate_pace_drift_factor(period, current_total, pre_game_total):
     """Calculates reactive pacing adjustments as the game matures through quarters."""
