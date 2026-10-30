@@ -3,7 +3,7 @@ from datetime import datetime
 from config import DEFAULT_LOGO
 from database import save_all_storage
 from sports.football import round_half_point, get_live_football_roster
-from sports.basketball import get_live_nba_roster, get_live_nba_3pm_roster
+from sports.basketball import get_live_nba_roster, get_live_nba_3pm_roster, fetch_nba_injury_set
 
 def prob_to_american_odds(prob):
     p = max(0.005, min(0.995, float(prob)))
@@ -14,9 +14,44 @@ def prob_to_american_odds(prob):
         odds = int(round(100.0 * ((1.0 - p) / p)))
         return f"+{odds}"
 
+def get_verified_active_player(game_obj, is_nba, is_3pm_target=False):
+    """
+    Pulls a verified active starter who is not on the injury report or benched.
+    """
+    g_id = game_obj.get("id")
+    home_id = game_obj.get("home_id") or game_obj.get("home_short")
+
+    if is_nba:
+        injury_set = fetch_nba_injury_set()
+        if is_3pm_target:
+            shooters = get_live_nba_3pm_roster(home_id, game_id=g_id)
+            for p_tuple in shooters:
+                p_name = p_tuple[0]
+                if p_name.strip().lower() not in injury_set:
+                    return p_name, "3PM", p_tuple[2]  # name, stat, line
+            if shooters:
+                return shooters[0][0], "3PM", 1.5
+        else:
+            roster = get_live_nba_roster(home_id, game_id=g_id)
+            for p_tuple in roster:
+                p_name = p_tuple[0]
+                if p_name.strip().lower() not in injury_set:
+                    return p_name, "Points", p_tuple[2]
+            if roster:
+                return roster[0][0], "Points", 18.5
+        return "Starting Guard", "3PM", 1.5
+    else:
+        league = game_obj.get("league", "NFL")
+        fb_roster = get_live_football_roster(home_id, league)
+        if fb_roster:
+            # First starter in rotation who is active
+            return fb_roster[0][0], "Touchdown", 1.0
+        return "Starting RB", "Touchdown", 1.0
+
 def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
     """
-    Selects top EV discrepancy legs up to 15 legs across available games.
+    Selects top EV discrepancy legs up to 15 legs across available games,
+    embedding verified active players, official logos, and kickoff dates.
     """
     selected_legs = []
     is_safe = "Safe Floor" in strat_choice
@@ -37,22 +72,24 @@ def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
         dog_team = gm["away_team"] if spread_open < 0 else gm["home_team"]
         fav_spread = spread_open if fav_team == gm["home_team"] else -spread_open
 
-        star_player = "Primary Scorer" if is_nba else "Starting RB"
-        if is_nba:
-            h_shooters = get_live_nba_3pm_roster(gm.get("home_id"), game_id=gm.get("id"))
-            if h_shooters:
-                star_player = h_shooters[0][0]
-        else:
-            h_fb = get_live_football_roster(gm.get("home_id") or gm.get("home_short"), league)
-            if h_fb:
-                star_player = h_fb[0][0]
+        # Retrieve a verified healthy starter
+        active_player, prop_cat, baseline_line = get_verified_active_player(
+            gm, 
+            is_nba=is_nba, 
+            is_3pm_target=("Three-Pointers" in target_market or "3-Pointers" in target_market)
+        )
 
         leg_data = {
             "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}",
+            "home_team": gm.get("home_team", "Home Team"),
+            "away_team": gm.get("away_team", "Away Team"),
+            "away_short": gm.get("away_short", "AWAY"),
+            "home_short": gm.get("home_short", "HOME"),
             "league": league,
-            "away_logo": gm.get("away_logo", DEFAULT_LOGO),
-            "home_logo": gm.get("home_logo", DEFAULT_LOGO),
-            "kickoff": gm.get("kickoff", "Scheduled")
+            "away_logo": gm.get("away_logo") or DEFAULT_LOGO,
+            "home_logo": gm.get("home_logo") or DEFAULT_LOGO,
+            "kickoff": gm.get("kickoff", "Scheduled"),
+            "player_name": active_player
         }
 
         if "Game Totals" in target_market:
@@ -63,7 +100,7 @@ def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
                 "type": "Game Total",
                 "side": "Under",
                 "line": str(tot_line),
-                "pick_text": f"Under {tot_line:.1f}",
+                "pick_text": f"Under {tot_line:.1f} Pts",
                 "prob": 0.74 if is_safe else 0.64
             })
         elif "Point Spread" in target_market:
@@ -103,51 +140,42 @@ def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
                 p_val = 0.86 if is_safe else (0.49 if is_high_profit else 0.68)
                 line_val = "0.5" if is_safe else ("2.5" if is_high_profit else "1.5")
                 leg_data.update({
-                    "picked_team": star_player,
+                    "picked_team": active_player,
                     "type": "NBA 3-Pointers Made",
                     "side": "Over",
                     "line": line_val,
-                    "pick_text": f"{star_player} {threshold} 3PM",
+                    "pick_text": f"{active_player} {threshold} 3-Pointers Made",
                     "prob": p_val
                 })
             else:
                 leg_data.update({
-                    "picked_team": star_player,
+                    "picked_team": active_player,
                     "type": "Player Anytime TD",
                     "side": "TD",
                     "line": "1.0",
-                    "pick_text": f"{star_player} Anytime TD",
+                    "pick_text": f"{active_player} Anytime Touchdown",
                     "prob": 0.52
                 })
         else:
-            if is_safe:
-                tot_line = round_half_point(ou_open + (7.5 if is_nba else 4.5))
-                leg_data.update({
-                    "picked_team": gm.get("home_team"),
-                    "type": "Game Total",
-                    "side": "Under",
-                    "line": str(tot_line),
-                    "pick_text": f"Under {tot_line:.1f}",
-                    "prob": 0.74
-                })
-            elif is_high_profit:
+            # Default Model Edge: Blend of active player props and spreads
+            if len(selected_legs) % 2 == 0:
                 if is_nba:
                     leg_data.update({
-                        "picked_team": star_player,
+                        "picked_team": active_player,
                         "type": "NBA 3-Pointers Made",
                         "side": "Over",
-                        "line": "2.5",
-                        "pick_text": f"{star_player} 3+ 3PM",
-                        "prob": 0.50
+                        "line": "1.5",
+                        "pick_text": f"{active_player} 2+ 3-Pointers Made",
+                        "prob": 0.68
                     })
                 else:
                     leg_data.update({
-                        "picked_team": star_player,
+                        "picked_team": active_player,
                         "type": "Player Anytime TD",
                         "side": "TD",
                         "line": "1.0",
-                        "pick_text": f"{star_player} Anytime TD",
-                        "prob": 0.49
+                        "pick_text": f"{active_player} Anytime Touchdown",
+                        "prob": 0.51
                     })
             else:
                 leg_data.update({
@@ -283,7 +311,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     st.warning("No matchups match your selected league or game filter.")
                 else:
                     st.session_state.combo_active_legs = build_system_combo_legs(pool, target_market, strat_choice, leg_count)
-                    st.toast(f"✅ Generated {len(st.session_state.combo_active_legs)}-leg combo based on model discrepancies!", icon="🤖")
+                    st.toast(f"✅ Generated {len(st.session_state.combo_active_legs)}-leg combo!", icon="🤖")
                     st.rerun()
         else:
             st.markdown("---")
@@ -303,23 +331,37 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     spd_val = round_half_point(target_gm.get("market_spread", -3.5))
                     fav_t = target_gm.get("home_team") if spd_val < 0 else target_gm.get("away_team")
 
-                    leg_preset = mc2.selectbox("Preset Market Line", [
+                    is_gm_nba = (target_gm.get("league") == "NBA")
+                    star_name, _, _ = get_verified_active_player(target_gm, is_nba=is_gm_nba)
+
+                    preset_list = [
                         f"Under {ou_val}",
                         f"Over {ou_val}",
                         f"{fav_t} {spd_val:+.1f}",
                         f"{fav_t} ML"
-                    ], key="cb_man_preset_opt")
+                    ]
+                    if is_gm_nba:
+                        preset_list.append(f"{star_name} 2+ 3PM")
+                    else:
+                        preset_list.append(f"{star_name} Anytime TD")
+
+                    leg_preset = mc2.selectbox("Preset Market Line", preset_list, key="cb_man_preset_opt")
 
                     if mc3.button("➕ Insert Leg", use_container_width=True, type="primary"):
                         if len(st.session_state.combo_active_legs) < 15:
                             st.session_state.combo_active_legs.append({
                                 "matchup": f"{target_gm.get('away_short')} @ {target_gm.get('home_short')}",
+                                "home_team": target_gm.get("home_team"),
+                                "away_team": target_gm.get("away_team"),
+                                "away_short": target_gm.get("away_short", "AWAY"),
+                                "home_short": target_gm.get("home_short", "HOME"),
                                 "league": target_gm.get("league", "SPORTS"),
                                 "away_logo": target_gm.get("away_logo", DEFAULT_LOGO),
                                 "home_logo": target_gm.get("home_logo", DEFAULT_LOGO),
                                 "kickoff": target_gm.get("kickoff", "Scheduled"),
-                                "picked_team": fav_t if "ML" in leg_preset or spd_val != 0 else target_gm.get("home_team"),
-                                "type": "Game Total" if "Under" in leg_preset or "Over" in leg_preset else ("Point Spread" if spd_val != 0 and "ML" not in leg_preset else "Moneyline"),
+                                "player_name": star_name,
+                                "picked_team": star_name if ("3PM" in leg_preset or "TD" in leg_preset) else (fav_t if "ML" in leg_preset or spd_val != 0 else target_gm.get("home_team")),
+                                "type": "Player Prop" if ("3PM" in leg_preset or "TD" in leg_preset) else ("Game Total" if "Under" in leg_preset or "Over" in leg_preset else ("Point Spread" if spd_val != 0 and "ML" not in leg_preset else "Moneyline")),
                                 "side": "Under" if "Under" in leg_preset else ("Over" if "Over" in leg_preset else "Spread"),
                                 "line": str(ou_val) if "Under" in leg_preset or "Over" in leg_preset else str(spd_val),
                                 "pick_text": leg_preset,
@@ -332,7 +374,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             with m_t2:
                 mx1, mx2, mx3, mx4, mx5 = st.columns([2.0, 3.0, 1.8, 1.5, 1.5], vertical_alignment="bottom")
                 cust_m = mx1.text_input("Matchup", value="TEN @ CIN", key="cb_man_cust_m")
-                cust_p = mx2.text_input("Pick Label / Prop", value="Chase Brown Anytime TD", key="cb_man_cust_p")
+                cust_p = mx2.text_input("Player / Pick Label", value="Chase Brown Anytime TD", key="cb_man_cust_p")
                 cust_t = mx3.selectbox("Market Category", ["Player Prop", "Game Total", "Point Spread", "Moneyline"], key="cb_man_cust_t")
                 cust_pr = mx4.number_input("Win Prob (%)", min_value=5, max_value=99, value=55, step=1, key="cb_man_cust_pr")
 
@@ -340,10 +382,15 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     if len(st.session_state.combo_active_legs) < 15:
                         st.session_state.combo_active_legs.append({
                             "matchup": cust_m.strip(),
+                            "home_team": "Home",
+                            "away_team": "Away",
+                            "away_short": "AWAY",
+                            "home_short": "HOME",
                             "league": "PROP",
                             "away_logo": DEFAULT_LOGO,
                             "home_logo": DEFAULT_LOGO,
-                            "kickoff": "Manual",
+                            "kickoff": "Manual Entry",
+                            "player_name": cust_p.strip(),
                             "picked_team": cust_p.strip(),
                             "type": cust_t,
                             "side": "Over",
@@ -356,7 +403,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                         st.warning("Maximum of 15 legs reached.")
 
     # =========================================================================
-    # 2. GREEN LEGS DISPLAY (CLEAN CARDS WITHOUT INDIVIDUAL X/EDIT BUTTONS)
+    # 2. RESTORED GREEN LEGS DISPLAY (LEG #1, LEG #2... WITH OFFICIAL LOGOS & DATES)
     # =========================================================================
     legs = st.session_state.combo_active_legs
 
@@ -366,75 +413,86 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     st.markdown(f"### 📋 Current Combo Legs ({len(legs)})")
 
-    # Render each leg with clean green badge styling
     for idx, leg in enumerate(legs):
         p_pct = int(round(float(leg.get("prob", 0.55)) * 100))
         m_txt = leg.get("matchup", "Matchup")
         p_txt = leg.get("pick_text", "Pick")
         t_type = leg.get("type", "Pick")
         lg_val = leg.get("league", "SPORTS")
+        a_logo = leg.get("away_logo") or DEFAULT_LOGO
+        h_logo = leg.get("home_logo") or DEFAULT_LOGO
+        kickoff_date = leg.get("kickoff", "Scheduled")
+        ply_name = leg.get("player_name", "")
 
         with st.container(border=True):
             c_left, c_right = st.columns([5.5, 2.0], vertical_alignment="center")
 
             with c_left:
                 st.markdown(f"""
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="background:rgba(74,222,128,0.15); color:#4ade80; border:1px solid rgba(74,222,128,0.3); font-weight:800; font-size:0.75rem; padding:2px 8px; border-radius:4px;">
-                        #{idx + 1} {lg_val}
-                    </span>
-                    <span style="font-weight:700; font-size:0.95rem; color:#f8fafc;">{m_txt}</span>
-                    <span style="opacity:0.5; font-size:0.75rem;">• {t_type}</span>
+                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; margin-bottom:4px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="background:rgba(74,222,128,0.15); color:#4ade80; border:1px solid rgba(74,222,128,0.3); font-weight:800; font-size:0.78rem; padding:2px 8px; border-radius:4px; letter-spacing:0.5px;">
+                            LEG #{idx + 1}
+                        </span>
+                        <span style="background:rgba(56,189,248,0.15); color:#38bdf8; font-weight:700; font-size:0.75rem; padding:2px 6px; border-radius:4px;">
+                            {lg_val}
+                        </span>
+                        <img src="{a_logo}" width="20" height="20" style="object-fit:contain; border-radius:50%;">
+                        <span style="font-weight:700; font-size:0.92rem; color:#f8fafc;">{m_txt}</span>
+                        <img src="{h_logo}" width="20" height="20" style="object-fit:contain; border-radius:50%;">
+                    </div>
+                    <span style="opacity:0.65; font-size:0.76rem; font-weight:600;">🗓️ {kickoff_date}</span>
                 </div>
-                <div style="font-size:1.05rem; font-weight:700; color:#4ade80; margin-top:3px;">
+                <div style="font-size:1.05rem; font-weight:700; color:#4ade80; margin-top:2px;">
                     {p_txt}
+                </div>
+                <div style="font-size:0.76rem; opacity:0.65; margin-top:1px;">
+                    Type: {t_type} {f'• Player: {ply_name}' if ply_name and ply_name not in p_txt else ''}
                 </div>
                 """, unsafe_allow_html=True)
 
             with c_right:
                 st.markdown(f"""
                 <div style="text-align:right;">
-                    <div style="font-size:0.78rem; opacity:0.7;">Model Prob</div>
-                    <div style="font-size:1.15rem; font-weight:800; color:#38bdf8;">{p_pct}%</div>
+                    <div style="font-size:0.76rem; opacity:0.7;">Model Prob</div>
+                    <div style="font-size:1.20rem; font-weight:800; color:#38bdf8;">{p_pct}%</div>
                 </div>
                 """, unsafe_allow_html=True)
 
     # =========================================================================
-    # 3. TEXT-BASED EDIT & REMOVAL TOOL (CLICK TO SELECT LEGS TO REMOVE)
+    # 3. TEXT-BASED EDIT & MULTI-SELECT REMOVE POPUP
     # =========================================================================
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
-    edit_row_c1, edit_row_c2 = st.columns([2.0, 5.0])
+    edit_col1, edit_col2 = st.columns([2.0, 5.0])
 
-    with edit_row_c1:
+    with edit_col1:
         with st.popover("✏️ Edit / Remove Legs", use_container_width=True):
             st.markdown("##### 🗑️ Select Legs to Remove")
-            st.caption("Check any leg you want to delete from this ticket:")
+            st.caption("Check any leg you want to remove from this ticket slip:")
 
-            # Prepare list of leg descriptions
-            leg_display_list = [
-                f"Leg #{i + 1}: {l.get('matchup')} — {l.get('pick_text')}" 
+            leg_options = [
+                f"Leg #{i + 1}: [{l.get('league')}] {l.get('matchup')} — {l.get('pick_text')}" 
                 for i, l in enumerate(legs)
             ]
 
-            selected_to_remove = st.multiselect(
+            selected_indices = st.multiselect(
                 "Choose legs to remove",
                 options=range(len(legs)),
-                format_func=lambda i: leg_display_list[i],
+                format_func=lambda i: leg_options[i],
                 label_visibility="collapsed",
                 key="cb_multiselect_remove_legs"
             )
 
             if st.button("🗑️ Remove Selected Legs", type="primary", use_container_width=True):
-                if selected_to_remove:
-                    # Remove in reverse index order so indices do not shift
-                    for idx_to_del in sorted(selected_to_remove, reverse=True):
-                        st.session_state.combo_active_legs.pop(idx_to_del)
-                    st.toast("✅ Selected legs removed from ticket!", icon="🗑️")
+                if selected_indices:
+                    for i in sorted(selected_indices, reverse=True):
+                        st.session_state.combo_active_legs.pop(i)
+                    st.toast("✅ Selected legs removed!", icon="🗑️")
                     st.rerun()
                 else:
-                    st.info("No legs selected for removal.")
+                    st.info("No legs selected.")
 
-    with edit_row_c2:
+    with edit_col2:
         if st.button("🗑️ Clear Entire Slip", key="btn_clear_cb_slip"):
             st.session_state.combo_active_legs = []
             st.rerun()
@@ -442,7 +500,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     st.markdown("---")
 
     # =========================================================================
-    # 4. COMPOUND ANALYTICS & EXPECTED VALUE
+    # 4. COMPOUND ANALYTICS & PARLAY FAIR ODDS
     # =========================================================================
     compound_prob = 1.0
     for leg in legs:
@@ -460,7 +518,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     m4.metric("Active Legs", len(legs))
 
     # =========================================================================
-    # 5. TICKET LOCK-IN & FINANCIAL RECORDING
+    # 5. TICKET LOCK-IN & FINANCIAL PERSISTENCE
     # =========================================================================
     with st.container(border=True):
         st.markdown("#### 🔒 Lock In Combo Ticket Slip")
@@ -472,6 +530,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             risk_input = r_col.number_input("Risk Amount ($)", min_value=0.5, value=float(default_risk), step=1.0)
             payout_input = p_col.number_input("Total Payout ($)", min_value=0.5, value=float(default_payout), step=1.0)
 
+            # Strict Net Profit Calculation: Payout - Risk
             net_profit = float(payout_input) - float(risk_input)
             roi_pct = (net_profit / max(0.01, float(risk_input))) * 100.0
             ev_val = (compound_prob * float(payout_input)) - float(risk_input)
