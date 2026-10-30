@@ -66,18 +66,18 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
             "league": target_game.get("league", "SPORTS")
         }
 
-    # 1. THREE-POINTERS EXCLUSIVE
+    # 1. THREE-POINTERS
     if is_3pm_prop:
         if is_safe_profile:
             return {
-                "good": make_card("🥉 GOOD (Ultra-Safe 1+ 3PM)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.88, f"Confirmed active in live rotation; 1+ make has elite clearance floor."),
+                "good": make_card("🥉 GOOD (Ultra-Safe 1+ 3PM)", "#38bdf8", f"{star_3pm_player} 1+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 0.5, star_3pm_player, 0.88, f"Active rotational starter with high floor volume; 1+ make has elite probability."),
                 "better": make_card("🥈 BETTER (Safe 2+ 3PM Anchor)", "#fbbf24", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.74, "High starter perimeter volume against generous perimeter defense."),
                 "best": make_card("🥇 BEST (High Probability 2+ 3PM)", "#4ade80", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.72, "Model indicates 72% win expectancy on 2+ baseline conversions.")
             }
         elif is_high_profit:
             return {
                 "good": make_card("🥉 GOOD (Solid 2+ 3PM)", "#38bdf8", f"{star_3pm_player} 2+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 1.5, star_3pm_player, 0.65, "Standard plus-value baseline for verified starter."),
-                "better": make_card("🥈 BETTER (Ceiling 3+ 3PM Strike)", "#fbbf24", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.49, "High multiplier target for primary volume shooter."),
+                "better": make_card("🥈 BETTER (Ceiling 3+ 3PM Strike)", "#fbbf24", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.49, "Ladder ceiling: Scoring projection supports longshot clearance."),
                 "best": make_card("🥇 BEST (Max Multiplier 4+ 3PM)", "#4ade80", f"{star_3pm_player} 4+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 3.5, star_3pm_player, 0.35, "Ceiling alpha threshold for deep-ball explosion.")
             }
         else:
@@ -87,25 +87,25 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
                 "best": make_card("🥇 BEST (Optimal Alpha: 3+ 3PM)", "#4ade80", f"{star_3pm_player} 3+ Three-Pointers", "NBA Player 3-Pointers Made", "Over", 2.5, star_3pm_player, 0.50, "Ceiling value target on perimeter attempt volume.")
             }
 
-    # 2. TOTALS EXCLUSIVE
+    # 2. TOTALS
     if is_totals_only:
         g_line = round_half_point(ou_open + (8.5 if is_nba else 6.5))
         return {
-            "good": make_card("🥉 GOOD (Ultra-Safe Under)", "#38bdf8", f"Under {g_line:.1f}", "Game Total", "Under", g_line, target_game["home_team"], 0.77, "Maximum protective cushion against sudden scoring runs."),
-            "better": make_card("🥈 BETTER (Conservative Under)", "#fbbf24", f"Under {round_half_point(ou_open + 4.5):.1f}", "Game Total", "Under", round_half_point(ou_open + 4.5), target_game["home_team"], 0.71, "Balanced buffer capturing tempo slowdown."),
+            "good": make_card("🥉 GOOD (Ultra-Safe Under)", "#38bdf8", f"Under {g_line:.1f}", "Game Total", "Under", g_line, target_game["home_team"], 0.77, "Protective cushion against sudden tempo acceleration."),
+            "better": make_card("🥈 BETTER (Conservative Under)", "#fbbf24", f"Under {round_half_point(ou_open + 4.5):.1f}", "Game Total", "Under", round_half_point(ou_open + 4.5), target_game["home_team"], 0.71, "Moderate buffer absorbing scoring runs."),
             "best": make_card("🥇 BEST (Optimal Under +EV)", "#4ade80", f"Under {ou_open:.1f}", "Game Total", "Under", ou_open, target_game["home_team"], 0.62, "Sharp edge on model projected pace drag.")
         }
 
-    # 3. POINT SPREADS EXCLUSIVE
+    # 3. POINT SPREADS
     if is_spreads_only:
         g_line = round_half_point(abs(fav_spread) + 6.5)
         return {
-            "good": make_card("🥉 GOOD (Teased Floor Spread)", "#38bdf8", f"{dog_team} {g_line:+.1f}", "Point Spread (ATS)", "Spread", g_line, dog_team, 0.76, "Bought points give high probability cushion."),
+            "good": make_card("🥉 GOOD (Teased Floor Spread)", "#38bdf8", f"{dog_team} {g_line:+.1f}", "Point Spread (ATS)", "Spread", g_line, dog_team, 0.76, "Bought points provide a safe floor margin."),
             "better": make_card("🥈 BETTER (Consensus Spread)", "#fbbf24", f"{fav_team} {fav_spread:+.1f}", "Point Spread (ATS)", "Spread", fav_spread, fav_team, 0.56, "Direct net rating efficiency margin."),
             "best": make_card("🥇 BEST (Sharp Alpha Cover)", "#4ade80", f"{fav_team} {round_half_point(fav_spread - 2.0):+.1f}", "Point Spread (ATS)", "Spread", round_half_point(fav_spread - 2.0), fav_team, 0.52, "Model projects extended victory margin.")
         }
 
-    # 4. MONEYLINE EXCLUSIVE
+    # 4. MONEYLINE
     if is_ml_only:
         return {
             "good": make_card("🥉 GOOD (Core Favorite Anchor)", "#38bdf8", f"{fav_team} ML", "Straight Up Winner (Moneyline)", "Moneyline", 0.0, fav_team, max(0.68, max(h_win_prob, 1.0 - h_win_prob)), f"Predictive win probabilities establish {fav_team} as safe chalk."),
@@ -123,7 +123,7 @@ def build_single_game_tiers(target_game, chosen_market, strat_choice):
 
     if is_td_prop:
         return {
-            "good": make_card("🥉 GOOD (Red-Zone RB Threat)", "#38bdf8", f"{star_fb_player} Any Time TD", "Player Anytime Touchdown Scorer", "TD", 1.0, star_fb_player, 0.54, "Primary goal-line carry share."),
+            "good": make_card("🥉 GOOD (Red-Zone Threat)", "#38bdf8", f"{star_fb_player} Any Time TD", "Player Anytime Touchdown Scorer", "TD", 1.0, star_fb_player, 0.54, "Primary goal-line carry share."),
             "better": make_card("🥈 BETTER (Balanced TD +EV)", "#fbbf24", f"{star_fb_player} Any Time TD", "Player Anytime Touchdown Scorer", "TD", 1.0, star_fb_player, 0.48, "Strong opportunity share in red zone."),
             "best": make_card("🥇 BEST (High Value TD Strike)", "#4ade80", f"{star_fb_player} Any Time TD", "Player Anytime Touchdown Scorer", "TD", 1.0, star_fb_player, 0.42, "Ceiling plus-money return.")
         }
@@ -162,7 +162,6 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             key="sg_static_filter"
         )
 
-        # Resolve pool based on filters
         pool = games_data
         if league_choice == "NBA": pool = [g for g in pool if g.get("league") == "NBA"]
         elif league_choice == "NFL": pool = [g for g in pool if g.get("league") == "NFL"]
@@ -173,19 +172,31 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         elif t_filter == "⚡ Live Games":
             pool = [g for g in pool if not g.get("completed", False) and g.get("state_text") != "pre" and g.get("period", 0) > 0]
 
-        # ROW 2: Specific Matchup Selection (Fixes Issue 1)
         if not pool:
             st.warning("No matchups match your selected league or game filter.")
             return
 
-        game_labels = [f"[{gm.get('kickoff', 'Upcoming')}] [{gm.get('league')}] {gm.get('away_short')} @ {gm.get('home_short')} ({gm.get('state_text', 'pre').upper()})" for gm in pool]
-        selected_game_idx = st.selectbox(
-            "🎯 Select Matchup to Analyze",
-            options=range(len(game_labels)),
-            format_func=lambda x: game_labels[x],
-            key="sg_explicit_game_selector"
+        # ROW 2: System Auto-Select vs. User Manual Selection
+        selection_mode = st.radio(
+            "Matchup Selection Method",
+            ["🤖 Let the System Pick (Highest Model Discrepancy)", "🎯 Let Me Pick the Game"],
+            horizontal=True,
+            key="sg_selection_mode"
         )
-        selected_game = pool[selected_game_idx]
+
+        if "Let the System Pick" in selection_mode:
+            # Rank pool by biggest line discrepancy
+            selected_game = sorted(pool, key=lambda g: abs(float(g.get("market_spread", 0))), reverse=True)[0]
+            st.success(f"🤖 **System Selected:** [{selected_game.get('league')}] **{selected_game.get('away_short')} @ {selected_game.get('home_short')}** ({selected_game.get('kickoff', 'Upcoming')}) — *Highest Model Confidence Discrepancy*")
+        else:
+            game_labels = [f"[{gm.get('kickoff', 'Upcoming')}] [{gm.get('league')}] {gm.get('away_short')} @ {gm.get('home_short')} ({gm.get('state_text', 'pre').upper()})" for gm in pool]
+            selected_game_idx = st.selectbox(
+                "🎯 Select Matchup to Analyze",
+                options=range(len(game_labels)),
+                format_func=lambda x: game_labels[x],
+                key="sg_explicit_game_selector"
+            )
+            selected_game = pool[selected_game_idx]
 
         # ROW 3: Market & Strategy
         r3_c1, r3_c2 = st.columns(2)
@@ -220,9 +231,7 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             st.session_state.single_tier_picks = build_single_game_tiers(selected_game, chosen_market, strat_choice)
             st.rerun()
 
-    # =========================================================================
-    # PRE-GAME VS CURRENT IN-GAME PROJECTIONS (Fixes Issue 5)
-    # =========================================================================
+    # Telemetry and Projections
     st.markdown("#### 📊 Matchup Projection Telemetry")
     gm = selected_game
     p_num = gm.get("period", 0)
@@ -230,12 +239,9 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
     pre_tot = float(gm.get("market_ou", 224.5 if is_nba_game else 47.5))
     pre_spd = float(gm.get("market_spread", -3.5))
 
-    # Calculate real-time pace drift regression
     live_proj_tot = calculate_pace_drift_factor(p_num, cur_tot, pre_tot)
     fav_team = gm["home_team"] if pre_spd < 0 else gm["away_team"]
-    underdog = gm["away_team"] if pre_spd < 0 else gm["home_team"]
 
-    # Record historical snapshot for learning engine
     record_quarterly_snapshot(gm.get("id"), gm.get("league"), gm.get("state_text"), gm["home_team"], gm["away_team"], gm.get("home_score", 0), gm.get("away_score", 0), p_num, pre_tot, pre_spd)
 
     with st.container(border=True):
@@ -245,7 +251,6 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
         m3.metric("Projected Winner", fav_team, f"{abs(pre_spd):.1f} pts")
         m4.metric("Game Status", f"Q{p_num} • {gm.get('clock', '0:00')}" if p_num > 0 else "Pre-Game")
 
-        # Top Player Projections for the Selected Game
         st.caption(f"🎯 **Key Player Projections ({selected_game.get('home_short')} & {selected_game.get('away_short')}):**")
         if is_nba_game:
             shooters = get_live_nba_3pm_roster(selected_game.get("home_id"), game_id=selected_game.get("id"))[:2]
@@ -286,11 +291,14 @@ def render_single_game(curr_user, active_uname, games_data, get_current_et_time_
             f_nonce = st.session_state.sg_form_nonce
             with st.form(f"single_ticket_submit_form_{f_nonce}"):
                 rc, pc = st.columns(2)
-                risk = rc.number_input("Risk ($)", min_value=1.0, value=10.0, step=5.0)
-                payout = pc.number_input("Payout ($)", min_value=1.0, value=19.10, step=5.0)
+                risk = rc.number_input("Risk ($)", min_value=1.0, value=5.0, step=1.0)
+                payout = pc.number_input("Payout ($)", min_value=1.0, value=10.0, step=1.0)
+
+                # Correct locked profit calculation: Payout - Risk
+                actual_profit = float(payout) - float(risk)
+                st.caption(f"Estimated Net Profit: **${actual_profit:.2f}** (Payout ${payout:.2f} - Risk ${risk:.2f})")
 
                 if st.form_submit_button("🔒 Lock In Bet Slip", type="primary", use_container_width=True):
-                    actual_profit = float(payout) - float(risk)
                     tkt = {
                         "id": str(datetime.now().timestamp()),
                         "user": curr_user.get("display_name", active_uname),
