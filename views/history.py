@@ -1,32 +1,51 @@
 import streamlit as st
-from database import auto_resolve_bets
+from database import save_all_storage
 
 def render_history(curr_user, active_uname, is_admin, games_data, render_ticket_card_fn):
-    st.subheader(f"📜 {curr_user.get('display_name', active_uname)}'s Locked Bets")
-    st.caption("Active slips with live in-game win probabilities, team logos, and live scoreboard telemetry.")
+    st.subheader("📜 Locked Bets History & Tickets")
+    st.caption("Review, edit amounts, track settlement status, and evaluate historical bankroll performance.")
 
-    c1, c2 = st.columns([3, 1])
-    show_all = c2.toggle("Show All Squad Bets", value=False)
-    clean_u = active_uname.lower()
-    clean_disp = curr_user.get("display_name", "").strip().lower()
+    all_bets = st.session_state.saved_bets
+    user_bets = [b for b in all_bets if is_admin or (b.get("user", "").lower() == active_uname.lower() or b.get("user") == curr_user.get("display_name"))]
 
-    my_tickets = []
-    for b in st.session_state.saved_bets:
-        if show_all:
-            my_tickets.append(b)
-        else:
-            owner = str(b.get("user", "")).strip().lower()
-            if (owner in [clean_u, clean_disp]) or (is_admin and owner in [clean_u, "admin"]):
-                my_tickets.append(b)
+    if not user_bets:
+        st.info("No bets have been locked yet. Use the Single Game Engine or Combo Builder to create and track bets.")
+        return
 
-    c1.write(f"Showing **{len(my_tickets)}** ticket(s).")
-    if c1.button("⚡ Grade Finals", use_container_width=True):
-        if auto_resolve_bets(st.session_state.saved_bets, games_data, st.session_state.chat_messages, st.session_state.game_snapshots, st.session_state.support_tickets):
-            st.success("Updated tickets!")
-            st.rerun()
+    # Aggregate Analytics
+    total_wagered = sum(float(b.get("risk_dollars", 0.0)) for b in user_bets)
+    total_payout = sum(float(b.get("payout_dollars", b.get("payout", 0.0))) for b in user_bets if b.get("status") == "Won")
+    net_profit = sum(float(b.get("locked_profit", float(b.get("payout_dollars", 0.0)) - float(b.get("risk_dollars", 0.0)))) for b in user_bets if b.get("status") == "Won")
+    
+    # Add negative risk for lost bets
+    lost_risk = sum(float(b.get("risk_dollars", 0.0)) for b in user_bets if b.get("status") == "Lost")
+    total_net = net_profit - lost_risk
 
-    if not my_tickets:
-        st.info("No tickets recorded yet.")
-    else:
-        for b in my_tickets:
-            render_ticket_card_fn(b, st.session_state.saved_bets.index(b), games_data, can_delete=True)
+    # Analytics Bar
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Tickets", len(user_bets))
+    c2.metric("Total Risked", f"${total_wagered:.2f}")
+    c3.metric("Total Won Payout", f"${total_payout:.2f}")
+    c4.metric("Realized Net Profit", f"${total_net:+.2f}", delta=f"{total_net:+.2f}")
+
+    st.markdown("---")
+
+    # Filter Bar
+    f1, f2 = st.columns([2, 2])
+    status_filter = f1.selectbox("Filter Status", ["All", "Pending", "Won", "Lost"], key="hist_status_filter")
+    type_filter = f2.selectbox("Filter Category", ["All", "Single", "Combo"], key="hist_type_filter")
+
+    display_bets = user_bets
+    if status_filter != "All":
+        display_bets = [b for b in display_bets if b.get("status") == status_filter]
+    if type_filter != "All":
+        display_bets = [b for b in display_bets if (type_filter in b.get("type", "") or type_filter in b.get("bet_category", ""))]
+
+    if not display_bets:
+        st.info("No tickets match the selected filters.")
+        return
+
+    # Render each ticket with editing capability
+    for b in display_bets:
+        real_idx = all_bets.index(b)
+        render_ticket_card_fn(b, real_idx, games_data, can_delete=True)
