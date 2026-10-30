@@ -14,167 +14,247 @@ def prob_to_american_odds(prob):
         odds = int(round(100.0 * ((1.0 - p) / p)))
         return f"+{odds}"
 
-def generate_automated_combo_legs(target_games, strat_choice, leg_count):
+def build_system_combo_legs(pool_games, target_market, strat_choice, leg_count):
     """
-    Generates intelligent multi-game parlay legs across selected matchups
-    based on the chosen model strategy profile (Safe, Balanced, High Profit).
+    Selects the optimal matchups and builds coordinated parlay legs
+    matching the user's specific target market, strategy, and desired leg count.
     """
-    generated_legs = []
+    selected_legs = []
     is_safe = "Safe Floor" in strat_choice
     is_high_profit = "High Profit" in strat_choice
 
-    for gm in target_games[:leg_count]:
+    # Sort games by greatest market variance / spread
+    sorted_games = sorted(pool_games, key=lambda g: abs(float(g.get("market_spread", 0))), reverse=True)
+
+    for gm in sorted_games:
+        if len(selected_legs) >= leg_count:
+            break
+
         league = str(gm.get("league", "NFL")).upper()
         is_nba = (league == "NBA")
-        
+
         ou_open = round_half_point(gm.get("market_ou", 224.5 if is_nba else 46.5))
         spread_open = round_half_point(gm.get("market_spread", -3.5))
         fav_team = gm["home_team"] if spread_open < 0 else gm["away_team"]
         dog_team = gm["away_team"] if spread_open < 0 else gm["home_team"]
         fav_spread = spread_open if fav_team == gm["home_team"] else -spread_open
 
-        if is_safe:
-            # Safe floor: teased totals or heavy favorite spread
-            cush = 6.5 if is_nba else 4.5
+        # Extract sport-isolated star players
+        star_player = "Primary Scorer" if is_nba else "Starting RB"
+        if is_nba:
+            h_shooters = get_live_nba_3pm_roster(gm.get("home_id"), game_id=gm.get("id"))
+            if h_shooters:
+                star_player = h_shooters[0][0]
+        else:
+            h_fb = get_live_football_roster(gm.get("home_id") or gm.get("home_short"), league)
+            if h_fb:
+                star_player = h_fb[0][0]
+
+        leg_data = {
+            "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}",
+            "league": league,
+            "away_logo": gm.get("away_logo", DEFAULT_LOGO),
+            "home_logo": gm.get("home_logo", DEFAULT_LOGO),
+            "away_short": gm.get("away_short", "AWAY"),
+            "home_short": gm.get("home_short", "HOME"),
+            "kickoff": gm.get("kickoff", "Scheduled")
+        }
+
+        # Market-specific leg generation
+        if "Game Totals" in target_market:
+            cush = (7.5 if is_nba else 4.5) if is_safe else (3.5 if is_nba else 2.0)
             tot_line = round_half_point(ou_open + cush)
-            generated_legs.append({
-                "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}",
-                "league": league,
-                "away_logo": gm.get("away_logo", DEFAULT_LOGO),
-                "home_logo": gm.get("home_logo", DEFAULT_LOGO),
-                "kickoff": gm.get("kickoff", "Scheduled"),
+            leg_data.update({
                 "picked_team": gm.get("home_team"),
                 "type": "Game Total",
                 "side": "Under",
                 "line": str(tot_line),
                 "pick_text": f"Under {tot_line:.1f} Pts",
-                "prob": 0.74
+                "prob": 0.74 if is_safe else 0.64
             })
-        elif is_high_profit:
-            # High profit: Player props or underdog value
-            if is_nba:
-                shooters = get_live_nba_3pm_roster(gm.get("home_id"), game_id=gm.get("id"))
-                star = shooters[0][0] if shooters else "Starting Guard"
-                generated_legs.append({
-                    "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}",
-                    "league": league,
-                    "away_logo": gm.get("away_logo", DEFAULT_LOGO),
-                    "home_logo": gm.get("home_logo", DEFAULT_LOGO),
-                    "kickoff": gm.get("kickoff", "Scheduled"),
-                    "picked_team": star,
-                    "type": "NBA 3-Pointers Made",
-                    "side": "Over",
-                    "line": "2.5",
-                    "pick_text": f"{star} 3+ 3-Pointers Made",
-                    "prob": 0.49
+        elif "Point Spread" in target_market:
+            if is_safe:
+                teased = round_half_point(abs(fav_spread) + (5.5 if is_nba else 3.5))
+                leg_data.update({
+                    "picked_team": dog_team,
+                    "type": "Point Spread (ATS)",
+                    "side": "Spread",
+                    "line": str(teased),
+                    "pick_text": f"{dog_team} {teased:+.1f}",
+                    "prob": 0.73
                 })
             else:
-                fb = get_live_football_roster(gm.get("home_id") or gm.get("home_short"), league)
-                star_rb = fb[0][0] if fb else "Starting RB"
-                generated_legs.append({
-                    "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}",
-                    "league": league,
-                    "away_logo": gm.get("away_logo", DEFAULT_LOGO),
-                    "home_logo": gm.get("home_logo", DEFAULT_LOGO),
-                    "kickoff": gm.get("kickoff", "Scheduled"),
-                    "picked_team": star_rb,
+                leg_data.update({
+                    "picked_team": fav_team,
+                    "type": "Point Spread (ATS)",
+                    "side": "Spread",
+                    "line": str(fav_spread),
+                    "pick_text": f"{fav_team} {fav_spread:+.1f}",
+                    "prob": 0.58
+                })
+        elif "Moneyline" in target_market or "Straight Up" in target_market:
+            target_t = fav_team if not is_high_profit else dog_team
+            p_val = 0.68 if target_t == fav_team else 0.44
+            leg_data.update({
+                "picked_team": target_t,
+                "type": "Moneyline",
+                "side": "Moneyline",
+                "line": "0.0",
+                "pick_text": f"{target_t} ML",
+                "prob": p_val
+            })
+        elif "Player Prop" in target_market or "Three-Pointers" in target_market or "Touchdown" in target_market:
+            if is_nba:
+                threshold = "1+" if is_safe else ("3+" if is_high_profit else "2+")
+                p_val = 0.86 if is_safe else (0.49 if is_high_profit else 0.68)
+                line_val = "0.5" if is_safe else ("2.5" if is_high_profit else "1.5")
+                leg_data.update({
+                    "picked_team": star_player,
+                    "type": "NBA 3-Pointers Made",
+                    "side": "Over",
+                    "line": line_val,
+                    "pick_text": f"{star_player} {threshold} 3-Pointers Made",
+                    "prob": p_val
+                })
+            else:
+                leg_data.update({
+                    "picked_team": star_player,
                     "type": "Player Anytime TD",
                     "side": "TD",
                     "line": "1.0",
-                    "pick_text": f"{star_rb} Anytime Touchdown",
-                    "prob": 0.48
+                    "pick_text": f"{star_player} Anytime Touchdown",
+                    "prob": 0.52
                 })
         else:
-            # Balanced: market spread efficiency cover
-            generated_legs.append({
-                "matchup": f"{gm.get('away_short')} @ {gm.get('home_short')}",
-                "league": league,
-                "away_logo": gm.get("away_logo", DEFAULT_LOGO),
-                "home_logo": gm.get("home_logo", DEFAULT_LOGO),
-                "kickoff": gm.get("kickoff", "Scheduled"),
-                "picked_team": fav_team,
-                "type": "Point Spread (ATS)",
-                "side": "Spread",
-                "line": str(fav_spread),
-                "pick_text": f"{fav_team} {fav_spread:+.1f}",
-                "prob": 0.58
-            })
+            # Default Best EV Discrepancy Mix
+            if is_safe:
+                tot_line = round_half_point(ou_open + (7.5 if is_nba else 4.5))
+                leg_data.update({
+                    "picked_team": gm.get("home_team"),
+                    "type": "Game Total",
+                    "side": "Under",
+                    "line": str(tot_line),
+                    "pick_text": f"Under {tot_line:.1f} Pts",
+                    "prob": 0.74
+                })
+            elif is_high_profit:
+                if is_nba:
+                    leg_data.update({
+                        "picked_team": star_player,
+                        "type": "NBA 3-Pointers Made",
+                        "side": "Over",
+                        "line": "2.5",
+                        "pick_text": f"{star_player} 3+ 3PM",
+                        "prob": 0.50
+                    })
+                else:
+                    leg_data.update({
+                        "picked_team": star_player,
+                        "type": "Player Anytime TD",
+                        "side": "TD",
+                        "line": "1.0",
+                        "pick_text": f"{star_player} Anytime TD",
+                        "prob": 0.49
+                    })
+            else:
+                leg_data.update({
+                    "picked_team": fav_team,
+                    "type": "Point Spread (ATS)",
+                    "side": "Spread",
+                    "line": str(fav_spread),
+                    "pick_text": f"{fav_team} {fav_spread:+.1f}",
+                    "prob": 0.58
+                })
 
-    return generated_legs
+        selected_legs.append(leg_data)
+
+    return selected_legs
 
 def render_combo_builder(curr_user, active_uname, games_data, get_current_et_time_fn):
     st.subheader("🔗 Multi-Leg Combo & Parlay Builder")
-    st.caption("Construct multi-game tickets, select leg volume, edit lines and probabilities, audit correlated edges, and lock in tickets.")
+    st.caption("Construct correlated tickets, configure leg volume, fine-tune lines and win probabilities, and analyze expected value.")
 
     if "combo_active_legs" not in st.session_state:
         st.session_state.combo_active_legs = []
 
     # =========================================================================
-    # 1. COMBO ENGINE CONFIGURATION (Modeled directly after Single Game Engine)
+    # 1. PRIMARY SELECTION & CONFIGURATION CONTROLS
     # =========================================================================
     with st.container(border=True):
         st.markdown("#### 🤖 Select & Configure Multi-Leg Matchups")
 
-        # ROW 1: League & Slate Scope
+        # Row 1: League Scope, Slate Filter, Leg Count
         r1_c1, r1_c2, r1_c3 = st.columns([2.5, 2.5, 2.0])
         league_choice = r1_c1.selectbox(
             "Primary League / Slate Scope",
             options=["All Games (Cross-Sport)", "NFL", "NBA", "NCAA Football"],
-            key="cb_static_league"
+            key="cb_cfg_league"
         )
         t_filter = r1_c2.selectbox(
             "Game Filter Status",
             options=["🌐 All Matchups", "⏳ Upcoming Games", "⚡ Live Games"],
-            key="cb_static_filter"
+            key="cb_cfg_filter"
         )
-        num_legs = r1_c3.selectbox(
+        leg_count = r1_c3.selectbox(
             "Target Number of Legs",
             options=[2, 3, 4, 5, 6, 7, 8],
             index=1,
-            key="cb_num_legs_sel"
+            key="cb_cfg_leg_count"
         )
 
         pool = games_data
-        if league_choice == "NBA": pool = [g for g in pool if g.get("league") == "NBA"]
-        elif league_choice == "NFL": pool = [g for g in pool if g.get("league") == "NFL"]
-        elif league_choice == "NCAA Football": pool = [g for g in pool if g.get("league") == "NCAA"]
+        if league_choice == "NBA":
+            pool = [g for g in pool if g.get("league") == "NBA"]
+        elif league_choice == "NFL":
+            pool = [g for g in pool if g.get("league") == "NFL"]
+        elif league_choice == "NCAA Football":
+            pool = [g for g in pool if g.get("league") == "NCAA"]
 
         if t_filter == "⏳ Upcoming Games":
             pool = [g for g in pool if not g.get("completed", False) and (g.get("state_text") == "pre" or g.get("period", 0) == 0)]
         elif t_filter == "⚡ Live Games":
             pool = [g for g in pool if not g.get("completed", False) and g.get("state_text") != "pre" and g.get("period", 0) > 0]
 
-        if not pool:
-            st.warning("No matchups match your selected league or game filter.")
-            return
-
-        # ROW 2: Selection Mode (System Pick vs User Pick)
+        # Row 2: Method Choice (System Pick vs Manual Entry)
         selection_mode = st.radio(
             "Matchup Selection Method",
-            ["🤖 Let the System Pick (Highest Model Discrepancies)", "🎯 Let Me Pick the Matchups"],
+            ["🤖 Let the System Pick (Highest Model Discrepancies)", "✍️ Enter Legs Manually / Hand-Pick"],
             horizontal=True,
-            key="cb_selection_mode"
+            key="cb_cfg_selection_mode"
         )
 
-        selected_matchups = []
-        if "Let the System Pick" in selection_mode:
-            # Sort slate by biggest line discrepancies and take top N games
-            selected_matchups = sorted(pool, key=lambda g: abs(float(g.get("market_spread", 0))), reverse=True)[:num_legs]
-            matched_summary = " • ".join([f"[{g.get('league')}] {g.get('away_short')}@{g.get('home_short')}" for g in selected_matchups])
-            st.success(f"🤖 **System Selected ({len(selected_matchups)} Games):** {matched_summary}")
-        else:
-            game_labels = [f"[{gm.get('kickoff', 'Upcoming')}] [{gm.get('league')}] {gm.get('away_short')} @ {gm.get('home_short')}" for gm in pool]
-            selected_indices = st.multiselect(
-                f"🎯 Select exactly {num_legs} Matchups",
-                options=range(len(game_labels)),
-                format_func=lambda x: game_labels[x],
-                default=list(range(min(num_legs, len(game_labels)))),
-                key="cb_manual_game_multiselect"
-            )
-            selected_matchups = [pool[i] for i in selected_indices]
+        # Row 3: Target Bet Market & Model Strategy Profile
+        r3_c1, r3_c2 = st.columns(2)
+        is_nba_scope = (league_choice == "NBA")
+        is_nfl_scope = (league_choice == "NFL" or league_choice == "NCAA Football")
 
-        # ROW 3: Strategy Profile
-        strat_choice = st.selectbox(
+        if is_nba_scope:
+            market_options = [
+                "⚡ Let the System Pick (Best NBA Discrepancies)",
+                "📊 Game Totals (Over / Under)",
+                "🛡️ Point Spreads (ATS Cover)",
+                "🏆 Straight Up Winners (Moneyline)",
+                "🎯 NBA Player Three-Pointers Made (1+, 2+, 3+)"
+            ]
+        elif is_nfl_scope:
+            market_options = [
+                "⚡ Let the System Pick (Best Football Discrepancies)",
+                "📊 Game Totals (Over / Under)",
+                "🛡️ Point Spreads (ATS Cover)",
+                "🏆 Straight Up Winners (Moneyline)",
+                "🏈 Football Anytime Touchdown Scorer"
+            ]
+        else:
+            market_options = [
+                "⚡ Let the System Pick (Cross-Sport Edge)",
+                "📊 Game Totals (Over / Under)",
+                "🛡️ Point Spreads (ATS Cover)",
+                "🏆 Straight Up Winners (Moneyline)",
+                "🎯 High EV Player Props (3PM / Touchdown)"
+            ]
+
+        target_market = r3_c1.selectbox("Target Bet / Market Type", market_options, key="cb_cfg_target_market")
+        strat_choice = r3_c2.selectbox(
             "Model Strategy Profile",
             [
                 "⚖️ Balanced Edge (+EV Sweet Spot)",
@@ -182,54 +262,97 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 "🚀 High Profit (Max Multiplier & Props)",
                 "🎯 Mixed Tier Spectrum (Balanced Mix)"
             ],
-            key="cb_static_strat"
+            key="cb_cfg_strat_choice"
         )
 
-        if st.button("⚡ Generate Multi-Leg Combo Analysis & Slip", type="primary", use_container_width=True):
-            if not selected_matchups:
-                st.error("Please select at least one matchup.")
-            else:
-                st.session_state.combo_active_legs = generate_automated_combo_legs(selected_matchups, strat_choice, num_legs)
-                st.rerun()
+        # Action execution based on selection mode
+        if "Let the System Pick" in selection_mode:
+            if st.button("⚡ Generate Multi-Leg Combo Analysis & Slip", type="primary", use_container_width=True):
+                if not pool:
+                    st.warning("No matchups match your selected league or game filter.")
+                else:
+                    st.session_state.combo_active_legs = build_system_combo_legs(pool, target_market, strat_choice, leg_count)
+                    st.toast(f"✅ Generated {len(st.session_state.combo_active_legs)}-leg combo based on model discrepancies!", icon="🤖")
+                    st.rerun()
+        else:
+            # Manual Mode: Ingestion bar from available games or custom drafter
+            st.markdown("---")
+            st.markdown("##### ✍️ Manual Matchup & Leg Ingestion")
+            m_t1, m_t2 = st.tabs(["🎯 Add from Live Matchup Board", "📝 Create Custom Prop / Spread Leg"])
 
-    # Manual / Custom Leg Adder
-    with st.popover("➕ Add Custom Prop or Specific Leg Manually", use_container_width=True):
-        st.markdown("**Draft a Custom Ticket Leg:**")
-        cx1, cx2, cx3, cx4, cx5 = st.columns([2.0, 3.0, 1.8, 1.5, 1.5], vertical_alignment="bottom")
-        c_match = cx1.text_input("Matchup", value="TEN @ CIN", key="cb_manual_cust_m")
-        c_pick = cx2.text_input("Pick / Prop Description", value="Chase Brown Any Time TD", key="cb_manual_cust_p")
-        c_type = cx3.selectbox("Category", ["Player Prop", "Game Total", "Point Spread", "Moneyline"], key="cb_manual_cust_t")
-        c_prob = cx4.number_input("Win Prob (%)", min_value=5, max_value=99, value=58, step=1, key="cb_manual_cust_pr")
-        if cx5.button("📥 Insert Leg", use_container_width=True, type="primary"):
-            st.session_state.combo_active_legs.append({
-                "matchup": c_match.strip(),
-                "league": "PROP",
-                "away_logo": DEFAULT_LOGO,
-                "home_logo": DEFAULT_LOGO,
-                "kickoff": "Custom",
-                "picked_team": c_pick.strip(),
-                "type": c_type,
-                "side": "Over",
-                "line": "1.0",
-                "pick_text": c_pick.strip(),
-                "prob": float(c_prob) / 100.0
-            })
-            st.rerun()
+            with m_t1:
+                if not pool:
+                    st.info("No games available on the slate matching your league filter.")
+                else:
+                    mc1, mc2, mc3 = st.columns([3.0, 2.5, 1.5], vertical_alignment="bottom")
+                    game_labels = [f"[{gm.get('league')}] {gm.get('away_short')} @ {gm.get('home_short')} ({gm.get('kickoff', 'Upcoming')})" for gm in pool]
+                    sel_game_idx = mc1.selectbox("Select Matchup", range(len(game_labels)), format_func=lambda i: game_labels[i], key="cb_man_slate_gm")
+                    target_gm = pool[sel_game_idx]
 
+                    ou_val = round_half_point(target_gm.get("market_ou", 224.5 if target_gm.get("league") == "NBA" else 46.5))
+                    spd_val = round_half_point(target_gm.get("market_spread", -3.5))
+                    fav_t = target_gm.get("home_team") if spd_val < 0 else target_gm.get("away_team")
+
+                    leg_preset = mc2.selectbox("Preset Market Line", [
+                        f"Under {ou_val} Pts",
+                        f"Over {ou_val} Pts",
+                        f"{fav_t} {spd_val:+.1f}",
+                        f"{fav_t} ML"
+                    ], key="cb_man_preset_opt")
+
+                    if mc3.button("➕ Insert Leg", use_container_width=True, type="primary"):
+                        st.session_state.combo_active_legs.append({
+                            "matchup": f"{target_gm.get('away_short')} @ {target_gm.get('home_short')}",
+                            "league": target_gm.get("league", "SPORTS"),
+                            "away_logo": target_gm.get("away_logo", DEFAULT_LOGO),
+                            "home_logo": target_gm.get("home_logo", DEFAULT_LOGO),
+                            "kickoff": target_gm.get("kickoff", "Scheduled"),
+                            "picked_team": fav_t if "ML" in leg_preset or spd_val != 0 else target_gm.get("home_team"),
+                            "type": "Game Total" if "Pts" in leg_preset else ("Point Spread" if spd_val != 0 and "ML" not in leg_preset else "Moneyline"),
+                            "side": "Under" if "Under" in leg_preset else ("Over" if "Over" in leg_preset else "Spread"),
+                            "line": str(ou_val) if "Pts" in leg_preset else str(spd_val),
+                            "pick_text": leg_preset,
+                            "prob": 0.65 if "Under" in leg_preset else 0.58
+                        })
+                        st.rerun()
+
+            with m_t2:
+                mx1, mx2, mx3, mx4, mx5 = st.columns([2.0, 3.0, 1.8, 1.5, 1.5], vertical_alignment="bottom")
+                cust_m = mx1.text_input("Matchup", value="TEN @ CIN", key="cb_man_cust_m")
+                cust_p = mx2.text_input("Pick Label / Prop", value="Chase Brown Anytime TD", key="cb_man_cust_p")
+                cust_t = mx3.selectbox("Market Category", ["Player Prop", "Game Total", "Point Spread", "Moneyline"], key="cb_man_cust_t")
+                cust_pr = mx4.number_input("Win Prob (%)", min_value=5, max_value=99, value=55, step=1, key="cb_man_cust_pr")
+
+                if mx5.button("➕ Add Custom", use_container_width=True):
+                    st.session_state.combo_active_legs.append({
+                        "matchup": cust_m.strip(),
+                        "league": "PROP",
+                        "away_logo": DEFAULT_LOGO,
+                        "home_logo": DEFAULT_LOGO,
+                        "kickoff": "Manual",
+                        "picked_team": cust_p.strip(),
+                        "type": cust_t,
+                        "side": "Over",
+                        "line": "1.0",
+                        "pick_text": cust_p.strip(),
+                        "prob": float(cust_pr) / 100.0
+                    })
+                    st.rerun()
+
+    # =========================================================================
+    # 2. ACTIVE COMBO LEGS (INLINE EDITABLE CARDS WITH LOGOS & DATA)
+    # =========================================================================
     legs = st.session_state.combo_active_legs
+
     if not legs:
-        st.info("No legs loaded yet. Configure the engine above and click 'Generate Multi-Leg Combo Analysis & Slip' or add custom legs.")
+        st.info("No legs loaded yet. Choose 'Let the System Pick' or use manual entry to construct your ticket.")
         return
 
-    # =========================================================================
-    # 2. ACTIVE COMBO LEGS (INLINE EDITABLE FIELDS WITH MATCHUP BANNERS)
-    # =========================================================================
     st.markdown(f"### 📋 Current Combo Legs ({len(legs)})")
-    st.caption("Review, edit pick criteria, fine-tune lines and win probabilities in real-time below.")
+    st.caption("Review, edit pick labels, directions, lines, and model win probabilities in real-time below.")
 
     for idx, leg in enumerate(legs):
         with st.container(border=True):
-            # Top Banner for each leg
             a_logo = leg.get("away_logo") or DEFAULT_LOGO
             h_logo = leg.get("home_logo") or DEFAULT_LOGO
             kickoff_str = leg.get("kickoff", "Scheduled")
@@ -256,7 +379,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             leg["pick_text"] = ed2.text_input("Pick Label", value=leg.get("pick_text", ""), key=f"cb_ed_txt_{idx}")
             leg["side"] = ed3.text_input("Side / Dir", value=leg.get("side", ""), key=f"cb_ed_sd_{idx}")
             leg["line"] = ed4.text_input("Line", value=str(leg.get("line", "")), key=f"cb_ed_ln_{idx}")
-            
+
             cur_p_pct = int(round(float(leg.get("prob", 0.55)) * 100))
             new_p_pct = ed5.number_input("Win Prob (%)", min_value=5, max_value=99, value=cur_p_pct, step=1, key=f"cb_ed_pr_{idx}")
             leg["prob"] = float(new_p_pct) / 100.0
@@ -268,7 +391,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     st.markdown("---")
 
     # =========================================================================
-    # 3. COMPOUND PROBABILITY & PARLAY ANALYTICS
+    # 3. COMPOUND PROBABILITY & PARLAY EDGE ANALYTICS
     # =========================================================================
     compound_prob = 1.0
     for leg in legs:
@@ -294,7 +417,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             r_col, p_col = st.columns(2)
             default_risk = 5.0
             default_payout = round(default_risk * fair_multiplier, 2)
-            
+
             risk_input = r_col.number_input("Risk Amount ($)", min_value=0.5, value=float(default_risk), step=1.0)
             payout_input = p_col.number_input("Total Payout ($)", min_value=0.5, value=float(default_payout), step=1.0)
 
