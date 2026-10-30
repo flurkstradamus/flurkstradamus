@@ -396,8 +396,10 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         m_txt = b.get('matchup', 'Matchup')
         header_title_html = f"<strong>{m_txt}</strong> <span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span>"
 
-    r_val = float(b.get("risk_dollars", 10.0))
-    p_val = float(b.get("payout_dollars", b.get("payout", 19.0)))
+    r_val = float(b.get("risk_dollars", 5.0))
+    p_val = float(b.get("payout_dollars", b.get("payout", 10.0)))
+    
+    # Net Profit = Payout - Risk
     profit_locked = float(b.get("locked_profit", p_val - r_val))
     roi_pct = (profit_locked / max(r_val, 0.01)) * 100
     cat_label = b.get("bet_category", b.get("type", "Single"))
@@ -421,7 +423,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         </div>
         """, unsafe_allow_html=True)
 
-        c1, c2, c3, c4 = st.columns([3.0, 2.7, 2.3, 2.0], vertical_alignment="center")
+        c1, c2, c3, c4 = st.columns([3.0, 2.7, 1.8, 2.5], vertical_alignment="center")
 
         with c1:
             st.markdown(f"""
@@ -445,21 +447,53 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
             """, unsafe_allow_html=True)
 
         with c4:
-            if can_delete:
-                b1, b2 = st.columns([2.5, 1.5])
-                with b1:
-                    if st.button("🏟️ War Room", key=f"wr_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
-                        st.session_state.selected_bet_id = b["id"]
-                        st.rerun()
-                with b2:
-                    if st.button("🗑️", key=f"del_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
-                        st.session_state.saved_bets.pop(real_idx)
-                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
-                        st.rerun()
-            else:
+            col_wr, col_edit, col_del = st.columns([2.0, 1.4, 1.0], vertical_alignment="center")
+            with col_wr:
                 if st.button("🏟️ War Room", key=f"wr_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                     st.session_state.selected_bet_id = b["id"]
                     st.rerun()
+
+            with col_edit:
+                # Interactive Edit Popover
+                with st.popover("✏️", use_container_width=True, help="Edit bet amounts"):
+                    st.markdown("**Edit Bet Amounts**")
+                    new_risk = st.number_input("Risk ($)", min_value=0.5, value=float(r_val), step=1.0, key=f"ed_risk_{b.get('id', real_idx)}_{real_idx}")
+                    new_payout = st.number_input("Payout ($)", min_value=0.5, value=float(p_val), step=1.0, key=f"ed_pay_{b.get('id', real_idx)}_{real_idx}")
+                    
+                    calculated_profit = float(new_payout) - float(new_risk)
+                    st.caption(f"Net Profit: **${calculated_profit:.2f}**")
+
+                    if st.button("💾 Save", key=f"btn_save_edit_{b.get('id', real_idx)}_{real_idx}", type="primary", use_container_width=True):
+                        b["risk_dollars"] = float(new_risk)
+                        b["payout_dollars"] = float(new_payout)
+                        b["payout"] = float(new_payout)
+                        b["locked_profit"] = float(calculated_profit)
+                        if save_all_storage:
+                            save_all_storage(
+                                st.session_state.saved_bets,
+                                st.session_state.chat_messages,
+                                st.session_state.user_accounts,
+                                st.session_state.banned_emails,
+                                st.session_state.game_snapshots,
+                                st.session_state.support_tickets
+                            )
+                        st.toast("✅ Bet amounts updated!", icon="💾")
+                        st.rerun()
+
+            with col_del:
+                if can_delete:
+                    if st.button("🗑️", key=f"del_{b.get('id', real_idx)}_{real_idx}", help="Delete ticket", use_container_width=True):
+                        st.session_state.saved_bets.pop(real_idx)
+                        if save_all_storage:
+                            save_all_storage(
+                                st.session_state.saved_bets,
+                                st.session_state.chat_messages,
+                                st.session_state.user_accounts,
+                                st.session_state.banned_emails,
+                                st.session_state.game_snapshots,
+                                st.session_state.support_tickets
+                            )
+                        st.rerun()
 
 # State initialization
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
@@ -514,7 +548,8 @@ if st.session_state.logged_in_user is None:
                     admin_p = st.session_state.user_accounts.get(adm_u, {"username": adm_u, "is_admin": True, "is_verified": True})
                     admin_p["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
                     st.session_state.user_accounts[adm_u] = admin_p
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                    if save_all_storage:
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
                     if rem: st.query_params["auth_token"] = admin_p["session_token"]
                     st.session_state.logged_in_user = admin_p
                     st.rerun()
@@ -522,7 +557,8 @@ if st.session_state.logged_in_user is None:
                 matched = next((u for u in st.session_state.user_accounts.values() if u.get("username", "").lower() == u_in or u.get("email", "").lower() == u_in), None)
                 if matched and matched.get("password_hash") == hash_password(p_in) and not matched.get("is_banned"):
                     matched["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                    if save_all_storage:
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
                     if rem: st.query_params["auth_token"] = matched["session_token"]
                     st.session_state.logged_in_user = matched
                     st.rerun()
@@ -543,7 +579,8 @@ if st.session_state.logged_in_user is None:
                         "session_token": ''.join(random.choices(string.ascii_letters + string.digits, k=32))
                     }
                     st.session_state.user_accounts[nu] = new_u
-                    save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
+                    if save_all_storage:
+                        save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
                     st.session_state.logged_in_user = new_u
                     st.rerun()
                 else:
