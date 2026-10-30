@@ -3,9 +3,9 @@ import random
 import string
 from datetime import datetime, timezone, timedelta
 
-# Import modules
+# Import modules & configuration
 from config import DEFAULT_LOGO
-# WITH THIS:
+
 import database
 load_storage = getattr(database, "load_storage", getattr(database, "load_all_storage", None))
 save_all_storage = getattr(database, "save_all_storage", None)
@@ -13,8 +13,9 @@ find_game_for_bet = getattr(database, "find_game_for_bet", lambda *a, **k: None)
 auto_resolve_bet = getattr(database, "auto_resolve_bet", lambda *a, **k: "Pending")
 auto_resolve_be = auto_resolve_bet
 hash_password = getattr(database, "hash_password", lambda p: str(p))
-get_admin_credentials = getattr(database, "get_admin_credentials", lambda: ("flurk", ""))
+get_admin_credentials = getattr(database, "get_admin_credentials", lambda: {"username": "flurk", "email": "admin@flurkstradamus.com", "password": "flurkstradamus2026"})
 send_verification_email = getattr(database, "send_verification_email", lambda *a, **k: True)
+
 from sports import fetch_football_scoreboard, fetch_nba_scoreboard
 from views.dashboard import render_dashboard
 from views.single_game import render_single_game
@@ -25,6 +26,12 @@ from views.leaderboard import render_leaderboard, render_squad_feed
 from views.settings import render_settings, render_support
 from views.guides import render_how_it_works, render_math, render_about
 from views.admin import render_admin
+
+# Optional War Room component importer
+try:
+    from views.war_room import render_war_room
+except ImportError:
+    render_war_room = None
 
 st.set_page_config(
     page_title="Flurkstradamus: Sports Betting Analytics & Edge Engine",
@@ -224,6 +231,29 @@ components.html("""
 def get_current_et_time():
     return datetime.now(timezone.utc) - timedelta(hours=4)
 
+def batch_resolve_pending_bets(saved_bets, games_data):
+    """Iterates through pending tickets and checks final game scores."""
+    if not saved_bets or not games_data:
+        return
+    updated = False
+    for b in saved_bets:
+        if b.get("status") == "Pending":
+            gm = find_game_for_bet(b, games_data)
+            if gm and gm.get("completed", False):
+                outcome = auto_resolve_bet(b, gm)
+                if outcome in ["Won", "Lost", "Push"]:
+                    b["status"] = outcome
+                    updated = True
+    if updated and save_all_storage:
+        save_all_storage(
+            st.session_state.saved_bets,
+            st.session_state.chat_messages,
+            st.session_state.user_accounts,
+            st.session_state.banned_emails,
+            st.session_state.game_snapshots,
+            st.session_state.support_tickets
+        )
+
 def calculate_live_bet_prob(bet_obj, live_m):
     if not live_m:
         return bet_obj.get("win_prob", "50.0%")
@@ -373,7 +403,6 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
     cat_label = b.get("bet_category", b.get("type", "Single"))
     bet_pick_str = str(b.get("bet", "N/A"))
 
-    # Generate itemized leg badges for combo tickets
     combo_legs_html = ""
     if is_combo and legs_list:
         chips = []
@@ -385,7 +414,6 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         combo_legs_html = f"<div style='display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;'>{''.join(chips)}</div>"
 
     with st.container(border=True):
-        # Header Row
         st.markdown(f"""
         <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px; border-bottom:1px solid rgba(255,255,255,0.07); padding-bottom:6px; margin-bottom:8px;">
             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">{header_title_html}</div>
@@ -393,7 +421,6 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         </div>
         """, unsafe_allow_html=True)
 
-        # Single Clean Row: Desktop stays inline; Mobile stacks and splits buttons 50/50
         c1, c2, c3, c4 = st.columns([3.0, 2.7, 2.3, 2.0], vertical_alignment="center")
 
         with c1:
@@ -418,7 +445,6 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
             """, unsafe_allow_html=True)
 
         with c4:
-            # Action buttons: Inline on desktop, 50% width side-by-side on mobile
             if can_delete:
                 b1, b2 = st.columns([2.5, 1.5])
                 with b1:
@@ -473,11 +499,21 @@ if st.session_state.logged_in_user is None:
             rem = st.checkbox("Remember me", value=True)
             if st.form_submit_button("Sign In", use_container_width=True):
                 admin_cred = get_admin_credentials()
-                if u_in in [admin_cred["username"].lower(), admin_cred["email"].lower()] and p_in == admin_cred["password"]:
-                    admin_k = admin_cred["username"].lower()
-                    admin_p = st.session_state.user_accounts.get(admin_k, {"username": admin_cred["username"], "is_admin": True, "is_verified": True})
+                
+                # Dictionary and tuple safety resolution
+                if isinstance(admin_cred, dict):
+                    adm_u = str(admin_cred.get("username", "flurk")).lower()
+                    adm_e = str(admin_cred.get("email", "admin@flurkstradamus.com")).lower()
+                    adm_p = str(admin_cred.get("password", "flurkstradamus2026"))
+                else:
+                    adm_u = str(admin_cred[0]).lower()
+                    adm_e = "admin@flurkstradamus.com"
+                    adm_p = str(admin_cred[1])
+
+                if u_in in [adm_u, adm_e] and p_in == adm_p:
+                    admin_p = st.session_state.user_accounts.get(adm_u, {"username": adm_u, "is_admin": True, "is_verified": True})
                     admin_p["session_token"] = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
-                    st.session_state.user_accounts[admin_k] = admin_p
+                    st.session_state.user_accounts[adm_u] = admin_p
                     save_all_storage(st.session_state.saved_bets, st.session_state.chat_messages, st.session_state.user_accounts, st.session_state.banned_emails, st.session_state.game_snapshots, st.session_state.support_tickets)
                     if rem: st.query_params["auth_token"] = admin_p["session_token"]
                     st.session_state.logged_in_user = admin_p
@@ -542,18 +578,13 @@ needs_live_data = st.session_state.active_nav_page in [
     "🔗 Multi-Leg Combo Builder", 
     "📸 Scan Bet Slip",
     "📜 Locked Bets History", 
-    "🔥 Live Squad Feed"
+    "🔥 Live Squad Feed",
+    "🏟️ Live War Room"
 ] or (st.session_state.selected_bet_id is not None)
 
 if needs_live_data:
     games_data = get_cached_games()
-    auto_resolve_bets(
-        st.session_state.saved_bets, 
-        games_data, 
-        st.session_state.chat_messages, 
-        st.session_state.game_snapshots, 
-        st.session_state.support_tickets
-    )
+    batch_resolve_pending_bets(st.session_state.saved_bets, games_data)
 else:
     games_data = []
 
@@ -564,6 +595,7 @@ nav_list = [
     "🔗 Multi-Leg Combo Builder", 
     "📸 Scan Bet Slip",
     "📜 Locked Bets History", 
+    "🏟️ Live War Room",
     "🔥 Live Squad Feed", 
     "🏆 Leaderboard", 
     "💡 How It Works", 
@@ -584,7 +616,7 @@ for page in nav_list:
 
 menu_choice = st.session_state.active_nav_page
 
-# War Room Routing
+# War Room Routing from Ticket Card click
 if st.session_state.selected_bet_id is not None:
     selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
     if st.button("⬅️ Back to Tickets", use_container_width=True) or not selected_bet:
@@ -597,10 +629,10 @@ if st.session_state.selected_bet_id is not None:
     if live_g:
         c1, c2, c3 = st.columns([2, 1, 2])
         c1.image(live_g.get("away_logo", DEFAULT_LOGO), width=45)
-        c1.metric(live_g['away_short'], live_g['away_score'])
-        c2.metric("Clock", live_g.get('displayClock', live_g['status']))
+        c1.metric(live_g.get('away_short', 'AWAY'), live_g.get('away_score', 0))
+        c2.metric("Clock", live_g.get('displayClock', live_g.get('status', 'In Progress')))
         c3.image(live_g.get("home_logo", DEFAULT_LOGO), width=45)
-        c3.metric(live_g['home_short'], live_g['home_score'])
+        c3.metric(live_g.get('home_short', 'HOME'), live_g.get('home_score', 0))
     st.stop()
 
 # Page Routing
@@ -614,6 +646,11 @@ elif menu_choice == "📸 Scan Bet Slip":
     render_slip_scanner(curr_user, active_uname, games_data, get_current_et_time)
 elif menu_choice == "📜 Locked Bets History":
     render_history(curr_user, active_uname, is_admin, games_data, render_ticket_card)
+elif menu_choice == "🏟️ Live War Room":
+    if render_war_room:
+        render_war_room(curr_user, active_uname, games_data, get_current_et_time)
+    else:
+        st.info("War room module loading...")
 elif menu_choice == "🔥 Live Squad Feed":
     render_squad_feed(games_data, render_ticket_card)
 elif menu_choice == "🏆 Leaderboard":
