@@ -8,34 +8,43 @@ from database import (
 )
 from sports.football import round_half_point, get_live_football_roster
 from sports.basketball import get_live_nba_roster, get_live_nba_3pm_roster
-from models import calculate_win_prob, calculate_moneyline_prob, calculate_spread_prob
 
 def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn):
-    st.subheader("🏟️ Live Matchup War Room")
+    # Top Bar with Back Button
+    top_c1, top_c2 = st.columns([5, 1.5], vertical_alignment="center")
+    top_c1.subheader("🏟️ Live Matchup War Room")
+    if top_c2.button("🔙 Back to Tickets", use_container_width=True):
+        st.session_state.selected_bet_id = None
+        st.session_state.active_nav_page = "📜 Locked Bets History"
+        st.rerun()
+
     st.caption("Real-time game telemetry, multi-quarter progression modeling, live score tracking, and in-game prop projections.")
 
     if not games_data:
         st.warning("No live or scheduled games found on the active scoreboard.")
         return
 
-    # Select target game for War Room telemetry
+    # Check if a bet was selected from the dashboard or tickets
     target_bet = None
-    if st.session_state.get("selected_bet_id"):
-        target_bet = next((b for b in st.session_state.get("saved_bets", []) if b.get("id") == st.session_state.selected_bet_id), None)
+    saved_bets = st.session_state.get("saved_bets", [])
+    bet_id = st.session_state.get("selected_bet_id")
+    if bet_id:
+        target_bet = next((b for b in saved_bets if str(b.get("id")) == str(bet_id)), None)
 
-    col_sel1, col_sel2 = st.columns([4, 2], vertical_alignment="center")
-
-    game_options = [
-        f"[{gm.get('league')}] {gm.get('away_short')} @ {gm.get('home_short')} ({gm.get('clock', gm.get('kickoff', 'Upcoming'))})"
-        for gm in games_data
-    ]
-
+    # Determine default game index based on selected bet
     default_idx = 0
     if target_bet:
         matched_g = find_game_for_bet(target_bet, games_data)
         if matched_g and matched_g in games_data:
             default_idx = games_data.index(matched_g)
 
+    # Game Selector dropdown
+    game_options = [
+        f"[{gm.get('league')}] {gm.get('away_short')} @ {gm.get('home_short')} ({gm.get('clock', gm.get('kickoff', 'Upcoming'))})"
+        for gm in games_data
+    ]
+
+    col_sel1, col_sel2 = st.columns([4, 2], vertical_alignment="center")
     sel_idx = col_sel1.selectbox(
         "Select Active War Room Matchup",
         range(len(game_options)),
@@ -48,7 +57,7 @@ def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn)
     if col_sel2.button("🔄 Refresh Telemetry", use_container_width=True):
         st.rerun()
 
-    # Matchup Variables
+    # Extract Matchup Information
     league = str(live_g.get("league", "NFL")).upper()
     is_nba = (league == "NBA")
     a_name = live_g.get("away_team", "Away Team")
@@ -62,12 +71,10 @@ def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn)
     curr_tot = a_sc + h_sc
     period = int(live_g.get("period", 0))
     clock = live_g.get("clock", live_g.get("displayClock", "Scheduled"))
-    is_final = live_g.get("completed", False) or "final" in str(live_g.get("status", "")).lower()
+    is_final = live_g.get("completed", False) or "final" in str(live_g.get("state_text", "")).lower()
 
     pre_tot = float(live_g.get("market_ou", 224.5 if is_nba else 46.5))
     pre_spread = float(live_g.get("market_spread", -3.5))
-
-    # Live pace projection calculation
     live_proj_tot = calculate_pace_drift_factor(period, curr_tot, pre_tot) if period > 0 else pre_tot
     fav_team = h_name if pre_spread < 0 else a_name
 
@@ -124,14 +131,13 @@ def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn)
             </div>
             """, unsafe_allow_html=True)
 
-    # Active Bet Ticket Banner (if routed from tickets)
+    # Active Bet Ticket Banner
     if target_bet:
         with st.container(border=True):
             tb1, tb2 = st.columns([4, 2], vertical_alignment="center")
             tb1.markdown(f"**Tracking Bet:** `{target_bet.get('bet')}` ({target_bet.get('bet_category', target_bet.get('type'))})")
-            from app import calculate_live_bet_prob
-            live_prob = calculate_live_bet_prob(target_bet, live_g)
-            tb2.markdown(f"**In-Game Win Probability:** <span style='color:#4ade80; font-weight:800; font-size:1.1rem;'>{live_prob}</span>", unsafe_allow_html=True)
+            win_p = target_bet.get("win_prob", "55.0%")
+            tb2.markdown(f"**Ticket Win Probability:** <span style='color:#4ade80; font-weight:800; font-size:1.1rem;'>{win_p}</span>", unsafe_allow_html=True)
 
     # =========================================================================
     # 2. MULTI-QUARTER PROGRESSION & SCORE PROJECTIONS TABLE
@@ -154,10 +160,6 @@ def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn)
     q3_h = h_lines[2] if len(h_lines) > 2 else 0
     q3_tot = half_tot + (q3_a + q3_h)
 
-    q4_a = a_lines[3] if len(a_lines) > 3 else 0
-    q4_h = h_lines[3] if len(h_lines) > 3 else 0
-
-    # Model Quarter Projector Matrix
     progression_rows = [
         {
             "Checkpoint": "Pre-Game Open",
@@ -166,7 +168,7 @@ def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn)
             "Total Score": 0,
             "Projected Total": f"{pre_tot:.1f} pts",
             "Projected Winner": f"{fav_team} ({pre_spread:+.1f})",
-            "Status": "Completed"
+            "Status": "Locked"
         },
         {
             "Checkpoint": "After 1st Quarter",
@@ -219,20 +221,24 @@ def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn)
     # 3. SPORT-SPECIFIC PLAYER PROP PROJECTIONS (BASKETBALL VS FOOTBALL)
     # =========================================================================
     st.markdown("---")
+    shooters_h = []
+    shooters_a = []
+    fb_h = []
+    fb_a = []
+
     if is_nba:
         st.markdown("#### 🏀 NBA In-Game Player Prop Projections")
         st.caption("Live projected points and 3-pointers made for active starting rotation players:")
 
-        col_h, col_a = st.columns(2)
+        col_a, col_h = st.columns(2)
         with col_a:
             st.markdown(f"**{a_name} ({a_sh}) Projected Leaders**")
             shooters_a = get_live_nba_3pm_roster(live_g.get("away_id") or a_sh, game_id=live_g.get("id"))
             if shooters_a:
                 for ply in shooters_a[:4]:
                     p_name, pos, line_3pm, proj_pts = ply[0], ply[1], ply[2], ply[3]
-                    # Dynamic pace-scaled points if in-game
                     scaled_pts = proj_pts if period == 0 else round(proj_pts * (live_proj_tot / max(1.0, pre_tot)), 1)
-                    st.info(f"**{p_name}** ({pos}) — Projected: **{scaled_pts:.1f} Pts** | **{line_3pm:.1f} 3PM** (Prob: 68%)")
+                    st.info(f"**{p_name}** ({pos}) — Projected: **{scaled_pts:.1f} Pts** | **{line_3pm:.1f} 3PM**")
             else:
                 st.caption("No starter telemetry available.")
 
@@ -243,7 +249,7 @@ def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn)
                 for ply in shooters_h[:4]:
                     p_name, pos, line_3pm, proj_pts = ply[0], ply[1], ply[2], ply[3]
                     scaled_pts = proj_pts if period == 0 else round(proj_pts * (live_proj_tot / max(1.0, pre_tot)), 1)
-                    st.info(f"**{p_name}** ({pos}) — Projected: **{scaled_pts:.1f} Pts** | **{line_3pm:.1f} 3PM** (Prob: 68%)")
+                    st.info(f"**{p_name}** ({pos}) — Projected: **{scaled_pts:.1f} Pts** | **{line_3pm:.1f} 3PM**")
             else:
                 st.caption("No starter telemetry available.")
 
@@ -251,7 +257,7 @@ def render_war_room(curr_user, active_uname, games_data, get_current_et_time_fn)
         st.markdown("#### 🏈 Football In-Game Player Prop Projections")
         st.caption("Live Anytime Touchdown probabilities, carry shares, and red-zone projections:")
 
-        col_h, col_a = st.columns(2)
+        col_a, col_h = st.columns(2)
         with col_a:
             st.markdown(f"**{a_name} ({a_sh}) Touchdown & Yardage Targets**")
             fb_a = get_live_football_roster(live_g.get("away_id") or a_sh, league)
