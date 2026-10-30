@@ -2,6 +2,7 @@ import streamlit as st
 import random
 import string
 from datetime import datetime, timezone, timedelta
+from views.history_lab import render_history_lab
 
 # Import modules & configuration
 from config import DEFAULT_LOGO
@@ -635,6 +636,7 @@ nav_list = [
     "📸 Scan Bet Slip",
     "📜 Locked Bets History", 
     "🏟️ Live War Room",
+    "🧪 Game History & Learning Lab",   # <--- Added
     "🔥 Live Squad Feed", 
     "🏆 Leaderboard", 
     "💡 How It Works", 
@@ -690,6 +692,8 @@ elif menu_choice == "🏟️ Live War Room":
         render_war_room(curr_user, active_uname, games_data, get_current_et_time)
     else:
         st.info("War room module loading...")
+elif menu_choice == "🧪 Game History & Learning Lab":
+    render_history_lab()
 elif menu_choice == "🔥 Live Squad Feed":
     render_squad_feed(games_data, render_ticket_card)
 elif menu_choice == "🏆 Leaderboard":
