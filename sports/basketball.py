@@ -2,73 +2,39 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-@st.cache_data(ttl=300, show_spinner=False)
-def fetch_nba_live_roster_by_team_id(team_id):
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_nba_injury_set():
     """
-    Pulls the verified active roster for an NBA team directly from ESPN's official team roster API.
-    Guarantees traded/waived players are completely purged.
+    Fetches the live NBA injury report from ESPN.
+    Returns a set of lowercase player names confirmed OUT or on IR.
     """
-    if not team_id or str(team_id) in ["None", "HOME", "AWAY"]:
-        return []
-    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{team_id}/roster"
-    roster = []
+    out_players = set()
     try:
+        url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
         resp = requests.get(url, timeout=4)
         if resp.status_code == 200:
-            athletes = resp.json().get("athletes", [])
-            for a in athletes:
-                name = a.get("displayName", "")
-                pos = a.get("position", {}).get("abbreviation", "G")
-                injured = a.get("injuries", [])
-                is_out = False
-                for inj in injured:
-                    status = inj.get("status", "").lower()
-                    if any(s in status for s in ["out", "ir", "doubtful", "suspended"]):
-                        is_out = True
-                        break
-                if name and not is_out:
-                    roster.append((name, pos))
+            data = resp.json()
+            for team_data in data.get("injuries", []):
+                for item in team_data.get("injuries", []):
+                    ath = item.get("athlete", {})
+                    p_name = ath.get("displayName", "").strip().lower()
+                    status = item.get("status", {}).get("type", "").lower()
+                    if any(s in status for s in ["out", "ir", "injured reserve", "suspended", "doubtful"]):
+                        if p_name:
+                            out_players.add(p_name)
     except Exception:
         pass
-    return roster
-
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_nba_game_boxscore_players(game_id):
-    """
-    Pulls players currently playing or dressed in the actual active game from ESPN Game Summary.
-    """
-    if not game_id:
-        return {"home": [], "away": []}
-    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={game_id}"
-    result = {"home": [], "away": []}
-    try:
-        resp = requests.get(url, timeout=4)
-        if resp.status_code == 200:
-            box = resp.json().get("boxscore", {}).get("players", [])
-            for idx, team_box in enumerate(box):
-                side = "away" if idx == 0 else "home"
-                athletes = team_box.get("statistics", [{}])[0].get("athletes", [])
-                for ath in athletes:
-                    athlete_info = ath.get("athlete", {})
-                    p_name = athlete_info.get("displayName", "")
-                    pos = athlete_info.get("position", {}).get("abbreviation", "G")
-                    dnp = ath.get("didNotPlay", False)
-                    reason = ath.get("reason", "").lower()
-                    if p_name and not dnp and not any(r in reason for r in ["inactive", "dnp", "out"]):
-                        result[side].append((p_name, pos))
-    except Exception:
-        pass
-    return result
+    return out_players
 
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_nba_scoreboard():
     """
-    Fetches the live NBA scoreboard from ESPN API with quarterly score breakdowns.
+    Fetches the live NBA scoreboard from ESPN API with quarterly linescores.
     """
     url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
     games = []
     try:
-        resp = requests.get(url, timeout=4)
+        resp = requests.get(url, timeout=5)
         if resp.status_code == 200:
             events = resp.json().get("events", [])
             for ev in events:
@@ -96,7 +62,6 @@ def fetch_nba_scoreboard():
                 except (ValueError, TypeError):
                     h_score, a_score = 0, 0
 
-                # Quarter-by-quarter scoring breakdown
                 h_lines = [int(p.get("value", 0)) for p in home_team.get("linescores", [])]
                 a_lines = [int(p.get("value", 0)) for p in away_team.get("linescores", [])]
 
@@ -161,27 +126,49 @@ def fetch_nba_scoreboard():
         pass
     return games
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_nba_live_roster_by_team_id(team_id):
+    """
+    Pulls the verified active roster for an NBA team directly from ESPN's official team API.
+    """
+    if not team_id or str(team_id) in ["None", "HOME", "AWAY"]:
+        return []
+    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{team_id}/roster"
+    roster = []
+    try:
+        resp = requests.get(url, timeout=4)
+        if resp.status_code == 200:
+            athletes = resp.json().get("athletes", [])
+            for a in athletes:
+                name = a.get("displayName", "")
+                pos = a.get("position", {}).get("abbreviation", "G")
+                injured = a.get("injuries", [])
+                is_out = False
+                for inj in injured:
+                    status = inj.get("status", "").lower()
+                    if any(s in status for s in ["out", "ir", "doubtful", "suspended"]):
+                        is_out = True
+                        break
+                if name and not is_out:
+                    roster.append((name, pos))
+    except Exception:
+        pass
+    return roster
+
 def get_live_nba_roster(team_id_or_abbr, game_id=None):
     """
-    Returns verified active rotation players for an NBA team.
-    Checks live box score first; falls back to verified live ESPN team roster.
+    Returns active rotation players for an NBA team.
     """
-    if game_id:
-        box_players = fetch_nba_game_boxscore_players(game_id)
-        active_list = box_players.get("home", []) + box_players.get("away", [])
-        if active_list:
-            return [(p[0], p[1], 20.0) for p in active_list]
-
     live_roster = fetch_nba_live_roster_by_team_id(team_id_or_abbr)
     if live_roster:
         return [(p[0], p[1], 19.5) for p in live_roster]
 
-    return [("Starting Guard", "PG", 22.0), ("Starting Wing", "SG", 19.5), ("Forward", "SF", 16.0)]
+    # Standard fallback
+    return [("Starting Point Guard", "PG", 21.5), ("Starting Shooting Guard", "SG", 19.0), ("Starting Small Forward", "SF", 16.5)]
 
 def get_live_nba_3pm_roster(team_id_or_abbr, game_id=None):
     """
-    Returns verified active perimeter players (Guards & Wings) taking 3-pointers.
-    Filters out big men and inactive players.
+    Returns active perimeter players (Guards & Wings) taking 3-pointers.
     """
     base_roster = get_live_nba_roster(team_id_or_abbr, game_id=game_id)
     shooters = []
