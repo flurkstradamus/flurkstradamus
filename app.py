@@ -28,7 +28,7 @@ from views.settings import render_settings, render_support
 from views.guides import render_how_it_works, render_math, render_about
 from views.admin import render_admin
 
-# Optional War Room component importer
+# Import updated War Room component
 try:
     from views.war_room import render_war_room
 except ImportError:
@@ -452,6 +452,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
             with col_wr:
                 if st.button("🏟️ War Room", key=f"wr_{b.get('id', real_idx)}_{real_idx}", use_container_width=True):
                     st.session_state.selected_bet_id = b["id"]
+                    st.session_state.active_nav_page = "🏟️ Live War Room"
                     st.rerun()
 
             with col_edit:
@@ -633,10 +634,10 @@ nav_list = [
     "📊 My Dashboard", 
     "⚡ Single Game Engine", 
     "🔗 Multi-Leg Combo Builder", 
-    "📸 Scan Bet Slip",
+    "📸 Scan Bet Slip", 
     "📜 Locked Bets History", 
     "🏟️ Live War Room",
-    "🧪 Game History & Learning Lab",   # <--- Added
+    "🧪 Game History & Learning Lab",
     "🔥 Live Squad Feed", 
     "🏆 Leaderboard", 
     "💡 How It Works", 
@@ -656,25 +657,6 @@ for page in nav_list:
         st.rerun()
 
 menu_choice = st.session_state.active_nav_page
-
-# War Room Routing from Ticket Card click
-if st.session_state.selected_bet_id is not None:
-    selected_bet = next((b for b in st.session_state.saved_bets if b["id"] == st.session_state.selected_bet_id), None)
-    if st.button("⬅️ Back to Tickets", use_container_width=True) or not selected_bet:
-        st.session_state.selected_bet_id = None
-        st.rerun()
-    live_g = find_game_for_bet(selected_bet, games_data)
-    live_p = calculate_live_bet_prob(selected_bet, live_g)
-    st.title(f"🏟️ War Room: {selected_bet.get('matchup')}")
-    st.write(f"**Pick:** `{selected_bet.get('bet')}` | Live Probability: **{live_p}**")
-    if live_g:
-        c1, c2, c3 = st.columns([2, 1, 2])
-        c1.image(live_g.get("away_logo", DEFAULT_LOGO), width=45)
-        c1.metric(live_g.get('away_short', 'AWAY'), live_g.get('away_score', 0))
-        c2.metric("Clock", live_g.get('displayClock', live_g.get('status', 'In Progress')))
-        c3.image(live_g.get("home_logo", DEFAULT_LOGO), width=45)
-        c3.metric(live_g.get('home_short', 'HOME'), live_g.get('home_score', 0))
-    st.stop()
 
 # Page Routing
 if menu_choice == "📊 My Dashboard":
