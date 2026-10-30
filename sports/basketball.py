@@ -2,35 +2,68 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-@st.cache_data(ttl=600, show_spinner=False)
-def fetch_nba_injury_set():
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_nba_live_roster_by_team_id(team_id):
     """
-    Fetches the live NBA injury report from ESPN.
-    Uses a strict 3-second timeout and fails silently to an empty set
-    so the app never hangs on startup.
+    Pulls the verified active roster for an NBA team directly from ESPN's official team roster API.
+    Guarantees traded/waived players are completely purged.
     """
-    out_players = set()
+    if not team_id or str(team_id) in ["None", "HOME", "AWAY"]:
+        return []
+    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{team_id}/roster"
+    roster = []
     try:
-        url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
-        resp = requests.get(url, timeout=3)
+        resp = requests.get(url, timeout=4)
         if resp.status_code == 200:
-            data = resp.json()
-            for team_data in data.get("injuries", []):
-                for item in team_data.get("injuries", []):
-                    ath = item.get("athlete", {})
-                    p_name = ath.get("displayName", "").strip().lower()
-                    status = item.get("status", {}).get("type", "").lower()
-                    if any(s in status for s in ["out", "ir", "injured reserve", "suspended", "doubtful"]):
-                        if p_name:
-                            out_players.add(p_name)
+            athletes = resp.json().get("athletes", [])
+            for a in athletes:
+                name = a.get("displayName", "")
+                pos = a.get("position", {}).get("abbreviation", "G")
+                injured = a.get("injuries", [])
+                is_out = False
+                for inj in injured:
+                    status = inj.get("status", "").lower()
+                    if any(s in status for s in ["out", "ir", "doubtful", "suspended"]):
+                        is_out = True
+                        break
+                if name and not is_out:
+                    roster.append((name, pos))
     except Exception:
         pass
-    return out_players
+    return roster
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_nba_game_boxscore_players(game_id):
+    """
+    Pulls players currently playing or dressed in the actual active game from ESPN Game Summary.
+    """
+    if not game_id:
+        return {"home": [], "away": []}
+    url = f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={game_id}"
+    result = {"home": [], "away": []}
+    try:
+        resp = requests.get(url, timeout=4)
+        if resp.status_code == 200:
+            box = resp.json().get("boxscore", {}).get("players", [])
+            for idx, team_box in enumerate(box):
+                side = "away" if idx == 0 else "home"
+                athletes = team_box.get("statistics", [{}])[0].get("athletes", [])
+                for ath in athletes:
+                    athlete_info = ath.get("athlete", {})
+                    p_name = athlete_info.get("displayName", "")
+                    pos = athlete_info.get("position", {}).get("abbreviation", "G")
+                    dnp = ath.get("didNotPlay", False)
+                    reason = ath.get("reason", "").lower()
+                    if p_name and not dnp and not any(r in reason for r in ["inactive", "dnp", "out"]):
+                        result[side].append((p_name, pos))
+    except Exception:
+        pass
+    return result
 
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_nba_scoreboard():
     """
-    Fetches live NBA scoreboard data from ESPN API with strict timeout protection.
+    Fetches the live NBA scoreboard from ESPN API with quarterly score breakdowns.
     """
     url = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
     games = []
@@ -62,6 +95,10 @@ def fetch_nba_scoreboard():
                     a_score = int(away_team.get("score", 0))
                 except (ValueError, TypeError):
                     h_score, a_score = 0, 0
+
+                # Quarter-by-quarter scoring breakdown
+                h_lines = [int(p.get("value", 0)) for p in home_team.get("linescores", [])]
+                a_lines = [int(p.get("value", 0)) for p in away_team.get("linescores", [])]
 
                 state_text = status_obj.get("type", {}).get("state", "pre")
                 completed = status_obj.get("type", {}).get("completed", False)
@@ -108,6 +145,8 @@ def fetch_nba_scoreboard():
                     "away_logo": a_logo,
                     "home_score": h_score,
                     "away_score": a_score,
+                    "home_linescores": h_lines,
+                    "away_linescores": a_lines,
                     "home_record": home_team.get("records", [{}])[0].get("summary", "0-0") if home_team.get("records") else "0-0",
                     "away_record": away_team.get("records", [{}])[0].get("summary", "0-0") if away_team.get("records") else "0-0",
                     "market_ou": market_ou,
@@ -122,186 +161,32 @@ def fetch_nba_scoreboard():
         pass
     return games
 
-def get_live_nba_roster(team_id_or_abbr):
+def get_live_nba_roster(team_id_or_abbr, game_id=None):
     """
-    Returns active, healthy players from team roster.
+    Returns verified active rotation players for an NBA team.
+    Checks live box score first; falls back to verified live ESPN team roster.
     """
-    try:
-        injured_out = fetch_nba_injury_set()
-    except Exception:
-        injured_out = set()
+    if game_id:
+        box_players = fetch_nba_game_boxscore_players(game_id)
+        active_list = box_players.get("home", []) + box_players.get("away", [])
+        if active_list:
+            return [(p[0], p[1], 20.0) for p in active_list]
 
-    abbr = str(team_id_or_abbr).upper()
+    live_roster = fetch_nba_live_roster_by_team_id(team_id_or_abbr)
+    if live_roster:
+        return [(p[0], p[1], 19.5) for p in live_roster]
 
-    team_rosters = {
-        "CLE": [("Donovan Mitchell", "SG", 27.5), ("Darius Garland", "PG", 20.5), ("Evan Mobley", "PF", 18.0), ("Jarrett Allen", "C", 14.5), ("Caris LeVert", "SG", 13.0), ("Sam Merrill", "SG", 11.5)],
-        "ATL": [("Trae Young", "PG", 25.5), ("Jalen Johnson", "PF", 19.0), ("Dyson Daniels", "SG", 14.5), ("Nickeil Alexander-Walker", "SG", 14.0), ("Onyeka Okongwu", "C", 12.5), ("Zaccharie Risacher", "SF", 12.0)],
-        "BOS": [("Jayson Tatum", "SF", 28.0), ("Jaylen Brown", "SG", 24.5), ("Derrick White", "PG", 16.5), ("Jrue Holiday", "PG", 13.5), ("Payton Pritchard", "PG", 13.0), ("Al Horford", "C", 9.5)],
-        "GSW": [("Stephen Curry", "PG", 27.5), ("Jonathan Kuminga", "PF", 17.5), ("Buddy Hield", "SG", 15.0), ("Andrew Wiggins", "SF", 14.5), ("Draymond Green", "PF", 9.0), ("Moses Moody", "SG", 10.5)],
-        "LAL": [("Anthony Davis", "C", 28.5), ("LeBron James", "SF", 23.5), ("Austin Reaves", "SG", 16.5), ("Rui Hachimura", "PF", 13.5), ("D'Angelo Russell", "PG", 13.0), ("Dalton Knecht", "SG", 10.5)],
-        "NYK": [("Jalen Brunson", "PG", 27.0), ("Karl-Anthony Towns", "C", 22.5), ("Mikal Bridges", "SG", 17.5), ("OG Anunoby", "SF", 15.5), ("Josh Hart", "SG", 12.5)],
-        "MIN": [("Anthony Edwards", "SG", 28.0), ("Julius Randle", "PF", 21.0), ("Naz Reid", "C", 14.5), ("Jaden McDaniels", "SF", 11.5), ("Mike Conley", "PG", 10.0), ("Donte DiVincenzo", "SG", 11.0)],
-        "DAL": [("Luka Doncic", "PG", 31.5), ("Kyrie Irving", "PG", 24.5), ("Klay Thompson", "SG", 15.5), ("P.J. Washington", "PF", 12.0), ("Daniel Gafford", "C", 11.5), ("Dereck Lively II", "C", 10.0)],
-        "OKC": [("Shai Gilgeous-Alexander", "PG", 30.5), ("Jalen Williams", "SF", 19.5), ("Chet Holmgren", "C", 17.5), ("Luguentz Dort", "SG", 11.0), ("Isaiah Joe", "SG", 10.5), ("Cason Wallace", "PG", 9.0)],
-        "DEN": [("Nikola Jokic", "C", 29.0), ("Jamal Murray", "PG", 20.5), ("Michael Porter Jr.", "SF", 18.0), ("Christian Braun", "SG", 14.5), ("Aaron Gordon", "PF", 14.0), ("Russell Westbrook", "PG", 11.0)],
-        "PHX": [("Kevin Durant", "PF", 27.0), ("Devin Booker", "SG", 25.5), ("Bradley Beal", "SG", 17.0), ("Jusuf Nurkic", "C", 10.5), ("Tyus Jones", "PG", 10.0), ("Grayson Allen", "SG", 11.5)],
-        "MIL": [("Giannis Antetokounmpo", "PF", 31.0), ("Damian Lillard", "PG", 25.5), ("Bobby Portis", "PF", 13.5), ("Brook Lopez", "C", 12.0), ("Gary Trent Jr.", "SG", 10.5)],
-        "PHI": [("Tyrese Maxey", "PG", 27.5), ("Joel Embiid", "C", 26.5), ("Paul George", "SF", 20.0), ("Kelly Oubre Jr.", "SG", 14.0), ("Caleb Martin", "SF", 10.0)],
-        "MIA": [("Tyler Herro", "SG", 23.5), ("Jimmy Butler", "SF", 19.5), ("Bam Adebayo", "C", 16.5), ("Terry Rozier", "PG", 14.5), ("Duncan Robinson", "SG", 10.0)],
-        "MEM": [("Ja Morant", "PG", 23.5), ("Jaren Jackson Jr.", "PF", 22.0), ("Desmond Bane", "SG", 19.0), ("Santi Aldama", "PF", 13.0), ("Scotty Pippen Jr.", "PG", 11.5)],
-        "SAC": [("De'Aaron Fox", "PG", 26.5), ("DeMar DeRozan", "SF", 22.5), ("Domantas Sabonis", "C", 19.5), ("Keegan Murray", "SF", 14.0), ("Malik Monk", "SG", 13.5)],
-        "HOU": [("Jalen Green", "SG", 21.0), ("Alperen Sengun", "C", 18.5), ("Fred VanVleet", "PG", 15.0), ("Jabari Smith Jr.", "PF", 12.5), ("Dillon Brooks", "SF", 12.0), ("Tari Eason", "SF", 11.5)],
-        "IND": [("Pascal Siakam", "PF", 21.5), ("Tyrese Haliburton", "PG", 18.5), ("Bennedict Mathurin", "SG", 19.0), ("Myles Turner", "C", 15.5), ("Andrew Nembhard", "PG", 11.0)],
-        "SAS": [("Victor Wembanyama", "C", 24.5), ("Devin Vassell", "SG", 17.5), ("Chris Paul", "PG", 10.5), ("Harrison Barnes", "PF", 11.0), ("Stephon Castle", "SG", 10.5)],
-        "ORL": [("Franz Wagner", "SF", 23.0), ("Paolo Banchero", "PF", 24.5), ("Jalen Suggs", "PG", 15.0), ("Kentavious Caldwell-Pope", "SG", 10.0), ("Moritz Wagner", "C", 12.5)],
-        "CHI": [("Zach LaVine", "SG", 22.0), ("Nikola Vucevic", "C", 20.5), ("Coby White", "PG", 19.0), ("Josh Giddey", "PG", 13.5), ("Patrick Williams", "PF", 10.5)],
-        "NOP": [("Brandon Ingram", "SF", 23.5), ("Zion Williamson", "PF", 22.5), ("CJ McCollum", "SG", 19.0), ("Trey Murphy III", "SF", 15.5), ("Herbert Jones", "SF", 10.5)],
-        "DET": [("Cade Cunningham", "PG", 23.5), ("Jaden Ivey", "SG", 18.0), ("Tobias Harris", "PF", 13.5), ("Malik Beasley", "SG", 13.5), ("Jalen Duren", "C", 10.5)],
-        "TOR": [("RJ Barrett", "SG", 21.5), ("Scottie Barnes", "SF", 20.0), ("Gradey Dick", "SG", 18.0), ("Immanuel Quickley", "PG", 16.5), ("Jakob Poeltl", "C", 14.0)],
-        "CHA": [("LaMelo Ball", "PG", 29.5), ("Brandon Miller", "SF", 18.5), ("Miles Bridges", "PF", 16.5), ("Tre Mann", "SG", 15.0), ("Grant Williams", "PF", 10.0)],
-        "BKN": [("Cam Thomas", "SG", 24.5), ("Dennis Schroder", "PG", 18.0), ("Cameron Johnson", "SF", 17.0), ("Dorian Finney-Smith", "PF", 10.5), ("Nicolas Claxton", "C", 9.5)],
-        "POR": [("Anfernee Simons", "SG", 18.5), ("Jerami Grant", "PF", 18.0), ("Deandre Ayton", "C", 14.5), ("Shaedon Sharpe", "SG", 16.0), ("Toumani Camara", "SF", 10.0)],
-        "UTA": [("Lauri Markkanen", "PF", 20.5), ("John Collins", "PF", 17.5), ("Collin Sexton", "PG", 16.0), ("Keyonte George", "PG", 15.0), ("Walker Kessler", "C", 10.0)],
-        "WAS": [("Jordan Poole", "SG", 21.0), ("Kyle Kuzma", "PF", 17.5), ("Bilal Coulibaly", "SF", 15.0), ("Alex Sarr", "C", 11.0), ("Malcolm Brogdon", "PG", 12.0)],
-        "LAC": [("James Harden", "PG", 21.0), ("Norman Powell", "SG", 23.5), ("Ivica Zubac", "C", 16.5), ("Derrick Jones Jr.", "SF", 10.5), ("Terance Mann", "SG", 9.0)]
-    }
+    return [("Starting Guard", "PG", 22.0), ("Starting Wing", "SG", 19.5), ("Forward", "SF", 16.0)]
 
-    candidates = []
-    for k, v in team_rosters.items():
-        if k in abbr:
-            candidates = v
-            break
-
-    if not candidates:
-        candidates = [("Starting Point Guard", "PG", 21.5), ("Starting Shooting Guard", "SG", 19.0), ("Starting Small Forward", "SF", 16.5)]
-
-    active_pool = [c for c in candidates if c[0].strip().lower() not in injured_out]
-    return active_pool if active_pool else candidates
-
-def get_live_nba_3pm_roster(team_id_or_abbr):
+def get_live_nba_3pm_roster(team_id_or_abbr, game_id=None):
     """
-    Returns only ACTIVE, HEALTHY perimeter players who take three-pointers.
+    Returns verified active perimeter players (Guards & Wings) taking 3-pointers.
+    Filters out big men and inactive players.
     """
-    shooters_data = {
-        "Donovan Mitchell": ("SG", 3.6, 27.5),
-        "Darius Garland": ("PG", 2.6, 20.5),
-        "Sam Merrill": ("SG", 2.7, 11.5),
-        "Caris LeVert": ("SG", 1.8, 13.0),
-        "Trae Young": ("PG", 3.2, 25.5),
-        "Nickeil Alexander-Walker": ("SG", 2.2, 14.0),
-        "Zaccharie Risacher": ("SF", 2.0, 12.0),
-        "Dyson Daniels": ("SG", 1.5, 14.5),
-        "Jayson Tatum": ("SF", 3.8, 28.0),
-        "Jaylen Brown": ("SG", 2.4, 24.5),
-        "Derrick White": ("PG", 3.2, 16.5),
-        "Payton Pritchard": ("PG", 3.4, 13.0),
-        "Jrue Holiday": ("PG", 1.8, 13.5),
-        "Stephen Curry": ("PG", 4.5, 27.5),
-        "Buddy Hield": ("SG", 3.6, 15.0),
-        "Moses Moody": ("SG", 1.8, 10.5),
-        "Andrew Wiggins": ("SF", 1.9, 14.5),
-        "Austin Reaves": ("SG", 2.4, 16.5),
-        "LeBron James": ("SF", 2.2, 23.5),
-        "D'Angelo Russell": ("PG", 2.4, 13.0),
-        "Dalton Knecht": ("SG", 2.2, 10.5),
-        "Rui Hachimura": ("PF", 1.5, 13.5),
-        "Jalen Brunson": ("PG", 2.6, 27.0),
-        "Karl-Anthony Towns": ("C", 2.4, 22.5),
-        "Mikal Bridges": ("SG", 2.5, 17.5),
-        "OG Anunoby": ("SF", 2.2, 15.5),
-        "Anthony Edwards": ("SG", 4.3, 28.0),
-        "Donte DiVincenzo": ("SG", 2.8, 11.0),
-        "Naz Reid": ("C", 2.2, 14.5),
-        "Julius Randle": ("PF", 1.8, 21.0),
-        "Luka Doncic": ("PG", 3.6, 31.5),
-        "Kyrie Irving": ("PG", 3.0, 24.5),
-        "Klay Thompson": ("SG", 3.2, 15.5),
-        "P.J. Washington": ("PF", 1.6, 12.0),
-        "Shai Gilgeous-Alexander": ("PG", 1.9, 30.5),
-        "Isaiah Joe": ("SG", 2.4, 10.5),
-        "Luguentz Dort": ("SG", 2.3, 11.0),
-        "Jalen Williams": ("SF", 1.8, 19.5),
-        "Michael Porter Jr.": ("SF", 2.9, 18.0),
-        "Jamal Murray": ("PG", 2.2, 20.5),
-        "Christian Braun": ("SG", 1.4, 14.5),
-        "Devin Booker": ("SG", 2.6, 25.5),
-        "Kevin Durant": ("PF", 2.4, 27.0),
-        "Grayson Allen": ("SG", 2.8, 11.5),
-        "Bradley Beal": ("SG", 2.1, 17.0),
-        "Damian Lillard": ("PG", 3.8, 25.5),
-        "Brook Lopez": ("C", 1.9, 12.0),
-        "Gary Trent Jr.": ("SG", 2.0, 10.5),
-        "Tyrese Maxey": ("PG", 3.3, 27.5),
-        "Paul George": ("SF", 2.8, 20.0),
-        "Kelly Oubre Jr.": ("SG", 1.6, 14.0),
-        "Tyler Herro": ("SG", 3.8, 23.5),
-        "Duncan Robinson": ("SG", 2.6, 10.0),
-        "Terry Rozier": ("PG", 2.2, 14.5),
-        "De'Aaron Fox": ("PG", 2.3, 26.5),
-        "Keegan Murray": ("SF", 2.4, 14.0),
-        "Malik Monk": ("SG", 2.2, 13.5),
-        "Jalen Green": ("SG", 3.0, 21.0),
-        "Fred VanVleet": ("PG", 2.7, 15.0),
-        "Jabari Smith Jr.": ("PF", 1.7, 12.5),
-        "Tyrese Haliburton": ("PG", 2.8, 18.5),
-        "Myles Turner": ("C", 2.0, 15.5),
-        "Bennedict Mathurin": ("SG", 1.7, 19.0),
-        "Jalen Suggs": ("PG", 2.2, 15.0),
-        "Franz Wagner": ("SF", 1.9, 23.0),
-        "Kentavious Caldwell-Pope": ("SG", 1.5, 10.0),
-        "Coby White": ("PG", 3.1, 19.0),
-        "Zach LaVine": ("SG", 2.8, 22.0),
-        "Nikola Vucevic": ("C", 1.9, 20.5),
-        "Malik Beasley": ("SG", 3.2, 13.5),
-        "Cade Cunningham": ("PG", 2.0, 23.5),
-        "Jaden Ivey": ("SG", 1.8, 18.0),
-        "Gradey Dick": ("SG", 2.7, 18.0),
-        "Immanuel Quickley": ("PG", 2.5, 16.5),
-        "RJ Barrett": ("SG", 1.8, 21.5),
-        "LaMelo Ball": ("PG", 4.4, 29.5),
-        "Brandon Miller": ("SF", 3.2, 18.5),
-        "Tre Mann": ("SG", 2.4, 15.0),
-        "Cameron Johnson": ("SF", 2.8, 17.0),
-        "Cam Thomas": ("SG", 2.6, 24.5),
-        "Dennis Schroder": ("PG", 2.1, 18.0),
-        "Anfernee Simons": ("SG", 2.8, 18.5),
-        "Shaedon Sharpe": ("SG", 2.0, 16.0),
-        "Jerami Grant": ("PF", 2.1, 18.0),
-        "Lauri Markkanen": ("PF", 2.8, 20.5),
-        "Keyonte George": ("PG", 2.4, 15.0),
-        "Collin Sexton": ("PG", 1.8, 16.0),
-        "Jordan Poole": ("SG", 3.3, 21.0),
-        "Kyle Kuzma": ("PF", 1.8, 17.5),
-        "Bilal Coulibaly": ("SF", 1.6, 15.0),
-        "Norman Powell": ("SG", 3.6, 23.5),
-        "James Harden": ("PG", 2.6, 21.0),
-        "Derrick Jones Jr.": ("SF", 1.4, 10.5)
-    }
-
-    try:
-        injured_out = fetch_nba_injury_set()
-    except Exception:
-        injured_out = set()
-
-    active_roster = get_live_nba_roster(team_id_or_abbr)
-    active_names = [p[0] for p in active_roster]
-
-    results = []
-    for p_name in active_names:
-        if p_name.strip().lower() in injured_out:
-            continue
-        if p_name in shooters_data:
-            pos, base_3, base_p = shooters_data[p_name]
-            results.append((p_name, pos, base_3, base_p))
-
-    if results:
-        results.sort(key=lambda x: x[2], reverse=True)
-        return results
-
-    fallback = []
-    for p in active_roster:
-        name, pos, pts = p[0], p[1], float(p[2])
-        if name.strip().lower() not in injured_out and pos in ["PG", "SG", "SF", "G"]:
-            fallback.append((name, pos, 2.5 if pts >= 20.0 else 1.5, pts))
-
-    return fallback if fallback else [("Starting Guard", "SG", 2.5, 20.0)]
+    base_roster = get_live_nba_roster(team_id_or_abbr, game_id=game_id)
+    shooters = []
+    for p in base_roster:
+        name, pos, pts = p[0], p[1], p[2]
+        if pos in ["PG", "SG", "SF", "G"]:
+            shooters.append((name, pos, 2.5, pts))
+    return shooters if shooters else [("Starting Guard", "PG", 2.5, 20.0)]
