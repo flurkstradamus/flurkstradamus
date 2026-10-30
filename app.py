@@ -397,7 +397,7 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
         header_title_html = f"<strong>{m_txt}</strong> <span style='opacity:0.6;font-size:0.78rem;'>• @{user_name}</span>"
 
     r_val = float(b.get("risk_dollars", 5.0))
-    p_val = float(b.get("payout_dollars", b.get("payout", 10.0)))
+    p_val = float(b.get("payout_dollars", b.get("payout", 0.0)))
     
     # Net Profit = Payout - Risk
     profit_locked = float(b.get("locked_profit", p_val - r_val))
@@ -454,11 +454,13 @@ def render_ticket_card(b, real_idx, games_data, can_delete=False):
                     st.rerun()
 
             with col_edit:
-                # Interactive Edit Popover
+                # Interactive Edit Popover allowing 0.0 for settled/lost bets
                 with st.popover("✏️", use_container_width=True, help="Edit bet amounts"):
                     st.markdown("**Edit Bet Amounts**")
-                    new_risk = st.number_input("Risk ($)", min_value=0.5, value=float(r_val), step=1.0, key=f"ed_risk_{b.get('id', real_idx)}_{real_idx}")
-                    new_payout = st.number_input("Payout ($)", min_value=0.5, value=float(p_val), step=1.0, key=f"ed_pay_{b.get('id', real_idx)}_{real_idx}")
+                    cur_r = max(0.0, float(r_val))
+                    cur_p = max(0.0, float(p_val))
+                    new_risk = st.number_input("Risk ($)", min_value=0.0, value=cur_r, step=1.0, key=f"ed_risk_{b.get('id', real_idx)}_{real_idx}")
+                    new_payout = st.number_input("Payout ($)", min_value=0.0, value=cur_p, step=1.0, key=f"ed_pay_{b.get('id', real_idx)}_{real_idx}")
                     
                     calculated_profit = float(new_payout) - float(new_risk)
                     st.caption(f"Net Profit: **${calculated_profit:.2f}**")
