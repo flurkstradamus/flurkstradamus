@@ -18,7 +18,7 @@
       "payout": 19.1,
       "locked_profit": -20.9,
       "win_prob": "1.0%",
-      "status": "Pending",
+      "status": "Won",
       "notes": "[NCAA] Game Total"
     },
     {
@@ -34,7 +34,7 @@
       "payout": 15.9,
       "locked_profit": 10.9,
       "win_prob": "31.4%",
-      "status": "Pending",
+      "status": "Won",
       "parsed_legs": [
         {
           "matchup": "CLE @ ATL",
@@ -78,7 +78,7 @@
       "payout": 15.0,
       "locked_profit": 5.0,
       "win_prob": "51.9%",
-      "status": "Pending",
+      "status": "Won",
       "notes": "[NFL] Straight Up Winner (Moneyline)"
     },
     {
@@ -115,7 +115,7 @@
       "payout": 12.35,
       "locked_profit": 7.35,
       "win_prob": "40.5%",
-      "status": "Pending",
+      "status": "Won",
       "parsed_legs": [
         {
           "matchup": "CLE @ ATL",
@@ -159,7 +159,7 @@
       "payout": 13.0,
       "locked_profit": 3.0,
       "win_prob": "99.1%",
-      "status": "Pending",
+      "status": "Won",
       "notes": "[NBA] Game Total"
     },
     {
