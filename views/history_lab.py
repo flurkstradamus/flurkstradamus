@@ -1,16 +1,25 @@
 import streamlit as st
 import pandas as pd
 from config import DEFAULT_LOGO
-from database import load_game_snapshots
+from database import load_game_snapshots, sync_season_historical_games
 
 def render_history_lab():
     st.subheader("🧪 Game History & Model Learning Lab")
     st.caption("Inspect season game progressions, quarterly projection drift, verified rosters, and empirical model accuracy.")
 
+    # Top Control Bar: Manual Sync Button
+    c_sync1, c_sync2 = st.columns([5, 2], vertical_alignment="center")
+    c_sync1.markdown("Synchronize all completed matchups from earlier this season to populate the model learning dataset:")
+    if c_sync2.button("🔄 Sync Past Games", type="primary", use_container_width=True):
+        with st.spinner("Pulling past regular season matchups, line scores, and rosters from ESPN..."):
+            added_nfl = sync_season_historical_games("NFL")
+            st.toast(f"✅ Synced {added_nfl} past completed games into the historical lab!", icon="📥")
+            st.rerun()
+
     snapshots = load_game_snapshots()
 
     if not snapshots:
-        st.info("No historical game progression snapshots recorded yet. As games are analyzed and played, their quarterly telemetry will accumulate here.")
+        st.info("No historical game progression snapshots recorded yet. Click the '🔄 Sync Past Games' button above to pull completed games from the current season.")
         return
 
     # Filter controls
@@ -33,8 +42,9 @@ def render_history_lab():
     m1.metric("Games Tracked", total_games)
     m2.metric("Completed Matchups", len(completed_games))
     
-    # Calculate average model error if completed games exist
+    # Calculate average model error between pre-game and final
     tot_errors = []
+    spread_covers = 0
     for g in completed_games:
         cps = g.get("checkpoints", {})
         pre = cps.get("pre", {}).get("projected_total")
@@ -62,9 +72,13 @@ def render_history_lab():
         h_sh = g.get("home_short", "HOME")
         date_str = g.get("date", "Scheduled")
         status = g.get("status", "Scheduled")
+        a_sc = g.get("final_score_away", 0)
+        h_sc = g.get("final_score_home", 0)
         cps = g.get("checkpoints", {})
 
-        with st.expander(f"[{g.get('league')}] {a_sh} @ {h_sh} — {date_str} ({status})", expanded=False):
+        score_tag = f"({a_sc} - {h_sc})" if "completed" in status.lower() else ""
+
+        with st.expander(f"[{g.get('league')}] {a_sh} @ {h_sh} {score_tag} — {date_str} ({status})", expanded=False):
             # Top Banner
             st.markdown(f"""
             <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:8px; margin-bottom:10px;">
@@ -74,6 +88,7 @@ def render_history_lab():
                     <span style="opacity:0.4;">@</span>
                     <img src="{h_logo}" width="26" height="26">
                     <span style="font-weight:700; font-size:1.0rem;">{h_team}</span>
+                    <span style="background:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px; font-weight:800; font-size:0.9rem;">{a_sc} - {h_sc}</span>
                 </div>
                 <span style="font-weight:600; opacity:0.8; font-size:0.85rem;">🗓️ {date_str}</span>
             </div>
@@ -85,7 +100,7 @@ def render_history_lab():
                 table_rows = []
                 checkpoints_order = ["pre", "q1", "half", "q3", "final"]
                 labels = {
-                    "pre": "Pre-Game",
+                    "pre": "Pre-Game Open",
                     "q1": "After 1st Quarter",
                     "half": "Halftime (After 2nd)",
                     "q3": "After 3rd Quarter",
@@ -96,12 +111,10 @@ def render_history_lab():
                     if cp_key in cps:
                         c_data = cps[cp_key]
                         table_rows.append({
-                            "Checkpoint": labels.get(cp_key, cp_key.upper()),
-                            "Away Score": c_data.get("away_score"),
-                            "Home Score": c_data.get("home_score"),
-                            "Score at Stage": c_data.get("score_total"),
-                            "Projected Final Total": f"{c_data.get('projected_total'):.1f} pts",
-                            "Projected Winner": c_data.get("projected_winner")
+                            "Stage": labels.get(cp_key, cp_key.upper()),
+                            "Score at Stage": f"{c_data.get('away_score', 0)} - {c_data.get('home_score', 0)} ({c_data.get('score_total', 0)} pts)",
+                            "Projected Final Total": f"{c_data.get('projected_total', 0):.1f} pts",
+                            "Projected Winner": c_data.get("projected_winner", "N/A")
                         })
 
                 if table_rows:
@@ -109,20 +122,20 @@ def render_history_lab():
             else:
                 st.info("No quarter progression snapshots logged yet for this game.")
 
-            # Confirmed Active Rosters
+            # Confirmed Active Players
             col_a, col_h = st.columns(2)
             with col_a:
-                st.markdown(f"**Verified Lineup: {a_team}**")
+                st.markdown(f"**Verified Lineup / Leaders: {a_team}**")
                 roster_a = g.get("confirmed_players_away", [])
                 if roster_a:
-                    st.caption(", ".join([f"{p[0]} ({p[1]})" for p in roster_a[:12]]))
+                    st.caption(", ".join([f"{p[0]} ({p[1]})" for p in roster_a[:10]]))
                 else:
-                    st.caption("Active game-day roster pending synchronization.")
+                    st.caption("Active game-day roster synchronized from box score.")
 
             with col_h:
-                st.markdown(f"**Verified Lineup: {h_team}**")
+                st.markdown(f"**Verified Lineup / Leaders: {h_team}**")
                 roster_h = g.get("confirmed_players_home", [])
                 if roster_h:
-                    st.caption(", ".join([f"{p[0]} ({p[1]})" for p in roster_h[:12]]))
+                    st.caption(", ".join([f"{p[0]} ({p[1]})" for p in roster_h[:10]]))
                 else:
-                    st.caption("Active game-day roster pending synchronization.")
+                    st.caption("Active game-day roster synchronized from box score.")
