@@ -190,7 +190,6 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
             key="cb_cfg_filter"
         )
 
-        # Stepper Text Box with + / - up to 15 legs
         with r1_c3:
             st.markdown("<label style='font-size:0.875rem;font-weight:400;'>Target # of Legs (Up to 15)</label>", unsafe_allow_html=True)
             cnt_cols = st.columns([1, 1.8, 1])
@@ -198,8 +197,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                 if st.session_state.combo_leg_count_val > 2:
                     st.session_state.combo_leg_count_val -= 1
                     st.rerun()
-            
-            # Direct numeric input field
+
             typed_count = cnt_cols[1].number_input(
                 "Legs",
                 min_value=2,
@@ -358,7 +356,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                         st.warning("Maximum of 15 legs reached.")
 
     # =========================================================================
-    # 2. RESTORED GREEN LEGS CARD DISPLAY WITH INLINE EDIT POPOVER
+    # 2. GREEN LEGS DISPLAY (CLEAN CARDS WITHOUT INDIVIDUAL X/EDIT BUTTONS)
     # =========================================================================
     legs = st.session_state.combo_active_legs
 
@@ -368,7 +366,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
 
     st.markdown(f"### 📋 Current Combo Legs ({len(legs)})")
 
-    # Render each leg in classic green accent layout with dedicated Edit popovers
+    # Render each leg with clean green badge styling
     for idx, leg in enumerate(legs):
         p_pct = int(round(float(leg.get("prob", 0.55)) * 100))
         m_txt = leg.get("matchup", "Matchup")
@@ -377,7 +375,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
         lg_val = leg.get("league", "SPORTS")
 
         with st.container(border=True):
-            c_left, c_mid, c_right = st.columns([4.5, 2.2, 1.8], vertical_alignment="center")
+            c_left, c_right = st.columns([5.5, 2.0], vertical_alignment="center")
 
             with c_left:
                 st.markdown(f"""
@@ -388,46 +386,63 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
                     <span style="font-weight:700; font-size:0.95rem; color:#f8fafc;">{m_txt}</span>
                     <span style="opacity:0.5; font-size:0.75rem;">• {t_type}</span>
                 </div>
-                <div style="font-size:1.02rem; font-weight:700; color:#4ade80; margin-top:3px;">
+                <div style="font-size:1.05rem; font-weight:700; color:#4ade80; margin-top:3px;">
                     {p_txt}
                 </div>
                 """, unsafe_allow_html=True)
 
-            with c_mid:
+            with c_right:
                 st.markdown(f"""
-                <div style="font-size:0.80rem; opacity:0.7;">Model Probability</div>
-                <div style="font-size:1.15rem; font-weight:800; color:#38bdf8;">{p_pct}%</div>
+                <div style="text-align:right;">
+                    <div style="font-size:0.78rem; opacity:0.7;">Model Prob</div>
+                    <div style="font-size:1.15rem; font-weight:800; color:#38bdf8;">{p_pct}%</div>
+                </div>
                 """, unsafe_allow_html=True)
 
-            with c_right:
-                btn_c1, btn_c2 = st.columns([1.5, 1])
-                with btn_c1:
-                    with st.popover("✏️ Edit", use_container_width=True):
-                        st.markdown(f"**Edit Leg #{idx + 1}**")
-                        leg["matchup"] = st.text_input("Matchup", value=leg.get("matchup", ""), key=f"gr_m_{idx}")
-                        leg["pick_text"] = st.text_input("Pick Label", value=leg.get("pick_text", ""), key=f"gr_p_{idx}")
-                        leg["side"] = st.text_input("Side / Dir", value=leg.get("side", ""), key=f"gr_s_{idx}")
-                        leg["line"] = st.text_input("Line", value=str(leg.get("line", "")), key=f"gr_l_{idx}")
-                        new_prob = st.slider("Win Prob (%)", min_value=5, max_value=99, value=p_pct, key=f"gr_pr_{idx}")
-                        leg["prob"] = float(new_prob) / 100.0
+    # =========================================================================
+    # 3. TEXT-BASED EDIT & REMOVAL TOOL (CLICK TO SELECT LEGS TO REMOVE)
+    # =========================================================================
+    st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+    edit_row_c1, edit_row_c2 = st.columns([2.0, 5.0])
 
-                        if st.button("🗑️ Remove Leg", key=f"pop_del_{idx}", type="secondary", use_container_width=True):
-                            st.session_state.combo_active_legs.pop(idx)
-                            st.rerun()
+    with edit_row_c1:
+        with st.popover("✏️ Edit / Remove Legs", use_container_width=True):
+            st.markdown("##### 🗑️ Select Legs to Remove")
+            st.caption("Check any leg you want to delete from this ticket:")
 
-                with btn_c2:
-                    if st.button("❌", key=f"direct_del_{idx}", help="Delete leg", use_container_width=True):
-                        st.session_state.combo_active_legs.pop(idx)
-                        st.rerun()
+            # Prepare list of leg descriptions
+            leg_display_list = [
+                f"Leg #{i + 1}: {l.get('matchup')} — {l.get('pick_text')}" 
+                for i, l in enumerate(legs)
+            ]
 
-    if st.button("🗑️ Clear Entire Slip", key="btn_clear_cb_slip"):
-        st.session_state.combo_active_legs = []
-        st.rerun()
+            selected_to_remove = st.multiselect(
+                "Choose legs to remove",
+                options=range(len(legs)),
+                format_func=lambda i: leg_display_list[i],
+                label_visibility="collapsed",
+                key="cb_multiselect_remove_legs"
+            )
+
+            if st.button("🗑️ Remove Selected Legs", type="primary", use_container_width=True):
+                if selected_to_remove:
+                    # Remove in reverse index order so indices do not shift
+                    for idx_to_del in sorted(selected_to_remove, reverse=True):
+                        st.session_state.combo_active_legs.pop(idx_to_del)
+                    st.toast("✅ Selected legs removed from ticket!", icon="🗑️")
+                    st.rerun()
+                else:
+                    st.info("No legs selected for removal.")
+
+    with edit_row_c2:
+        if st.button("🗑️ Clear Entire Slip", key="btn_clear_cb_slip"):
+            st.session_state.combo_active_legs = []
+            st.rerun()
 
     st.markdown("---")
 
     # =========================================================================
-    # 3. COMPOUND ANALYTICS & EXPECTED VALUE
+    # 4. COMPOUND ANALYTICS & EXPECTED VALUE
     # =========================================================================
     compound_prob = 1.0
     for leg in legs:
@@ -445,7 +460,7 @@ def render_combo_builder(curr_user, active_uname, games_data, get_current_et_tim
     m4.metric("Active Legs", len(legs))
 
     # =========================================================================
-    # 4. TICKET LOCK-IN & FINANCIAL RECORDING
+    # 5. TICKET LOCK-IN & FINANCIAL RECORDING
     # =========================================================================
     with st.container(border=True):
         st.markdown("#### 🔒 Lock In Combo Ticket Slip")
