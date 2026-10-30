@@ -6,7 +6,7 @@ STORAGE_FILE = "storage.json"
 SNAPSHOT_FILE = "game_snapshots.json"
 
 # =========================================================================
-# CORE APP STORAGE (BETS, USERS, CHATS, TICKETS, SNAPSHOTS)
+# 1. CORE DATABASE INITIALIZATION & PERSISTENCE
 # =========================================================================
 
 def init_db():
@@ -33,6 +33,7 @@ def init_db():
         except Exception:
             pass
 
+
 def load_all_storage():
     """
     Loads all saved data for app.py session state initialization.
@@ -53,6 +54,7 @@ def load_all_storage():
     except Exception:
         return ([], [], {}, [], [], [])
 
+
 def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, game_snapshots, support_tickets):
     """
     Persists all current session state variables back into storage.json.
@@ -72,8 +74,42 @@ def save_all_storage(saved_bets, chat_messages, user_accounts, banned_emails, ga
     except Exception:
         return False
 
+
 # =========================================================================
-# QUARTERLY MATCHUP SNAPSHOTS & SELF-LEARNING PACING DRIFT
+# 2. INDIVIDUAL GETTERS & CONVENIENCE HELPERS
+# =========================================================================
+
+def load_saved_bets():
+    data, _, _, _, _, _ = load_all_storage()
+    return data
+
+def save_saved_bets(saved_bets):
+    _, c, u, b, s, t = load_all_storage()
+    return save_all_storage(saved_bets, c, u, b, s, t)
+
+def load_user_accounts():
+    _, _, u, _, _, _ = load_all_storage()
+    return u
+
+def save_user_accounts(user_accounts):
+    sb, c, _, b, s, t = load_all_storage()
+    return save_all_storage(sb, c, user_accounts, b, s, t)
+
+def load_banned_emails():
+    _, _, _, b, _, _ = load_all_storage()
+    return b
+
+def load_chat_messages():
+    _, c, _, _, _, _ = load_all_storage()
+    return c
+
+def load_support_tickets():
+    _, _, _, _, _, t = load_all_storage()
+    return t
+
+
+# =========================================================================
+# 3. QUARTERLY MATCHUP SNAPSHOTS & PACING DRIFT
 # =========================================================================
 
 def load_game_snapshots():
@@ -86,10 +122,10 @@ def load_game_snapshots():
             return []
     return []
 
+
 def record_quarterly_snapshot(game_id, league, state, home_team, away_team, h_score, a_score, period, pre_proj_total, pre_proj_spread):
     """
     Logs pre-game and quarter-by-quarter telemetry (Q1, Halftime, Q3, Final).
-    Used by War Room and Single Game Analytics to track in-game pacing changes.
     """
     snapshots = load_game_snapshots()
     entry = {
@@ -121,6 +157,7 @@ def record_quarterly_snapshot(game_id, league, state, home_team, away_team, h_sc
             json.dump(snapshots, f, indent=2)
     except Exception:
         pass
+
 
 def calculate_pace_drift_factor(period, current_total, pre_game_total):
     """
